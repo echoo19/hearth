@@ -45,7 +45,7 @@ vi.mock('../src/api', () => ({
   apiCloseWorkspace: vi.fn(async () => {}),
 }));
 
-import { apiCreateWorkspace, apiDeleteChat, apiOpenWorkspace, apiRenameChat } from '../src/api';
+import { apiCreateWorkspace, apiDeleteChat, apiListChats, apiOpenWorkspace, apiRenameChat } from '../src/api';
 import { setModelChoice } from '../src/chat/modelChoice';
 import { useApp } from '../src/store';
 import { currentToast, resetToasts } from '../src/toast';
@@ -82,12 +82,21 @@ class FakeSocket {
 
   send(data: string): void {
     this.sent.push(data);
-    const frame = JSON.parse(data) as { type: string };
+    const frame = JSON.parse(data) as { type: string; [key: string]: unknown };
     if (frame.type === 'chat-new') {
       const ts = new Date().toISOString();
       const reply = JSON.stringify({
         type: 'chat-opened',
         chat: { id: `chat-${FakeSocket.nextChatId++}`, title: 'New chat', createdAt: ts, updatedAt: ts },
+        records: [],
+      });
+      setTimeout(() => this.onmessage?.({ data: reply }), 0);
+    }
+    if (frame.type === 'chat-open') {
+      const ts = new Date().toISOString();
+      const reply = JSON.stringify({
+        type: 'chat-opened',
+        chat: { id: frame.chatId, title: 'Old chat', kind: 'chat', createdAt: ts, updatedAt: ts },
         records: [],
       });
       setTimeout(() => this.onmessage?.({ data: reply }), 0);
@@ -127,6 +136,7 @@ beforeEach(() => {
     ok: true,
     info: { path: '/home/me/Hearth/space-shooter', name: 'space-shooter', isHearthProject: false },
   });
+  vi.mocked(apiListChats).mockResolvedValue([]);
   useApp.setState({ projectPath: null, projectName: null, homeBusy: false, chatError: null, messages: [] });
 });
 
@@ -279,6 +289,21 @@ describe('startFromHome', () => {
     // this is the half the user actually complained about.
     FakeSocket.instances[0].deliver({ type: 'chat-event', event: { type: 'message-delta', text: 'On it.' } });
     expect(useApp.getState().messages[1].parts).toEqual([{ kind: 'text', text: 'On it.' }]);
+  });
+
+  it('starts a new conversation when New chat targets an existing project that is not open', async () => {
+    const ts = new Date().toISOString();
+    vi.mocked(apiListChats).mockResolvedValue([
+      { id: 'chat-old', title: 'Old chat', kind: 'chat', createdAt: ts, updatedAt: ts },
+    ]);
+    useApp.setState({ composeTarget: PROJECT });
+
+    const result = await useApp.getState().startFromHome('make something different');
+
+    expect(result.ok).toBe(true);
+    expect(useApp.getState().activeChatId).toBe('chat-1');
+    expect(frames().map((frame) => frame.type)).not.toContain('chat-open');
+    expect(frames().filter((frame) => frame.type === 'chat-new')).toHaveLength(1);
   });
 
   it('leaves the project screen and the blank surface for the conversation it sent into', async () => {

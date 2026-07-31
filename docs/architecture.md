@@ -38,8 +38,10 @@ watcher, one evidence watcher), which is disposed when the last of them leaves.
 Frames, by family:
 
 - **chat**: `chat-send`, `chat-open`, `chat-new`, `chat-cancel`,
-  `chat-interrupt`, `chat-approval` up; `chat-ready`, `chat-event`,
-  `chat-opened`, `chat-list`, `chat-providers` down.
+  `chat-interrupt`, `chat-approval`, `chat-input-response`,
+  `chat-commands-list`, `chat-handoff-cli` up; `chat-ready`, `chat-event`,
+  `chat-opened`, `chat-list`, `chat-providers`, `chat-commands`, and handoff
+  ready/error acknowledgements down.
 - **evidence / journal**: batched watcher output, broadcast to every socket on
   the root.
 - **pty**: `pty-start/input/resize/stop` up, `pty-data/exit/attach/error` down.
@@ -48,7 +50,9 @@ Frames, by family:
 - **export**: progress, done, error.
 
 Approvals ride this socket rather than an HTTP round trip because the agent's
-turn is genuinely blocked until one arrives.
+turn is genuinely blocked until one arrives. Attachment bytes are the notable
+exception: they stream over a bounded HTTP upload, and only an opaque
+single-use token rides `chat-send`.
 
 ## Chat drivers
 
@@ -81,6 +85,9 @@ grows: the older event names are still parsed and upgraded at read time, so a
 conversation recorded before the vocabulary was extended replays exactly as it
 did. An approval can resolve as `allow`, `deny`, or `withdrawn`, the last
 meaning the session ended under the question rather than anyone answering it.
+Blocking provider questions and MCP elicitations follow the same persistence
+rule: only their shape and final action are recorded; answers, including
+secrets, go directly to the waiting provider and never enter the transcript.
 
 Two mapping rules keep the transcript honest about actions neither backend had
 when the vocabulary was written. A Codex item type the adapter doesn't
@@ -90,15 +97,24 @@ or viewed image, a compaction notice, a subagent) are mapped to their own
 event, from both backends, so the app never shows less than the terminal it
 replaced.
 
-Attachments are written into `.hearth/chats/attachments/<chatId>/` before the
-turn is queued, and each driver hands its backend a path: `localImage` /
-`mention` input items for Codex, base64 image blocks or an `Attached file:`
-line for the Agent SDK.
+Attachments are streamed into project-scoped staging with size limits, then
+atomically consumed into `.hearth/chats/attachments/<chatId>/` before the turn
+is queued. Each driver hands its backend a path: `localImage` / `mention` input
+items for Codex, base64 image blocks or an `Attached file:` line for the Agent
+SDK.
 
 Drivers are keyed by `(root, chatId)`, so two windows on one conversation share
-its agent and the driver only dies when the last of them leaves. Every turn and
-tool event is appended to `.hearth/chats/<id>.jsonl` as it streams; history
-survives anything the live driver doesn't. See [agents.md](./agents.md).
+its agent. A detached driver lingers for an hour for reload and sleep/wake
+reconnection, while transcript snapshot and live writes share one
+conversation lane so an event is replayed or delivered live exactly once.
+Every turn and tool event is appended to `.hearth/chats/<id>.jsonl` as it
+streams; history survives anything the live driver doesn't.
+
+“Continue in CLI” is an ownership transfer on that same lane. It rejects a
+running turn, stops and observes closure of the native driver, starts the PTY,
+and only then acknowledges the renderer. A lease keyed by the chat and exact
+PTY blocks native sends until that terminal exits, including while its socket
+is detached. See [agents.md](./agents.md).
 
 ## Skills
 

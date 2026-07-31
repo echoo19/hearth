@@ -45,6 +45,8 @@ export function workingLabel(message: Pick<ChatMessage, 'parts'>): string {
     // "Working" over a question the agent is blocked on would be a lie.
     case 'approval':
       return tail.decision === null ? 'Waiting for you' : 'Working';
+    case 'input':
+      return tail.resolution === null ? 'Waiting for you' : 'Working';
     default:
       return 'Working';
   }

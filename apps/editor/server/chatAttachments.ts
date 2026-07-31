@@ -1,8 +1,10 @@
 /**
  * Files the user drops into the composer.
  *
- * An attachment arrives base64-encoded on the `chat-send` frame, is written
- * into the conversation's own folder, and is then handed to whichever agent
+ * A current client streams an attachment to HTTP first and puts only an
+ * opaque, project-scoped token on the `chat-send` frame. Older clients may
+ * still send base64 here. Either form is written into the conversation's own
+ * folder before it is handed to whichever agent
  * answers — as a real path, never as a copy in the prompt:
  *
  *   .hearth/chats/attachments/<chatId>/<n>-<name>
@@ -19,7 +21,9 @@
  * and a payload that doesn't decode is dropped rather than half-written.
  */
 import { promises as fsp } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
+import type { Readable } from 'node:stream';
 
 /**
  * Where a conversation's attachments live, relative to the project root.
@@ -70,6 +74,11 @@ export interface AttachmentInput {
   data: string;
 }
 
+/** One already-streamed attachment as named on a current `chat-send` frame. */
+export interface StagedAttachmentInput {
+  uploadToken: string;
+}
+
 /** One attachment after it has been written down. */
 export interface ChatAttachment {
   name: string;
@@ -94,7 +103,7 @@ export interface StoredAttachment {
  * name, and a name that would be empty becomes `file`.
  */
 export function safeAttachmentName(raw: unknown): string {
-  const base = typeof raw === 'string' ? raw.split(/[\\/]/).pop() ?? '' : '';
+  const base = typeof raw === 'string' ? (raw.split(/[\\/]/).pop() ?? '') : '';
   const cleaned = base
     // Control characters and the set Windows refuses, so a name that came
     // from one machine is still a name on another.
@@ -152,9 +161,26 @@ export function parseAttachmentInputs(raw: unknown): AttachmentInput[] {
   return out;
 }
 
+/** Accept tokens only. Their metadata and project ownership live server-side. */
+export function parseStagedAttachmentInputs(raw: unknown): StagedAttachmentInput[] {
+  if (!Array.isArray(raw)) return [];
+  const out: StagedAttachmentInput[] = [];
+  for (const row of raw) {
+    if (out.length >= MAX_ATTACHMENTS) break;
+    if (!row || typeof row !== 'object') continue;
+    const token = (row as Record<string, unknown>).uploadToken;
+    if (typeof token === 'string' && /^[A-Za-z0-9_-]{32}$/.test(token)) out.push({ uploadToken: token });
+  }
+  return out;
+}
+
 /** The transcript's view of a saved attachment. */
 export function storedAttachment(attachment: ChatAttachment): StoredAttachment {
-  return { name: attachment.name, mimeType: attachment.mimeType, relPath: attachment.relPath };
+  return {
+    name: attachment.name,
+    mimeType: attachment.mimeType,
+    relPath: attachment.relPath,
+  };
 }
 
 /** Read a transcript's attachment list back, dropping rows that lost a field. */
@@ -208,4 +234,161 @@ export async function saveAttachments(
     }
   }
   return saved;
+}
+
+interface StagedUpload {
+  root: string;
+  path: string;
+  name: string;
+  mimeType: string;
+  bytes: number;
+  createdAt: number;
+}
+
+const UPLOADS_DIR = path.join('.hearth', 'chats', '.uploads');
+const UPLOAD_TTL_MS = 60 * 60 * 1000;
+
+/**
+ * In-memory ownership ledger for streamed uploads.
+ *
+ * A token is useful only in the server process that minted it, and only for
+ * the exact open project it was uploaded to. The filesystem path never comes
+ * from the client. Uploading writes `*.part`, then renames it into place;
+ * consuming similarly renames into the chat's permanent directory.
+ */
+export class ChatAttachmentStager {
+  private readonly uploads = new Map<string, StagedUpload>();
+
+  async stage(
+    root: string,
+    input: Readable,
+    metadata: {
+      name: unknown;
+      mimeType: unknown;
+      contentLength?: number | null;
+    },
+    now = Date.now(),
+  ): Promise<{
+    uploadToken: string;
+    name: string;
+    mimeType: string;
+    bytes: number;
+  }> {
+    await this.cleanupExpired(now);
+    if (
+      metadata.contentLength !== undefined &&
+      metadata.contentLength !== null &&
+      (!Number.isSafeInteger(metadata.contentLength) ||
+        metadata.contentLength <= 0 ||
+        metadata.contentLength > MAX_ATTACHMENT_BYTES)
+    ) {
+      throw new Error('Attachment is empty or too large.');
+    }
+    const token = randomBytes(24).toString('base64url');
+    const dir = path.join(root, UPLOADS_DIR);
+    const part = path.join(dir, `${token}.part`);
+    const staged = path.join(dir, token);
+    const name = safeAttachmentName(metadata.name);
+    const mimeType =
+      typeof metadata.mimeType === 'string' && metadata.mimeType.trim() !== ''
+        ? metadata.mimeType.slice(0, 200)
+        : 'application/octet-stream';
+    await fsp.mkdir(dir, { recursive: true });
+    const handle = await fsp.open(part, 'wx');
+    let bytes = 0;
+    try {
+      for await (const chunk of input) {
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+        bytes += buffer.length;
+        if (bytes > MAX_ATTACHMENT_BYTES) throw new Error('Attachment is too large.');
+        await handle.write(buffer);
+      }
+      if (bytes === 0) throw new Error('Attachment is empty.');
+      await handle.close();
+      await fsp.rename(part, staged);
+      this.uploads.set(token, {
+        root: path.resolve(root),
+        path: staged,
+        name,
+        mimeType,
+        bytes,
+        createdAt: now,
+      });
+      return { uploadToken: token, name, mimeType, bytes };
+    } catch (error) {
+      await handle.close().catch(() => undefined);
+      await fsp.rm(part, { force: true }).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async consume(
+    root: string,
+    chatId: string,
+    inputs: readonly StagedAttachmentInput[],
+    now = Date.now(),
+  ): Promise<ChatAttachment[]> {
+    await this.cleanupExpired(now);
+    const resolvedRoot = path.resolve(root);
+    const dir = path.join(resolvedRoot, ATTACHMENTS_DIR, chatId);
+    const selected: Array<[string, StagedUpload]> = [];
+    const seen = new Set<string>();
+    let total = 0;
+    for (const input of inputs.slice(0, MAX_ATTACHMENTS)) {
+      if (seen.has(input.uploadToken)) continue;
+      seen.add(input.uploadToken);
+      const upload = this.uploads.get(input.uploadToken);
+      if (!upload || upload.root !== resolvedRoot || total + upload.bytes > MAX_MESSAGE_BYTES) continue;
+      total += upload.bytes;
+      selected.push([input.uploadToken, upload]);
+    }
+    if (selected.length === 0) return [];
+    await fsp.mkdir(dir, { recursive: true });
+    const consumed: ChatAttachment[] = [];
+    for (const [index, [token, upload]] of selected.entries()) {
+      const fileName = attachmentFileName(now, index, upload.name);
+      const abs = path.join(dir, fileName);
+      try {
+        await fsp.rename(upload.path, abs);
+        this.uploads.delete(token);
+        consumed.push({
+          name: upload.name,
+          mimeType: upload.mimeType,
+          path: abs,
+          relPath: path.posix.join(ATTACHMENTS_DIR.split(path.sep).join('/'), chatId, fileName),
+          bytes: upload.bytes,
+        });
+      } catch {
+        // Keep the ledger row: a transient destination failure may be retried.
+      }
+    }
+    return consumed;
+  }
+
+  async discardProject(root: string): Promise<void> {
+    const resolvedRoot = path.resolve(root);
+    const removals: Promise<void>[] = [];
+    for (const [token, upload] of this.uploads) {
+      if (upload.root !== resolvedRoot) continue;
+      this.uploads.delete(token);
+      removals.push(fsp.rm(upload.path, { force: true }));
+    }
+    await Promise.allSettled(removals);
+    await fsp
+      .rm(path.join(resolvedRoot, UPLOADS_DIR), {
+        recursive: true,
+        force: true,
+      })
+      .catch(() => undefined);
+  }
+
+  async cleanupExpired(now = Date.now()): Promise<void> {
+    const removals: Promise<void>[] = [];
+    for (const [token, upload] of this.uploads) {
+      if (now - upload.createdAt < UPLOAD_TTL_MS) continue;
+      this.uploads.delete(token);
+      removals.push(fsp.rm(upload.path, { force: true }));
+    }
+    await Promise.allSettled(removals);
+  }
 }

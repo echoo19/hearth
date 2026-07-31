@@ -25,6 +25,7 @@
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { constants as fsConstants, promises as fsp } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { composeAgentInstructions, hearthFactsPrompt } from '../agentFacts.js';
 import {
@@ -37,32 +38,39 @@ import {
   type ChatAttachment,
   type ChatDriver,
   type ChatEvent,
+  type InputResponse,
+  type SlashCommandInfo,
 } from '../chat.js';
 import { hearthPtyEnv } from '../hearthShim.js';
 import { DEFAULT_PERMISSION_MODE, type PermissionMode } from '../permissionMode.js';
 import { readPersonalPrompt } from '../personalization.js';
-import { loginShellPathEnv } from '../shellEnv.js';
+import { projectShellEnv } from '../shellEnv.js';
 import { CLAUDE_SKILLS_DIR, skillSources, syncSkillsIntoProject } from '../skills.js';
 import {
   CODEX_CLIENT_INFO,
   CODEX_TESTED_VERSION,
+  classifyCodexServerRequest,
+  codexApprovalChoiceReply,
+  codexApprovalChoiceResolution,
   codexApprovalReply,
+  codexCurrentTimeReply,
+  codexElicitationReply,
   codexInputItems,
   codexPermissionParams,
   codexThreadInstructions,
   codexTurnOverrides,
+  codexUserInputReply,
   decodeRpcChunk,
-  describeQuestion,
   encodeRpc,
-  isApprovalRequest,
-  isQuestionRequest,
   mapCodexAccount,
-  mapCodexApproval,
+  mapCodexApprovalRequest,
   mapCodexLoginStart,
   mapCodexModels,
   mapCodexNotification,
+  mapCodexQuestionRequest,
   type CodexAccount,
   type CodexModelInfo,
+  type InputRequestDescriptor,
   type RpcMessage,
 } from './codexWire.js';
 
@@ -97,7 +105,7 @@ export const CODEX_INSTALL_HINT = 'npm i -g @openai/codex';
  * terminal solves, solved the same way.
  */
 async function codexEnv(projectRoot: string): Promise<NodeJS.ProcessEnv> {
-  const base = (await loginShellPathEnv()) ?? process.env;
+  const base = await projectShellEnv(projectRoot);
   const key = await resolveOpenAiKey(projectRoot);
   // Only ever ADD a key; never strip one codex already has of its own.
   return key ? { ...base, CODEX_API_KEY: key, OPENAI_API_KEY: key } : { ...base };
@@ -221,6 +229,7 @@ export class CodexConnection {
   private nextId = 0;
   private pendingRequests = new Map<number | string, { resolve: (r: unknown) => void; reject: (e: Error) => void }>();
   private closed = false;
+  private killing = false;
 
   constructor(
     private readonly onNotification: (method: string, params: unknown) => void,
@@ -263,13 +272,15 @@ export class CodexConnection {
   private fail(reason: string): void {
     if (this.closed) return;
     this.closed = true;
+    this.killing = false;
     for (const [, pending] of this.pendingRequests) pending.reject(new Error(reason));
     this.pendingRequests.clear();
     this.onClose(reason);
+    this.transport = null;
   }
 
   private write(line: string): void {
-    if (this.closed || !this.transport) return;
+    if (this.closed || this.killing || !this.transport) return;
     this.transport.write(line);
   }
 
@@ -280,6 +291,11 @@ export class CodexConnection {
   /** Reply to a server->client request. */
   respond(id: number | string, result: unknown): void {
     this.write(encodeRpc({ id, result }));
+  }
+
+  /** Reject a server->client request using JSON-RPC's standard error shape. */
+  respondError(id: number | string, code: number, message: string): void {
+    this.write(encodeRpc({ id, error: { code, message } }));
   }
 
   request(method: string, params?: unknown, timeoutMs = 60_000): Promise<unknown> {
@@ -315,10 +331,20 @@ export class CodexConnection {
   }
 
   kill(): void {
-    this.closed = true;
+    if (this.closed) {
+      this.transport?.kill();
+      this.transport = null;
+      return;
+    }
+    if (this.killing) return;
+    this.killing = true;
+    for (const [, pending] of this.pendingRequests) {
+      pending.reject(new Error('codex app-server was stopped'));
+    }
     this.pendingRequests.clear();
-    this.transport?.kill();
-    this.transport = null;
+    const transport = this.transport;
+    if (transport) transport.kill();
+    else this.fail('codex app-server was stopped');
   }
 }
 
@@ -339,7 +365,10 @@ async function withConnection<T>(
     // A short-lived connection never runs a turn, so nothing should ask it
     // for permission; deny anything that does rather than hanging.
     (id, method) => {
-      if (isApprovalRequest(method)) conn.respond(id, codexApprovalReply(method, 'deny'));
+      const kind = classifyCodexServerRequest(method);
+      if (kind === 'approval') conn.respond(id, codexApprovalReply(method, 'deny'));
+      else if (kind === 'current-time') conn.respond(id, codexCurrentTimeReply());
+      else conn.respondError(id, -32601, `Unsupported codex server request: ${method}`);
     },
     () => notifications.close(),
   );
@@ -451,7 +480,10 @@ export async function startCodexLogin(
       finish({ ok: p.success === true, error: p.error ?? undefined });
     },
     (id, method) => {
-      if (isApprovalRequest(method)) conn.respond(id, codexApprovalReply(method, 'deny'));
+      const kind = classifyCodexServerRequest(method);
+      if (kind === 'approval') conn.respond(id, codexApprovalReply(method, 'deny'));
+      else if (kind === 'current-time') conn.respond(id, codexCurrentTimeReply());
+      else conn.respondError(id, -32601, `Unsupported codex server request: ${method}`);
     },
     (reason) => finish({ ok: false, error: reason }),
   );
@@ -490,6 +522,10 @@ export class CodexDriver implements ChatDriver {
   private threadId: string | null = null;
   private turnId: string | null = null;
   private stopped = false;
+  private resolveClosed: () => void = () => undefined;
+  readonly closed: Promise<void> = new Promise((resolve) => {
+    this.resolveClosed = resolve;
+  });
   /**
    * Every folder a skill could be read from, resolved at bind. codex reports
    * no skill of its own (see `codexSkillRead`), so recognising one means
@@ -500,8 +536,22 @@ export class CodexDriver implements ChatDriver {
   private backlog: { text: string; agent?: AgentTurnOptions; attachments?: readonly ChatAttachment[] }[] = [];
   private ready = false;
   /** Inbound approval requests awaiting the user, by our approvalId. */
-  private approvals = new Map<string, { id: number | string; method: string }>();
+  private approvals = new Map<
+    string,
+    { id: number | string; method: string; decisionsById: ReadonlyMap<string, unknown> }
+  >();
   private nextApproval = 0;
+  /** Blocking questions and MCP elicitations awaiting an answer in Hearth. */
+  private inputs = new Map<string, { id: number | string; method: string }>();
+  private inputByRequestId = new Map<string, string>();
+  private nextInput = 0;
+  private projectRoot = '';
+  private chatId = '';
+  /** Preserves provider notification order while external images are staged. */
+  private notifications: Promise<void> = Promise.resolve();
+  private nextArtifact = 0;
+  private knownCommands = new Set(['compact', 'review']);
+  private commandListeners = new Set<(commands?: SlashCommandInfo[]) => void>();
 
   constructor(
     private readonly bin: string,
@@ -539,7 +589,9 @@ export class CodexDriver implements ChatDriver {
     return this.stopped;
   }
 
-  async start(_sessionId: string, projectRoot: string): Promise<void> {
+  async start(sessionId: string, projectRoot: string): Promise<void> {
+    this.chatId = sessionId;
+    this.projectRoot = projectRoot;
     // Hearth's own folder plus the two agents' folders we discover from, and
     // the project mirror the Agent SDK reads: a skill can be reached through
     // any of them, and a row that only recognised one root would go quiet
@@ -552,6 +604,7 @@ export class CodexDriver implements ChatDriver {
       (method, params) => this.handleNotification(method, params),
       (id, method, params) => this.handleServerRequest(id, method, params),
       (reason) => {
+        this.resolveClosed();
         if (this.stopped) return;
         // The pipe to the child is gone, so this conversation is over: say so,
         // then tear the driver down properly.
@@ -622,6 +675,7 @@ export class CodexDriver implements ChatDriver {
     // conversation, so it falls back to a fresh thread.
     let thread: unknown = null;
     let resumed = false;
+    let resumeFailed = false;
     if (this.resumeThreadId) {
       try {
         thread = await conn.request('thread/resume', {
@@ -630,11 +684,19 @@ export class CodexDriver implements ChatDriver {
           ...permissions,
         });
         resumed = thread !== null && thread !== undefined;
+        resumeFailed = !resumed;
       } catch {
         thread = null;
+        resumeFailed = true;
       }
     }
     if (!thread) {
+      if (resumeFailed) {
+        this.queue.push({
+          type: 'notice',
+          text: 'Codex could not resume the saved thread, so this continues in a fresh Codex thread.',
+        });
+      }
       thread = await conn.request('thread/start', {
         cwd: projectRoot,
         ...permissions,
@@ -657,17 +719,75 @@ export class CodexDriver implements ChatDriver {
     this.threadId = id;
     if (id !== this.resumeThreadId) this.onThreadId(id);
     this.ready = true;
-    for (const queued of this.backlog.splice(0)) this.startTurn(queued.text, queued.agent, queued.attachments);
+    for (const queued of this.backlog.splice(0)) this.send(queued.text, queued.agent, queued.attachments);
   }
 
   private handleNotification(method: string, params: unknown): void {
     if (this.stopped) return;
+    // SkillsChanged is an invalidation, not a replacement list. Codex's
+    // generated protocol has used both the schema name and JSON-RPC spelling
+    // across app-server releases, so accept either and re-read skills/list.
+    if (method === 'SkillsChanged' || method === 'skills/changed') {
+      for (const listener of this.commandListeners) listener();
+    }
+    if (method === 'serverRequest/resolved') {
+      const requestId = readServerRequestId(params);
+      if (requestId !== null) this.withdrawServerRequest(requestId);
+    }
     if (method === 'turn/started') {
       const p = (params ?? {}) as { turn?: { id?: string } };
       this.turnId = p.turn?.id ?? null;
     }
     if (method === 'turn/completed') this.turnId = null;
-    for (const event of mapCodexNotification(method, params, this.skillRoots)) this.queue.push(event);
+    const events = mapCodexNotification(method, params, this.skillRoots);
+    this.notifications = this.notifications
+      .then(async () => {
+        for (const event of events) {
+          if (event.type === 'image') {
+            try {
+              const staged = await this.stageImage(event.path);
+              this.queue.push({ ...event, path: staged });
+            } catch (err) {
+              this.queue.push({
+                type: 'notice',
+                text: `Could not stage a Codex artifact: ${(err as Error).message}`,
+              });
+            }
+          } else {
+            this.queue.push(event);
+          }
+        }
+      })
+      .catch((err: Error) => {
+        if (!this.stopped) this.queue.push({ type: 'notice', text: `Could not stage a Codex artifact: ${err.message}` });
+      });
+  }
+
+  private async stageImage(source: string): Promise<string> {
+    const absolute = source.startsWith(`~${path.sep}`) || source.startsWith('~/')
+      ? path.resolve(os.homedir(), source.slice(2))
+      : path.isAbsolute(source)
+        ? path.resolve(source)
+        : path.resolve(this.projectRoot, source);
+    const relative = path.relative(this.projectRoot, absolute);
+    if (relative !== '' && !relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative)) {
+      return relative.split(path.sep).join('/');
+    }
+    const stat = await fsp.stat(absolute);
+    if (!stat.isFile() || stat.size > 24 * 1024 * 1024) throw new Error('the image is not a bounded regular file');
+    const safeName = path.basename(absolute).replace(/[^A-Za-z0-9._-]/g, '_').slice(-120) || 'image';
+    const dir = path.join(this.projectRoot, '.hearth', 'chats', 'attachments', this.chatId);
+    await fsp.mkdir(dir, { recursive: true });
+    const name = `codex-${Date.now()}-${++this.nextArtifact}-${safeName}`;
+    const destination = path.join(dir, name);
+    const temp = `${destination}.part`;
+    try {
+      await fsp.copyFile(absolute, temp, fsConstants.COPYFILE_EXCL);
+      await fsp.rename(temp, destination);
+    } finally {
+      await fsp.rm(temp, { force: true }).catch(() => undefined);
+    }
+    return path.relative(this.projectRoot, destination).split(path.sep).join('/');
   }
 
   /**
@@ -678,20 +798,27 @@ export class CodexDriver implements ChatDriver {
   private handleServerRequest(id: number | string, method: string, params: unknown): void {
     const conn = this.conn;
     if (!conn) return;
-    if (isQuestionRequest(method)) {
-      // The agent is asking, not acting. Show what it asked before answering
-      // with nothing, so the user can reply in their next message instead of
-      // wondering why it carried on without them.
-      const asked = describeQuestion(params);
-      if (asked) this.queue.push({ type: 'notice', text: asked });
-      conn.respond(id, {});
+    const kind = classifyCodexServerRequest(method);
+    if (kind === 'current-time') {
+      conn.respond(id, codexCurrentTimeReply());
       return;
     }
-    if (!isApprovalRequest(method)) {
-      // An unknown server request still needs SOME reply; an empty result is
-      // the least-surprising one, and unknown methods are expected on a
-      // protocol that is still moving.
-      conn.respond(id, {});
+    if (kind === 'question') {
+      const inputId = `ci${++this.nextInput}`;
+      const request = mapCodexQuestionRequest(method, inputId, params);
+      if (!request || this.stopped) {
+        conn.respondError(id, -32602, `Invalid codex server request: ${method}`);
+        this.queue.push({ type: 'notice', text: 'Codex sent an interactive request Hearth could not safely display.' });
+        return;
+      }
+      this.inputs.set(inputId, { id, method });
+      this.inputByRequestId.set(requestKey(id), inputId);
+      this.queue.push(inputEvent(request));
+      return;
+    }
+    if (kind === 'unsupported') {
+      conn.respondError(id, -32601, `Unsupported codex server request: ${method}`);
+      this.queue.push({ type: 'notice', text: `Codex asked Hearth to handle an unsupported request: ${method}.` });
       return;
     }
     // `skip` means the user already answered, once, for the whole project. The
@@ -707,25 +834,76 @@ export class CodexDriver implements ChatDriver {
     // does: `sdkApprovalFor` returns null under `skip` and `askPermission`
     // allows. The two backends now behave the same way for the same reason.
     if (this.permissionMode === 'skip') {
-      conn.respond(id, codexApprovalReply(method, 'allow'));
+      const mapped = mapCodexApprovalRequest(method, params);
+      conn.respond(id, mappedDecision(mapped?.decisionsById, 'allow') ?? codexApprovalReply(method, 'allow'));
       return;
     }
-    const approval = mapCodexApproval(method, params);
-    if (!approval || this.stopped) {
+    const mapped = mapCodexApprovalRequest(method, params);
+    if (!mapped || this.stopped) {
       conn.respond(id, codexApprovalReply(method, 'deny'));
       return;
     }
     const approvalId = `c${++this.nextApproval}`;
-    this.approvals.set(approvalId, { id, method });
-    this.queue.push({ type: 'approval-request', approvalId, ...approval });
+    this.approvals.set(approvalId, { id, method, decisionsById: mapped.decisionsById });
+    const { decisions, ...approval } = mapped.approval;
+    this.queue.push({
+      type: 'approval-request',
+      approvalId,
+      ...approval,
+      ...(decisions && decisions.length > 0 ? { choices: decisions } : {}),
+    });
   }
 
-  approve(approvalId: string, decision: ApprovalDecision): void {
+  approve(approvalId: string, decision: ApprovalDecision, choiceId?: string): void {
     const pending = this.approvals.get(approvalId);
     if (!pending || !this.conn) return;
     this.approvals.delete(approvalId);
-    this.conn.respond(pending.id, codexApprovalReply(pending.method, decision));
-    this.queue.push({ type: 'approval-resolved', approvalId, decision });
+    this.conn.respond(
+      pending.id,
+      (choiceId ? codexApprovalChoiceReply(pending.decisionsById, choiceId) : null) ??
+        mappedDecision(pending.decisionsById, decision) ??
+        codexApprovalReply(pending.method, decision),
+    );
+    this.queue.push({
+      type: 'approval-resolved',
+      approvalId,
+      decision:
+        (choiceId ? codexApprovalChoiceResolution(pending.decisionsById, choiceId) : null) ?? decision,
+    });
+  }
+
+  answerInput(inputId: string, response: InputResponse): void {
+    const pending = this.inputs.get(inputId);
+    if (!pending || !this.conn) return;
+    this.inputs.delete(inputId);
+    this.inputByRequestId.delete(requestKey(pending.id));
+    if (pending.method === 'item/tool/requestUserInput') {
+      this.conn.respond(pending.id, codexUserInputReply(response.action === 'submit' ? (response.answers ?? {}) : {}));
+    } else {
+      this.conn.respond(
+        pending.id,
+        response.action === 'submit'
+          ? codexElicitationReply('accept', response.answers ?? {})
+          : codexElicitationReply('cancel'),
+      );
+    }
+    this.queue.push({ type: 'input-resolved', inputId, action: response.action });
+  }
+
+  private withdrawServerRequest(requestId: number | string): void {
+    const inputId = this.inputByRequestId.get(requestKey(requestId));
+    if (inputId) {
+      this.inputByRequestId.delete(requestKey(requestId));
+      this.inputs.delete(inputId);
+      this.queue.push({ type: 'input-resolved', inputId, action: 'withdrawn' });
+      return;
+    }
+    for (const [approvalId, pending] of this.approvals) {
+      if (requestKey(pending.id) !== requestKey(requestId)) continue;
+      this.approvals.delete(approvalId);
+      this.queue.push({ type: 'approval-resolved', approvalId, decision: 'withdrawn' });
+      return;
+    }
   }
 
   send(text: string, agent?: AgentTurnOptions, attachments?: readonly ChatAttachment[]): void {
@@ -734,7 +912,45 @@ export class CodexDriver implements ChatDriver {
       this.backlog.push({ text, agent, attachments });
       return;
     }
-    this.startTurn(text, agent, attachments);
+    const parsed = attachments?.length ? null : codexCommand(text);
+    const command = parsed && this.knownCommands.has(parsed.name) ? parsed : null;
+    if (command?.name === 'compact') {
+      if (!this.conn || !this.threadId) return;
+      void this.conn
+        .request('thread/compact/start', { threadId: this.threadId })
+        .then(() => this.queue.push({ type: 'turn-complete' }))
+        .catch((err: Error) => this.queue.push({ type: 'error', message: err.message }));
+      return;
+    }
+    if (command?.name === 'review') {
+      if (!this.conn || !this.threadId) return;
+      const target = command.args
+        ? { type: 'baseBranch', branch: command.args }
+        : { type: 'uncommittedChanges' };
+      void this.conn
+        .request('review/start', { threadId: this.threadId, target, delivery: 'inline' })
+        .catch((err: Error) => this.queue.push({ type: 'error', message: err.message }));
+      return;
+    }
+    this.startTurn(command ? `$${command.name}${command.args ? ` ${command.args}` : ''}` : text, agent, attachments);
+  }
+
+  async commands(): Promise<SlashCommandInfo[]> {
+    if (!this.conn || !this.projectRoot) return [];
+    try {
+      const commands = codexSlashCommands(
+        await this.conn.request('skills/list', { cwds: [this.projectRoot], forceReload: true }, 15_000),
+      );
+      this.knownCommands = new Set(commands.map((command) => command.name));
+      return commands;
+    } catch {
+      return codexSlashCommands(null);
+    }
+  }
+
+  onCommandsChanged(listener: (commands?: SlashCommandInfo[]) => void): () => void {
+    this.commandListeners.add(listener);
+    return () => this.commandListeners.delete(listener);
   }
 
   private startTurn(text: string, agent?: AgentTurnOptions, attachments?: readonly ChatAttachment[]): void {
@@ -773,6 +989,7 @@ export class CodexDriver implements ChatDriver {
   }
 
   stop(): void {
+    if (this.stopped) return;
     this.stopped = true;
     // Answer anything still blocking codex so the child can unwind cleanly
     // rather than sitting on a paused turn while we kill it. Codex itself is
@@ -783,13 +1000,27 @@ export class CodexDriver implements ChatDriver {
     // is only ever taken down by its `approval-resolved`, so the resolution
     // still goes onto the queue before the close.
     for (const [approvalId, pending] of this.approvals) {
-      this.conn?.respond(pending.id, codexApprovalReply(pending.method, 'deny'));
+      this.conn?.respond(
+        pending.id,
+        mappedDecision(pending.decisionsById, 'deny') ?? codexApprovalReply(pending.method, 'deny'),
+      );
       this.queue.push({ type: 'approval-resolved', approvalId, decision: 'withdrawn' });
     }
     this.approvals.clear();
+    for (const [inputId, pending] of this.inputs) {
+      this.conn?.respond(
+        pending.id,
+        pending.method === 'item/tool/requestUserInput'
+          ? codexUserInputReply({})
+          : codexElicitationReply('cancel'),
+      );
+      this.queue.push({ type: 'input-resolved', inputId, action: 'withdrawn' });
+    }
+    this.inputs.clear();
+    this.inputByRequestId.clear();
     this.conn?.kill();
     this.conn = null;
-    this.queue.close();
+    void this.notifications.finally(() => this.queue.close());
   }
 }
 
@@ -799,6 +1030,94 @@ function readThreadId(result: unknown): string | null {
   const thread = record?.thread;
   const id = thread && typeof thread === 'object' ? (thread as Record<string, unknown>).id : record?.threadId;
   return typeof id === 'string' && id !== '' ? id : null;
+}
+
+function requestKey(id: number | string): string {
+  return `${typeof id}:${String(id)}`;
+}
+
+function readServerRequestId(params: unknown): number | string | null {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return null;
+  const record = params as Record<string, unknown>;
+  const id = record.requestId ?? record.id;
+  return typeof id === 'number' || typeof id === 'string' ? id : null;
+}
+
+function inputEvent(request: InputRequestDescriptor): ChatEvent {
+  return {
+    type: 'input-request',
+    inputId: request.inputId,
+    ...(request.title ? { title: request.title } : {}),
+    ...(request.description ? { description: request.description } : {}),
+    questions: request.questions,
+    ...(request.allowCancel === undefined ? {} : { allowCancel: request.allowCancel }),
+    ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
+    ...(request.externalAction === undefined ? {} : { externalAction: request.externalAction }),
+  };
+}
+
+function codexCommand(text: string): { name: string; args: string } | null {
+  const match = text.trim().match(/^\/([^\s]+)(?:\s+([\s\S]*))?$/);
+  if (!match) return null;
+  return { name: match[1], args: (match[2] ?? '').trim() };
+}
+
+/** Runtime command catalogue: native app-server acts plus every enabled skill. */
+export function codexSlashCommands(raw: unknown): SlashCommandInfo[] {
+  const commands: SlashCommandInfo[] = [
+    { name: 'compact', description: 'Compact this Codex thread', source: 'builtin' },
+    {
+      name: 'review',
+      description: 'Review uncommitted changes, or changes against a base branch',
+      argumentHint: '[base branch]',
+      source: 'builtin',
+    },
+  ];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return commands;
+  const data = (raw as Record<string, unknown>).data;
+  if (!Array.isArray(data)) return commands;
+  const seen = new Set(commands.map((command) => command.name));
+  for (const entry of data) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const skills = (entry as Record<string, unknown>).skills;
+    if (!Array.isArray(skills)) continue;
+    for (const skill of skills) {
+      if (!skill || typeof skill !== 'object' || Array.isArray(skill)) continue;
+      const record = skill as Record<string, unknown>;
+      const name = typeof record.name === 'string' ? record.name.trim() : '';
+      if (!name || record.enabled === false || seen.has(name)) continue;
+      seen.add(name);
+      commands.push({
+        name,
+        description:
+          (typeof record.description === 'string' && record.description.trim()) ||
+          (typeof record.shortDescription === 'string' && record.shortDescription.trim()) ||
+          'Run this Codex skill',
+        source: 'skill',
+      });
+    }
+  }
+  return commands;
+}
+
+/**
+ * Hearth's shared approval UI currently exposes allow/deny. Preserve Codex's
+ * exact server-authored scalar when one is available; richer choices remain
+ * server-only until the shared approval contract grows a choice id.
+ */
+function mappedDecision(
+  decisionsById: ReadonlyMap<string, unknown> | undefined,
+  decision: ApprovalDecision,
+): { decision: unknown } | null {
+  if (!decisionsById) return null;
+  const wanted = decision === 'allow' ? ['accept', 'acceptForSession'] : ['decline', 'cancel'];
+  for (const expected of wanted) {
+    for (const [choiceId, wire] of decisionsById) {
+      if (wire !== expected) continue;
+      return codexApprovalChoiceReply(decisionsById, choiceId);
+    }
+  }
+  return null;
 }
 
 /**

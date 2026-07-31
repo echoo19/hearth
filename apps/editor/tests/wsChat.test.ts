@@ -12,20 +12,59 @@ import http from 'node:http';
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import WebSocket from 'ws';
 import { createProjectServerContext, type ProjectServerContext } from '../server/projectServer';
 import { attachWebSocket, type WsFrame } from '../server/ws';
-import { EventQueue, type AgentTurnOptions, type ChatDriver, type ChatEvent } from '../server/chat';
+import {
+  EventQueue,
+  type AgentTurnOptions,
+  type ChatDriver,
+  type ChatEvent,
+  type InputResponse,
+  type SlashCommandInfo,
+  writeAppSettings,
+} from '../server/chat';
 import { deleteChat, getChat, listChats, readTranscript } from '../server/chatStore';
 import { writePermissionMode, type PermissionMode } from '../server/permissionMode';
+import type { ChatAttachment } from '../server/chatAttachments';
+import type { PtyBackend, PtyHandle } from '../server/ptyManager';
+
+class FakePtyHandle implements PtyHandle {
+  writes: string[] = [];
+  private exitHandlers: Array<(event: { exitCode: number }) => void> = [];
+  onData(_handler: (data: string) => void): void {}
+  onExit(handler: (event: { exitCode: number }) => void): void {
+    this.exitHandlers.push(handler);
+  }
+  onError(_handler: (error: Error) => void): void {}
+  write(data: string): void {
+    this.writes.push(data);
+  }
+  resize(_cols: number, _rows: number): void {}
+  kill(): void {}
+  exit(code = 0): void {
+    for (const handler of this.exitHandlers) handler({ exitCode: code });
+  }
+}
+
+class FakePtyBackend implements PtyBackend {
+  handles: FakePtyHandle[] = [];
+  spawn(): PtyHandle {
+    const handle = new FakePtyHandle();
+    this.handles.push(handle);
+    return handle;
+  }
+}
 
 /** A driver that answers every turn with a fixed script, and records its life. */
 class ScriptedDriver implements ChatDriver {
-  readonly kind = 'stub' as const;
+  kind: ChatDriver['kind'] = 'stub';
   queue = new EventQueue<ChatEvent>();
   sent: string[] = [];
   /** The per-turn model/effort choice each send carried, in order. */
   sentAgents: (AgentTurnOptions | undefined)[] = [];
+  sentAttachments: (readonly ChatAttachment[])[] = [];
   /** The choice this driver was BOUND with (decides which backend answers). */
   boundAgent: AgentTurnOptions | null | undefined;
   /** The permission mode this driver was BOUND with. Fixed for its lifetime. */
@@ -54,6 +93,9 @@ class ScriptedDriver implements ChatDriver {
   private openTeardown: (() => void) | null = null;
   /** Approvals raised and not yet answered, exactly as the real drivers hold them. */
   private pending = new Set<string>();
+  readonly inputAnswers: Array<{ inputId: string; response: InputResponse }> = [];
+  commandList: SlashCommandInfo[] = [];
+  private commandListeners = new Set<(commands?: SlashCommandInfo[]) => void>();
 
   get events(): AsyncIterable<ChatEvent> {
     return this.queue;
@@ -93,10 +135,11 @@ class ScriptedDriver implements ChatDriver {
     this.openTeardown = null;
   }
 
-  send(text: string, agent?: AgentTurnOptions): void {
+  send(text: string, agent?: AgentTurnOptions, attachments?: readonly ChatAttachment[]): void {
     if (this.finished) return; // a dead backend answers nothing, silently
     this.sent.push(text);
     this.sentAgents.push(agent);
+    this.sentAttachments.push(attachments ?? []);
     if (this.silent) return;
     this.queue.push({ type: 'text-delta', text: `echo:${text}` });
     this.queue.push({ type: 'done' });
@@ -105,12 +148,50 @@ class ScriptedDriver implements ChatDriver {
   /** Ask the windows for permission. The turn is blocked until it is answered. */
   ask(approvalId: string, title: string): void {
     this.pending.add(approvalId);
-    this.queue.push({ type: 'approval-request', approvalId, kind: 'command', title, detail: 'rm -rf /tmp/x' });
+    this.queue.push({
+      type: 'approval-request',
+      approvalId,
+      kind: 'command',
+      title,
+      detail: 'rm -rf /tmp/x',
+    });
   }
 
   approve(approvalId: string, decision: 'allow' | 'deny'): void {
     if (!this.pending.delete(approvalId)) return;
     this.queue.push({ type: 'approval-resolved', approvalId, decision });
+  }
+
+  askInput(inputId: string): void {
+    this.queue.push({
+      type: 'input-request',
+      inputId,
+      questions: [{ id: 'name', label: 'Name', type: 'text', required: true }],
+      allowCancel: true,
+    });
+  }
+
+  answerInput(inputId: string, response: InputResponse): void {
+    this.inputAnswers.push({ inputId, response });
+    this.queue.push({
+      type: 'input-resolved',
+      inputId,
+      action: response.action,
+    });
+  }
+
+  async commands(): Promise<SlashCommandInfo[]> {
+    return this.commandList;
+  }
+
+  onCommandsChanged(listener: (commands?: SlashCommandInfo[]) => void): () => void {
+    this.commandListeners.add(listener);
+    return () => this.commandListeners.delete(listener);
+  }
+
+  replaceCommands(commands: SlashCommandInfo[]): void {
+    this.commandList = commands;
+    for (const listener of this.commandListeners) listener(commands);
   }
 
   /**
@@ -144,7 +225,11 @@ class ScriptedDriver implements ChatDriver {
       // recorded as `withdrawn` rather than as a Deny nobody pressed — and the
       // windows are told so before the stream ends. See AgentSdkDriver.stop.
       for (const approvalId of this.pending) {
-        this.queue.push({ type: 'approval-resolved', approvalId, decision: 'withdrawn' });
+        this.queue.push({
+          type: 'approval-resolved',
+          approvalId,
+          decision: 'withdrawn',
+        });
       }
       this.pending.clear();
       this.openGate?.(); // a bind held open must not outlive the driver
@@ -171,6 +256,7 @@ let previousHome: string | undefined;
 let nextBindFails: string | null = null;
 /** Run against the NEXT driver the server binds, before it is started. */
 let nextDriverSetup: ((driver: ScriptedDriver) => void) | null = null;
+const ptyBackend = new FakePtyBackend();
 /** The options the LAST bind carried — the resume/persist seam under test. */
 let lastDriverOptions:
   | {
@@ -181,9 +267,9 @@ let lastDriverOptions:
   | undefined;
 
 /** Poll until `ready` is true, so a test waits on a fact rather than a delay. */
-async function until(ready: () => boolean, timeoutMs = 4000): Promise<void> {
+async function until(ready: () => boolean | Promise<boolean>, timeoutMs = 4000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (!ready()) {
+  while (!(await ready())) {
     if (Date.now() > deadline) throw new Error('timed out waiting');
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
@@ -229,15 +315,21 @@ beforeAll(async () => {
   // than whatever the person running the suite has chosen.
   previousHome = process.env.HEARTH_HOME;
   process.env.HEARTH_HOME = path.join(tmp, 'hearth-home');
-  ctx = createProjectServerContext({ recentsFile: path.join(tmp, 'recents.json'), repoRoot: tmp });
+  ctx = createProjectServerContext({
+    recentsFile: path.join(tmp, 'recents.json'),
+    repoRoot: tmp,
+  });
   // The /api/ws upgrade only accepts roots this server has been asked to open,
   // so a suite that connects has to open the folder first, exactly as the app
   // does before it connects its socket.
   await ctx.openWorkspace(root);
   server = http.createServer();
-  attachWebSocket(server, ctx, undefined, undefined, {
+  attachWebSocket(server, ctx, ptyBackend, async () => ({ ...process.env, SHELL: '/bin/sh' }), {
+    chatDetachLingerMs: 120,
     createChatDriver: async (_root, options) => {
       const driver = new ScriptedDriver();
+      if (options?.agent?.provider === 'anthropic') driver.kind = 'agent-sdk';
+      if (options?.agent?.provider === 'openai') driver.kind = 'codex';
       lastDriverOptions = options;
       driver.boundAgent = options?.agent;
       driver.boundPermissionMode = options?.permissionMode;
@@ -266,7 +358,12 @@ afterAll(async () => {
   // here, because unlinking an open file is allowed; on Windows the same race
   // is `ENOTEMPTY: rmdir ...\.hearth\chats`, which failed the release build
   // with all 4493 tests passing and nothing wrong with any of them.
-  await fsp.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  await fsp.rm(tmp, {
+    recursive: true,
+    force: true,
+    maxRetries: 20,
+    retryDelay: 100,
+  });
 });
 
 describe('chat channel', () => {
@@ -295,6 +392,28 @@ describe('chat channel', () => {
     });
     socket.send(JSON.stringify({ type: 'chat-send', text: 'hello' }));
     expect(await done).toEqual([{ type: 'text-delta', text: 'echo:hello' }, { type: 'done' }]);
+    socket.close();
+  });
+
+  it('consumes streamed upload tokens and hands the saved original path to the driver', async () => {
+    drivers = [];
+    const original = Buffer.from('original screenshot bytes');
+    const upload = await ctx.chatAttachments.stage(root, Readable.from(original), {
+      name: 'shot.png',
+      mimeType: 'image/png',
+    });
+    const socket = await connect();
+    socket.send(
+      JSON.stringify({
+        type: 'chat-send',
+        text: 'inspect this',
+        attachments: [{ uploadToken: upload.uploadToken }],
+      }),
+    );
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    const [attachment] = drivers[0].sentAttachments[0];
+    expect(await fsp.readFile(attachment.path)).toEqual(original);
+    expect(attachment.path).toContain(path.join('.hearth', 'chats', 'attachments'));
     socket.close();
   });
 
@@ -335,7 +454,13 @@ describe('chat channel', () => {
   it('drops an unusable agent field rather than failing the turn', async () => {
     drivers = [];
     const socket = await connect();
-    socket.send(JSON.stringify({ type: 'chat-send', text: 'still works', agent: { provider: 'nobody', effort: 9 } }));
+    socket.send(
+      JSON.stringify({
+        type: 'chat-send',
+        text: 'still works',
+        agent: { provider: 'nobody', effort: 9 },
+      }),
+    );
     await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
     expect(drivers[0].boundAgent).toBeNull();
     expect(drivers[0].sent).toEqual(['still works']);
@@ -376,14 +501,172 @@ describe('chat channel', () => {
     socket.close();
   });
 
-  it('stops the driver when the socket drops — a conversation is not resumable', async () => {
+  it('keeps the driver alive across a socket drop, reattaches it, then expires it', async () => {
     drivers = [];
     const socket = await connect();
     socket.send(JSON.stringify({ type: 'chat-send', text: 'hi' }));
-    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    const done = await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    const chatId = done.type === 'chat-event' ? done.chatId : '';
     socket.close();
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(drivers[0].stopped).toBe(false);
+
+    const resumed = await connect();
+    resumed.send(JSON.stringify({ type: 'chat-open', chatId }));
+    await nextFrame(resumed, (frame) => frame.type === 'chat-opened' && frame.chat.id === chatId);
+    resumed.send(JSON.stringify({ type: 'chat-send', text: 'again' }));
+    await nextFrame(resumed, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    expect(drivers).toHaveLength(1);
+    expect(drivers[0].sent).toEqual(['hi', 'again']);
+
+    resumed.close();
+    await until(() => drivers[0].stopped);
     expect(drivers[0].stopped).toBe(true);
+  });
+
+  it('returns the live driver command catalogue on request', async () => {
+    drivers = [];
+    nextDriverSetup = (driver) => {
+      driver.commandList = [
+        {
+          name: 'ultracode',
+          description: 'Use dynamic orchestration',
+          source: 'builtin',
+        },
+      ];
+    };
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'bind' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+
+    const commands = nextFrame(socket, (frame) => frame.type === 'chat-commands');
+    socket.send(JSON.stringify({ type: 'chat-commands-list' }));
+    expect(await commands).toMatchObject({
+      type: 'chat-commands',
+      commands: [{ name: 'ultracode', source: 'builtin' }],
+    });
+    socket.close();
+  });
+
+  it('pushes provider command changes to every window watching that live driver', async () => {
+    drivers = [];
+    const first = await connect();
+    first.send(JSON.stringify({ type: 'chat-send', text: 'bind' }));
+    const done = await nextFrame(first, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    const chatId = done.type === 'chat-event' ? done.chatId! : '';
+
+    const second = await connect();
+    second.send(JSON.stringify({ type: 'chat-open', chatId }));
+    await nextFrame(second, (frame) => frame.type === 'chat-opened' && frame.chat.id === chatId);
+
+    const firstUpdate = nextFrame(first, (frame) => frame.type === 'chat-commands');
+    const secondUpdate = nextFrame(second, (frame) => frame.type === 'chat-commands');
+    drivers[0].replaceCommands([
+      { name: 'ultracode', description: 'Use dynamic orchestration', source: 'builtin' },
+    ]);
+
+    expect(await firstUpdate).toMatchObject({ chatId, commands: [{ name: 'ultracode' }] });
+    expect(await secondUpdate).toMatchObject({ chatId, commands: [{ name: 'ultracode' }] });
+    first.close();
+    second.close();
+  });
+
+  it('drops a late command reply from the driver replaced by a provider rebind', async () => {
+    drivers = [];
+    let resolveOld!: (commands: SlashCommandInfo[]) => void;
+    nextDriverSetup = (driver) => {
+      driver.commands = () =>
+        new Promise<SlashCommandInfo[]>((resolve) => {
+          resolveOld = resolve;
+        });
+    };
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'first' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+
+    socket.send(JSON.stringify({ type: 'chat-commands-list' }));
+    socket.send(
+      JSON.stringify({
+        type: 'chat-send',
+        text: 'switch',
+        agent: { provider: 'openai', model: 'new-provider-model' },
+      }),
+    );
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    expect(drivers).toHaveLength(2);
+
+    const stale = nextFrame(socket, (frame) => frame.type === 'chat-commands', 100);
+    resolveOld([{ name: 'old-provider', description: 'Stale', source: 'builtin' }]);
+    await expect(stale).rejects.toThrow('timed out waiting for frame');
+    socket.close();
+  });
+
+  it('hands a provider session to its CLI only after native teardown and leases it until PTY exit', async () => {
+    drivers = [];
+    ptyBackend.handles = [];
+    const fakeClaude = path.join(tmp, 'claude-test');
+    await fsp.writeFile(fakeClaude, '#!/bin/sh\nexit 0\n');
+    await fsp.chmod(fakeClaude, 0o755);
+    await writeAppSettings(root, { claudePath: fakeClaude });
+    nextDriverSetup = (driver) => driver.holdTeardown();
+
+    const socket = await connect();
+    socket.send(
+      JSON.stringify({
+        type: 'chat-send',
+        text: 'one',
+        agent: { provider: 'anthropic' },
+      }),
+    );
+    const doneFrame = await nextFrame(
+      socket,
+      (frame) => frame.type === 'chat-event' && frame.event.type === 'done',
+    );
+    if (doneFrame.type !== 'chat-event' || !doneFrame.chatId) throw new Error('wrong frame');
+    lastDriverOptions?.onSessionId?.('claude-session-123');
+    await until(async () => (await getChat(root, doneFrame.chatId!))?.claudeSessionId === 'claude-session-123');
+
+    const ready = nextFrame(
+      socket,
+      (frame) => frame.type === 'chat-handoff-ready' && frame.requestId === 'handoff-1',
+    );
+    socket.send(
+      JSON.stringify({
+        type: 'chat-handoff-cli',
+        requestId: 'handoff-1',
+        sessionId: 'terminal-session-123',
+      }),
+    );
+    await until(() => drivers[0].stopped);
+    expect(ptyBackend.handles).toHaveLength(0);
+
+    drivers[0].releaseTeardown();
+    await expect(ready).resolves.toMatchObject({
+      type: 'chat-handoff-ready',
+      provider: 'anthropic',
+      label: 'Claude Code',
+    });
+    expect(ptyBackend.handles).toHaveLength(1);
+    expect(ptyBackend.handles[0].writes.join('')).toContain('--resume=');
+    expect(ptyBackend.handles[0].writes.join('')).toContain('claude-session-123');
+    expect(ptyBackend.handles[0].writes.join('')).toContain('--permission-mode acceptEdits');
+
+    const leased = nextFrame(
+      socket,
+      (frame) =>
+        frame.type === 'chat-event' &&
+        frame.event.type === 'error' &&
+        frame.event.message.includes('embedded CLI'),
+    );
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'must not overlap' }));
+    await leased;
+    expect(drivers).toHaveLength(1);
+
+    ptyBackend.handles[0].exit();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'native again' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    expect(drivers).toHaveLength(2);
+    socket.close();
   });
 });
 
@@ -468,14 +751,21 @@ describe('a model or provider change mid-conversation', () => {
     expect(drivers).toHaveLength(1); // the same choice again is not a change
 
     socket.send(
-      JSON.stringify({ type: 'chat-send', text: 'three', agent: { provider: 'anthropic', model: 'claude-b' } }),
+      JSON.stringify({
+        type: 'chat-send',
+        text: 'three',
+        agent: { provider: 'anthropic', model: 'claude-b' },
+      }),
     );
     await nextFrame(socket, done);
     expect(drivers).toHaveLength(2);
     expect(drivers[0].stopped).toBe(true);
     // The turn that switched is answered by the NEW driver, bound with the
     // new choice — not lost, and not delivered to the one already torn down.
-    expect(drivers[1].boundAgent).toEqual({ provider: 'anthropic', model: 'claude-b' });
+    expect(drivers[1].boundAgent).toEqual({
+      provider: 'anthropic',
+      model: 'claude-b',
+    });
     expect(drivers[1].sent).toEqual(['three']);
     expect(drivers[0].sent).toEqual(['one', 'two']);
     socket.close();
@@ -514,12 +804,30 @@ describe('a model or provider change mid-conversation', () => {
   it('rebinds when the provider moves, even with no model named', async () => {
     drivers = [];
     const socket = await connect();
-    socket.send(JSON.stringify({ type: 'chat-send', text: 'one', agent: { provider: 'anthropic', model: 'claude-a' } }));
+    socket.send(
+      JSON.stringify({
+        type: 'chat-send',
+        text: 'one',
+        agent: { provider: 'anthropic', model: 'claude-a' },
+      }),
+    );
     await nextFrame(socket, done);
-    socket.send(JSON.stringify({ type: 'chat-send', text: 'two', agent: { provider: 'openai' } }));
-    await nextFrame(socket, done);
+    socket.send(
+      JSON.stringify({
+        type: 'chat-send',
+        text: 'two',
+        agent: { provider: 'openai' },
+      }),
+    );
+    const finished = await nextFrame(socket, done);
     expect(drivers).toHaveLength(2);
-    expect(drivers[1].sent).toEqual(['two']);
+    expect(drivers[1].sent[0]).toContain('.hearth/chats/');
+    expect(drivers[1].sent[0]).toContain('two');
+    if (finished.type !== 'chat-event' || !finished.chatId) throw new Error('wrong frame');
+    const chatId = finished.chatId;
+    const records = await readTranscript(root, chatId);
+    expect(records.filter((record) => record.role === 'user').map((record) => record.text)).toEqual(['one', 'two']);
+    expect((await getChat(root, chatId))?.lastProvider).toBe('openai');
     socket.close();
   });
 });
@@ -692,8 +1000,12 @@ describe('chat history', () => {
 
     expect(a.chat.id).not.toBe(b.chat.id);
     expect(drivers).toHaveLength(2);
-    expect((await readTranscript(root, a.chat.id))[0]).toMatchObject({ text: 'in a' });
-    expect((await readTranscript(root, b.chat.id))[0]).toMatchObject({ text: 'in b' });
+    expect((await readTranscript(root, a.chat.id))[0]).toMatchObject({
+      text: 'in a',
+    });
+    expect((await readTranscript(root, b.chat.id))[0]).toMatchObject({
+      text: 'in b',
+    });
     socket.close();
   });
 });
@@ -720,10 +1032,7 @@ describe('a conversation whose backend dies', () => {
     socket.send(JSON.stringify({ type: 'chat-send', text: 'hello' }));
     await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
 
-    const failed = nextFrame(
-      socket,
-      (frame) => frame.type === 'chat-event' && frame.event.type === 'error',
-    );
+    const failed = nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'error');
     drivers[0].die('codex app-server exited');
     const frame = await failed;
     if (frame.type !== 'chat-event' || frame.event.type !== 'error') throw new Error('wrong frame');
@@ -753,9 +1062,9 @@ describe('a conversation whose backend dies', () => {
     expect(drivers[1].sent).toEqual(['two']);
     // And every word of it is on disk, in order, under the right chat.
     const records = await readTranscript(root, opened.chat.id);
-    const said = records.filter((record) => record.role === 'user').map((record) =>
-      record.role === 'user' ? record.text : '',
-    );
+    const said = records
+      .filter((record) => record.role === 'user')
+      .map((record) => (record.role === 'user' ? record.text : ''));
     expect(said).toEqual(['one', 'two']);
     socket.close();
   });
@@ -837,9 +1146,7 @@ describe('a backend that refuses to bind', () => {
       { role: 'user', text: 'a top-down space shooter' },
     ]);
     // And it named the conversation, so the sidebar shows what was asked.
-    expect((await listChats(root)).find((chat) => chat.id === opened.chat.id)?.title).toBe(
-      'a top-down space shooter',
-    );
+    expect((await listChats(root)).find((chat) => chat.id === opened.chat.id)?.title).toBe('a top-down space shooter');
     socket.close();
   });
 });
@@ -921,7 +1228,13 @@ describe('two windows sending while the backend binds', () => {
       mimeType: 'image/png',
       data: Buffer.from('pretend this is a screenshot').toString('base64'),
     };
-    a.send(JSON.stringify({ type: 'chat-send', text: 'FROM-A', attachments: [picture] }));
+    a.send(
+      JSON.stringify({
+        type: 'chat-send',
+        text: 'FROM-A',
+        attachments: [picture],
+      }),
+    );
     await until(() => drivers.length === 1);
     // B types into the same chat while that is still in flight.
     b.send(JSON.stringify({ type: 'chat-send', text: 'FROM-B' }));
@@ -943,6 +1256,48 @@ describe('two windows sending while the backend binds', () => {
     expect(said).toEqual(['FROM-A', 'FROM-B']);
     a.close();
     b.close();
+  });
+});
+
+describe('structured agent input', () => {
+  it('routes an answer to the live driver without persisting its values', async () => {
+    drivers = [];
+    nextDriverSetup = (driver) => {
+      driver.silent = true;
+    };
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'ask me' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-ready');
+    await until(() => drivers.length === 1 && drivers[0].sent.length === 1);
+
+    const request = nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'input-request');
+    drivers[0].askInput('input-1');
+    await request;
+
+    const resolved = nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'input-resolved');
+    socket.send(
+      JSON.stringify({
+        type: 'chat-input-response',
+        inputId: 'input-1',
+        action: 'submit',
+        answers: { name: 'transient-secret' },
+      }),
+    );
+    await resolved;
+
+    expect(drivers[0].inputAnswers).toEqual([
+      {
+        inputId: 'input-1',
+        response: { action: 'submit', answers: { name: 'transient-secret' } },
+      },
+    ]);
+    const transcript = JSON.stringify(await readTranscript(root, opened.chat.id));
+    expect(transcript).not.toContain('transient-secret');
+    expect(transcript).toContain('"action":"submit"');
+    socket.close();
   });
 });
 
@@ -993,7 +1348,11 @@ describe('stopping a conversation with an approval on screen', () => {
     // exactly as stuck as dropping it did. And it is a WITHDRAWAL: the person
     // pressed Stop, not Deny, and the record must not claim otherwise.
     expect(seen.map((event) => event.type)).toEqual(['approval-resolved', 'turn-complete']);
-    expect(seen[0]).toEqual({ type: 'approval-resolved', approvalId: 'a1', decision: 'withdrawn' });
+    expect(seen[0]).toEqual({
+      type: 'approval-resolved',
+      approvalId: 'a1',
+      decision: 'withdrawn',
+    });
 
     // And what the window saw live is what it finds on reload: no request in
     // the transcript is left without its answer. Each of those frames is sent

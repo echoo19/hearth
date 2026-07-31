@@ -1,6 +1,10 @@
 import { spawn } from 'node:child_process';
+import { access } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const LOGIN_SHELL_TIMEOUT_MS = 10_000;
+const PROJECT_SHELL_TIMEOUT_MS = 10_000;
+const PROJECT_SHELL_KILL_GRACE_MS = 250;
 const BEGIN = '__HEARTH_SHELL_ENV_BEGIN__';
 const END = '__HEARTH_SHELL_ENV_END__';
 const COMMAND = `echo ${BEGIN}; /usr/bin/env; echo ${END}`;
@@ -79,4 +83,103 @@ export function loginShellPathEnv(): Promise<NodeJS.ProcessEnv | null> {
   if (process.platform === 'win32') return Promise.resolve(null);
   cached ??= fetchLoginShellPathEnv().catch(() => null);
   return cached;
+}
+
+function readProjectEnv(root: string, env: NodeJS.ProcessEnv): Promise<NodeJS.ProcessEnv | null> {
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn('direnv', ['exec', root, 'env', '-0'], {
+        cwd: root,
+        detached: true,
+        env,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+    } catch {
+      resolve(null);
+      return;
+    }
+    const chunks: Buffer[] = [];
+    let settled = false;
+    let timedOut = false;
+    let killEscalated = false;
+    let closed = false;
+    let failed = false;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (value: NodeJS.ProcessEnv | null): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+      resolve(value);
+    };
+    const killProcessGroup = (signal: NodeJS.Signals): void => {
+      if (child.pid === undefined) return;
+      try {
+        process.kill(-child.pid, signal);
+      } catch {
+        try {
+          child.kill(signal);
+        } catch {
+          // The process may already have exited between the close/timeout checks.
+        }
+      }
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killProcessGroup('SIGTERM');
+      killTimer = setTimeout(() => {
+        killEscalated = true;
+        killProcessGroup('SIGKILL');
+        if (closed) finish(null);
+      }, PROJECT_SHELL_KILL_GRACE_MS);
+    }, PROJECT_SHELL_TIMEOUT_MS);
+    child.stdout?.on('data', (chunk: Buffer) => chunks.push(chunk));
+    child.on('error', () => {
+      failed = true;
+    });
+    child.on('close', (code) => {
+      closed = true;
+      if (timedOut) {
+        if (killEscalated) finish(null);
+        return;
+      }
+      if (failed || code !== 0) {
+        finish(null);
+        return;
+      }
+      const output = Buffer.concat(chunks);
+      if (output.length === 0 || output[output.length - 1] !== 0) {
+        finish(null);
+        return;
+      }
+      const entries = output.toString('utf8').split('\0');
+      entries.pop();
+      const parsed: NodeJS.ProcessEnv = {};
+      for (const entry of entries) {
+        if (!entry) {
+          finish(null);
+          return;
+        }
+        const equals = entry.indexOf('=');
+        if (equals <= 0) {
+          finish(null);
+          return;
+        }
+        parsed[entry.slice(0, equals)] = entry.slice(equals + 1);
+      }
+      finish(parsed);
+    });
+  });
+}
+
+export async function projectShellEnv(root: string): Promise<NodeJS.ProcessEnv> {
+  const base = (await loginShellPathEnv()) ?? process.env;
+  if (process.platform === 'win32') return base;
+  try {
+    await access(join(root, '.envrc'));
+  } catch {
+    return base;
+  }
+  return (await readProjectEnv(root, base)) ?? base;
 }

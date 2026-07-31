@@ -26,6 +26,13 @@ account and plan, read from `claude auth status` and nothing deeper: the
 credential is the CLI's, and Hearth never reads the token, never proxies it,
 and never sends it anywhere.
 
+It is the installed CLI, with its normal user, project, and local settings
+sources enabled. That means `CLAUDE.md`, hooks, plugins, skills, feature flags,
+dynamic workflows, Ultracode keywords, slash commands, subagents, background
+tasks, MCP questions, and permission choices are not replaced by Hearth
+versions. The command menu is read from the live CLI and updates when Claude
+reports that its catalogue changed.
+
 Not signed in yet? The row in Settings runs `claude auth login` in a terminal
 and the browser flow finishes there, between you and Anthropic.
 
@@ -53,6 +60,21 @@ It never reads the token, never proxies it, never forwards it anywhere. There
 is no partnership here and no official integration; it is one open-source tool
 launching another. An OpenAI API key works too, in the same place as the
 Anthropic one.
+
+Hearth uses Codex's app-server protocol for the native transcript: exact
+approval choices, questions and MCP elicitations, skills, reasoning, plans,
+tool output, images, subagents, compaction, and review are mapped into the
+conversation. Its slash menu is read from `skills/list`; `/compact` and
+`/review` call the corresponding Codex protocol methods, and skill commands
+retain Codex's `$skill` semantics.
+
+Some capabilities belong to a full-screen terminal UI rather than either
+agent's machine-readable protocol. **Continue in CLI** in a conversation's
+header covers those without starting a stranger: Hearth shuts down the native
+adapter, waits for it to release the provider session, then resumes that exact
+Claude session or Codex thread in the embedded terminal with the project's
+configured executable and permission mode. The terminal exclusively owns the
+session until it exits, so two front ends can never drive it at once.
 
 ## 3. Any CLI, in a terminal
 
@@ -82,16 +104,18 @@ game reloading beside it; what you give up is the transcript, not the work.
 
 Drop a file onto the composer, paste one, or pick it from **+ → Add photos &
 files…**. All three do the same thing. Up to eight files per message, 12 MB
-each and 24 MB in total. One message travels down one socket frame, so the
-budget is shared. PNG, JPEG and WebP images longer than 1568 px on their
-longest edge are scaled down first, because both APIs would downscale them
-anyway (an animated GIF is sent untouched, so it doesn't become one frame). A
-message that is only a picture is a message; you don't have to type anything
-with it.
+each and 24 MB in total. Files stream as raw HTTP bodies into bounded temporary
+storage; the chat socket carries only short, opaque, project-scoped,
+single-use tokens. Large PNG, JPEG and WebP previews may be scaled down in the
+composer, but the original file is what gets uploaded and handed to the
+agent. An animated GIF is never flattened. A message that is only a picture
+is a message; you don't have to type anything with it.
 
 Attachments are written into the project before the turn starts, under
 `.hearth/chats/attachments/<chatId>/`, and the agent is handed the path.
-Because the file is a file, the transcript can still show it after a restart.
+Staging uses a temporary file and an atomic move; expired, reused, or
+other-project tokens are refused. Because the final file is a file, the
+transcript can still show it after a restart.
 
 What the agent receives depends on the file, and only in one way:
 

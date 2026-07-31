@@ -128,6 +128,46 @@ export type ToolKind = 'command' | 'file-change' | 'mcp' | 'web-search' | 'skill
 export type ToolStatus = 'ok' | 'error' | 'declined';
 export type ApprovalKind = 'command' | 'file-change';
 export type ApprovalDecision = 'allow' | 'deny';
+export interface ApprovalChoice {
+  id: string;
+  label: string;
+  tone: 'allow' | 'deny' | 'neutral';
+}
+export type InputAction = 'submit' | 'cancel';
+export type InputResolution = InputAction | 'withdrawn';
+export type InputAnswer = string | number | boolean | string[];
+
+export interface InputOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+/**
+ * One typed field in a provider-neutral question. A request may carry several
+ * of these, which is the "form" case; a one-question request uses the exact
+ * same renderer and wire shape.
+ */
+export interface InputQuestion {
+  id: string;
+  label: string;
+  type: 'choice' | 'text' | 'number' | 'boolean' | 'url';
+  required?: boolean;
+  secret?: boolean;
+  placeholder?: string;
+  multiple?: boolean;
+  /** Offer a free-form answer alongside declared choices. */
+  allowOther?: boolean;
+  options?: InputOption[];
+  min?: number;
+  max?: number;
+}
+
+export interface InputExternalAction {
+  type: 'open-url';
+  url: string;
+  elicitationId: string;
+}
 
 /**
  * How an approval can END UP, which is wider than how a person can answer
@@ -195,8 +235,31 @@ export type ChatEvent =
   | { type: 'tool-output-delta'; toolId: string; chunk: string }
   | { type: 'tool-end'; toolId: string; status: ToolStatus; exitCode?: number; summary?: string }
   | { type: 'file-change'; toolId?: string; files: FileChangeEntry[] }
-  | { type: 'approval-request'; approvalId: string; kind: ApprovalKind; title: string; detail: string }
+  | {
+      type: 'approval-request';
+      approvalId: string;
+      kind: ApprovalKind;
+      title: string;
+      detail: string;
+      choices?: ApprovalChoice[];
+    }
   | { type: 'approval-resolved'; approvalId: string; decision: ApprovalResolution }
+  | {
+      type: 'input-request';
+      inputId: string;
+      title?: string;
+      description?: string;
+      questions: InputQuestion[];
+      allowCancel?: boolean;
+      /** Provider-side auto-resolution window, when there is one. */
+      timeoutMs?: number;
+      externalAction?: InputExternalAction;
+    }
+  /**
+   * Deliberately carries no answers. Values are transient transport data and
+   * must not become transcript history — especially secrets.
+   */
+  | { type: 'input-resolved'; inputId: string; action: InputResolution }
   | { type: 'subagent-start'; agentId: string; role?: string; title: string }
   | { type: 'subagent-delta'; agentId: string; chunk: string }
   | { type: 'subagent-end'; agentId: string; status: ToolStatus; summary?: string }
@@ -358,8 +421,25 @@ export interface ChatApprovalPart {
   approvalKind: ApprovalKind;
   title: string;
   detail: string;
+  choices?: ApprovalChoice[];
   /** Null while the ask is live; `withdrawn` when the session ended under it. */
   decision: ApprovalResolution | null;
+}
+
+/**
+ * A provider question, inline where the turn stopped. `resolution` is the only
+ * answer history Hearth keeps; values live in InputPrompt only until sent.
+ */
+export interface ChatInputPart {
+  kind: 'input';
+  id: string;
+  title?: string;
+  description?: string;
+  questions: InputQuestion[];
+  allowCancel: boolean;
+  timeoutMs?: number;
+  externalAction?: InputExternalAction;
+  resolution: InputResolution | null;
 }
 
 /**
@@ -375,6 +455,7 @@ export type ChatPart =
   | ChatFileChangePart
   | ChatSubagentPart
   | ChatApprovalPart
+  | ChatInputPart
   | ChatPlanPart
   | ChatImagePart
   | ChatNoticePart;

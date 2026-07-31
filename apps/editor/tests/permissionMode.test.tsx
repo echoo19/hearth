@@ -61,6 +61,7 @@ function patchStore(over: Partial<State> = {}): void {
     providers: null,
     permissionMode: 'auto',
     permissionSkipAcknowledged: false,
+    composeTarget: null,
     ...over,
   } as unknown as Partial<State>);
 }
@@ -162,9 +163,42 @@ describe('the permission pill at rest', () => {
   });
 
   it('is absent with no folder open, because there is nothing for it to be about', () => {
-    patchStore({ projectPath: null });
+    patchStore({ projectPath: null, composeTarget: null });
     render(<Composer variant="home" />);
     expect(screen.queryByRole('button', { name: 'Permissions' })).toBeNull();
+  });
+
+  it('reads and changes the project selected on New chat even when it is not open', async () => {
+    readMode.mockResolvedValue({ mode: 'ask', skipAcknowledged: false });
+    patchStore({ projectPath: null, composeTarget: PROJECT });
+    render(<Composer variant="home" />);
+
+    await waitFor(() => expect(pill().textContent).toContain(permissionChoice('ask').pill));
+    expect(readMode).toHaveBeenCalledWith(PROJECT);
+
+    fireEvent.click(pill());
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: /Work in this folder/ }));
+    await waitFor(() => expect(writeMode).toHaveBeenCalledWith(PROJECT, { mode: 'auto' }));
+    expect(useApp.getState().projectPath).toBeNull();
+  });
+
+  it('does not let the target read overwrite a choice made while it was in flight', async () => {
+    let settleRead = (_info: PermissionModeInfo | null): void => {};
+    readMode.mockImplementation(
+      () => new Promise<PermissionModeInfo | null>((resolve) => (settleRead = resolve)),
+    );
+    patchStore({ projectPath: null, composeTarget: PROJECT });
+    render(<Composer variant="home" />);
+
+    fireEvent.click(pill());
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: /Ask before writing or running/ }));
+    await waitFor(() => expect(pill().textContent).toContain(permissionChoice('ask').pill));
+
+    await act(async () => {
+      settleRead({ mode: 'skip', skipAcknowledged: true });
+      await Promise.resolve();
+    });
+    expect(pill().textContent).toContain(permissionChoice('ask').pill);
   });
 
   // The strictest row is the one that can lie, and the lie would be believed

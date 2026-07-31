@@ -38,7 +38,7 @@ import { isInlineImage, type ChatAttachment } from './chatAttachments.js';
 import { hearthPtyEnv } from './hearthShim.js';
 import { DEFAULT_PERMISSION_MODE, type PermissionMode } from './permissionMode.js';
 import { readPersonalPrompt } from './personalization.js';
-import { loginShellPathEnv } from './shellEnv.js';
+import { projectShellEnv } from './shellEnv.js';
 import { syncSkillsIntoProject } from './skills.js';
 
 export type { ChatAttachment } from './chatAttachments.js';
@@ -85,6 +85,47 @@ export type ApprovalDecision = 'allow' | 'deny';
  */
 export type ApprovalResolution = ApprovalDecision | 'withdrawn';
 
+export interface ApprovalChoice {
+  id: string;
+  label: string;
+  tone: 'allow' | 'deny' | 'neutral';
+}
+
+export type InputAction = 'submit' | 'cancel';
+export type InputResolution = InputAction | 'withdrawn';
+export type InputAnswer = string | number | boolean | string[];
+
+export interface InputOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+export interface InputQuestion {
+  id: string;
+  label: string;
+  type: 'choice' | 'text' | 'number' | 'boolean' | 'url';
+  required?: boolean;
+  secret?: boolean;
+  placeholder?: string;
+  multiple?: boolean;
+  allowOther?: boolean;
+  options?: InputOption[];
+  min?: number;
+  max?: number;
+}
+
+export interface InputResponse {
+  action: InputAction;
+  answers?: Record<string, InputAnswer>;
+}
+
+export interface InputExternalAction {
+  type: 'open-url';
+  url: string;
+  elicitationId: string;
+}
+
 export type FileChangeKind = 'edit' | 'create' | 'delete';
 
 /** One file touched by a turn. `diff` is unified-diff text when the backend
@@ -126,23 +167,64 @@ export type ChatEvent =
   /** Visible chain-of-thought summary, streamed. Rendered muted + collapsed. */
   | { type: 'reasoning-delta'; text: string }
   /** A tool call started. `title` is the one-line human summary. */
-  | { type: 'tool-begin'; toolId: string; kind: ToolKind; title: string; detail?: string }
+  | {
+      type: 'tool-begin';
+      toolId: string;
+      kind: ToolKind;
+      title: string;
+      detail?: string;
+    }
   /** Captured stdout/stderr for a running tool call. */
   | { type: 'tool-output-delta'; toolId: string; chunk: string }
   /** A tool call settled. */
-  | { type: 'tool-end'; toolId: string; status: ToolStatus; exitCode?: number; summary?: string }
+  | {
+      type: 'tool-end';
+      toolId: string;
+      status: ToolStatus;
+      exitCode?: number;
+      summary?: string;
+    }
   /** Files the turn changed. Carries `toolId` when it came from one call. */
   | { type: 'file-change'; toolId?: string; files: FileChangeEntry[] }
   /** The turn is BLOCKED until the user answers. */
-  | { type: 'approval-request'; approvalId: string; kind: ApprovalKind; title: string; detail: string }
+  | {
+      type: 'approval-request';
+      approvalId: string;
+      kind: ApprovalKind;
+      title: string;
+      detail: string;
+      choices?: ApprovalChoice[];
+    }
   /** …and the answer, echoed so every window watching the chat agrees. A
    * `withdrawn` resolution is a teardown speaking, not a person — see
    * ApprovalResolution. */
-  | { type: 'approval-resolved'; approvalId: string; decision: ApprovalResolution }
+  | {
+      type: 'approval-resolved';
+      approvalId: string;
+      decision: ApprovalResolution;
+    }
+  /** The agent needs information, not permission to act. */
+  | {
+      type: 'input-request';
+      inputId: string;
+      title?: string;
+      description?: string;
+      questions: InputQuestion[];
+      allowCancel?: boolean;
+      timeoutMs?: number;
+      externalAction?: InputExternalAction;
+    }
+  /** Values are deliberately absent: project transcripts may be public. */
+  | { type: 'input-resolved'; inputId: string; action: InputResolution }
   /** A nested agent was spawned. */
   | { type: 'subagent-start'; agentId: string; role?: string; title: string }
   | { type: 'subagent-delta'; agentId: string; chunk: string }
-  | { type: 'subagent-end'; agentId: string; status: ToolStatus; summary?: string }
+  | {
+      type: 'subagent-end';
+      agentId: string;
+      status: ToolStatus;
+      summary?: string;
+    }
   /**
    * The agent's plan for the work, replaced whole each time it changes. Both
    * backends have one — codex streams a `plan` item, the Agent SDK writes a
@@ -187,10 +269,21 @@ export function normalizeChatEvent(event: ChatEvent): ChatEvent {
     case 'text-delta':
       return { type: 'message-delta', text: event.text };
     case 'tool-start':
-      return { type: 'tool-begin', toolId: event.id, kind: 'other', title: event.name, detail: event.detail };
+      return {
+        type: 'tool-begin',
+        toolId: event.id,
+        kind: 'other',
+        title: event.name,
+        detail: event.detail,
+      };
     case 'tool-end':
       if ('toolId' in event) return event;
-      return { type: 'tool-end', toolId: event.id, status: event.ok ? 'ok' : 'error', summary: event.detail };
+      return {
+        type: 'tool-end',
+        toolId: event.id,
+        status: event.ok ? 'ok' : 'error',
+        summary: event.detail,
+      };
     case 'done':
       return { type: 'turn-complete' };
     default:
@@ -350,6 +443,12 @@ export interface ChatDriver {
   /** Tear down: ends `events` and abandons any in-flight turn. */
   stop(): void;
   /**
+   * Settles once the provider process/stream has actually closed after stop.
+   * Teardowns that transfer ownership (notably Continue in CLI) wait for this
+   * instead of assuming a synchronous `stop()` means the child is gone.
+   */
+  readonly closed?: Promise<void>;
+  /**
    * True once this driver can no longer answer, so `send()` would be a no-op.
    *
    * Optional, and absent reads as alive: a driver with nothing to lose (the
@@ -369,10 +468,26 @@ export interface ChatDriver {
    */
   commands?(): Promise<SlashCommandInfo[]>;
   /**
+   * Subscribe to a provider-side command catalogue replacement/invalidation.
+   *
+   * The callback receives the replacement when the provider supplied one,
+   * otherwise no value means re-read `commands()`. This stays out of
+   * `ChatEvent`: command discovery is live UI state, not conversation history.
+   */
+  onCommandsChanged?(listener: (commands?: SlashCommandInfo[]) => void): () => void;
+  /**
+   * Run one command returned by `commands()`. Drivers keep provider-specific
+   * syntax here: Claude receives `/name`, while Codex skills use `$name` and
+   * app-server actions such as compact/review are real RPCs.
+   */
+  invokeCommand?(name: string, args?: string): void;
+  /**
    * Answer an `approval-request`. Optional: a backend that never asks (the
    * stub) does not implement it.
    */
-  approve?(approvalId: string, decision: ApprovalDecision): void;
+  approve?(approvalId: string, decision: ApprovalDecision, choiceId?: string): void;
+  /** Answer a blocking provider question or MCP elicitation. */
+  answerInput?(inputId: string, response: InputResponse): void;
   /**
    * End the RUNNING TURN but keep the session alive, so the next send
    * continues the same conversation. Optional — a backend without a real
@@ -452,6 +567,8 @@ export interface AppSettings {
   provider?: ChatProvider;
   /** Absolute path to a `codex` binary, when it isn't on PATH. */
   codexPath?: string;
+  /** Absolute path to the user's Claude Code binary, when it isn't on PATH. */
+  claudePath?: string;
 }
 
 /** Settings fields that are secrets: blanked rather than persisted empty, and
@@ -459,7 +576,31 @@ export interface AppSettings {
 const SECRET_FIELDS = ['apiKey', 'openaiApiKey'] as const;
 
 /** Settings fields that are plain strings and clear when saved blank. */
-const BLANKABLE_FIELDS = [...SECRET_FIELDS, 'codexPath'] as const;
+const BLANKABLE_FIELDS = [...SECRET_FIELDS, 'codexPath', 'claudePath'] as const;
+
+export async function resolveClaudeExecutable(projectRoot: string, override?: string): Promise<string | null> {
+  const explicit = override?.trim();
+  if (explicit) {
+    try {
+      await fsp.access(explicit, 1);
+      return explicit;
+    } catch {
+      return null;
+    }
+  }
+  const env = await projectShellEnv(projectRoot);
+  for (const dir of (env.PATH ?? '').split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, process.platform === 'win32' ? 'claude.exe' : 'claude');
+    try {
+      await fsp.access(candidate, 1);
+      return candidate;
+    } catch {
+      /* keep looking */
+    }
+  }
+  return null;
+}
 
 export function appSettingsPath(projectRoot: string): string {
   return path.join(projectRoot, '.hearth', 'app.json');
@@ -580,7 +721,9 @@ const AGENT_SDK_SPECIFIER = '@anthropic-ai/claude-agent-sdk';
  * at compile time, which fails the editor's typecheck on a machine that hasn't
  * run `npm install` for it yet.
  */
-export async function loadAgentSdk(): Promise<{ query: (args: unknown) => AsyncIterable<unknown> } | null> {
+export async function loadAgentSdk(): Promise<{
+  query: (args: unknown) => AsyncIterable<unknown>;
+} | null> {
   try {
     const specifier: string = AGENT_SDK_SPECIFIER;
     const mod = (await import(/* @vite-ignore */ specifier)) as Record<string, unknown>;
@@ -639,7 +782,10 @@ export function sdkSkillCall(name: string, input: unknown): { skill: string; arg
   const skill = record?.skill;
   if (typeof skill !== 'string' || skill.trim() === '') return null;
   const args = record?.args;
-  return { skill: skill.trim(), args: typeof args === 'string' && args.trim() !== '' ? args.trim() : undefined };
+  return {
+    skill: skill.trim(),
+    args: typeof args === 'string' && args.trim() !== '' ? args.trim() : undefined,
+  };
 }
 
 /** Plain-language one-liner for a tool call, e.g. `npm test` for a Bash call. */
@@ -663,10 +809,7 @@ export function sdkFileChange(name: string, input: unknown): FileChangeEntry | n
   // so render those rather than inventing hunk headers we can't compute.
   const diff =
     typeof before === 'string' && typeof after === 'string'
-      ? [
-          ...before.split('\n').map((line) => `-${line}`),
-          ...after.split('\n').map((line) => `+${line}`),
-        ].join('\n')
+      ? [...before.split('\n').map((line) => `-${line}`), ...after.split('\n').map((line) => `+${line}`)].join('\n')
       : undefined;
   return { path: file, kind: 'edit', diff };
 }
@@ -686,15 +829,105 @@ export function mapSdkMessage(message: unknown): ChatEvent[] {
   if (!msg) return [];
   const out: ChatEvent[] = [];
 
+  if (msg.type === 'system') {
+    const taskId =
+      typeof msg.tool_use_id === 'string' && msg.tool_use_id !== ''
+        ? msg.tool_use_id
+        : typeof msg.task_id === 'string'
+          ? msg.task_id
+          : '';
+    const description =
+      typeof msg.description === 'string' && msg.description.trim() !== '' ? msg.description.trim() : 'Background task';
+    const summary = typeof msg.summary === 'string' && msg.summary.trim() !== '' ? msg.summary.trim() : undefined;
+    if (msg.subtype === 'task_started' && taskId && msg.skip_transcript !== true) {
+      if (typeof msg.subagent_type === 'string' && msg.subagent_type.trim() !== '') {
+        out.push({
+          type: 'subagent-start',
+          agentId: taskId,
+          role: msg.subagent_type,
+          title: description,
+        });
+      } else {
+        const workflow =
+          typeof msg.workflow_name === 'string' && msg.workflow_name.trim() !== '' ? msg.workflow_name.trim() : undefined;
+        out.push({
+          type: 'tool-begin',
+          toolId: taskId,
+          kind: 'other',
+          title: description,
+          detail: workflow ? `Workflow: ${workflow}` : undefined,
+        });
+      }
+      return out;
+    }
+    if (msg.subtype === 'task_progress' && taskId) {
+      const chunk = summary ?? description;
+      if (typeof msg.subagent_type === 'string' && msg.subagent_type.trim() !== '') {
+        out.push({ type: 'subagent-delta', agentId: taskId, chunk });
+      } else {
+        out.push({ type: 'tool-output-delta', toolId: taskId, chunk });
+      }
+      return out;
+    }
+    if (msg.subtype === 'task_notification' && taskId && msg.skip_transcript !== true) {
+      const status: ToolStatus =
+        msg.status === 'completed' ? 'ok' : msg.status === 'stopped' ? 'declined' : 'error';
+      out.push({ type: 'tool-end', toolId: taskId, status, summary });
+      return out;
+    }
+    if (msg.subtype === 'background_tasks_changed' && Array.isArray(msg.tasks)) {
+      const tasks = msg.tasks
+        .map((raw) => asRecord(raw)?.description)
+        .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+        .map((value) => value.trim());
+      out.push({
+        type: 'notice',
+        text:
+          tasks.length === 0
+            ? 'Background work finished.'
+            : `Background work running: ${tasks.join(', ')}`,
+      });
+      return out;
+    }
+    if (msg.subtype === 'compact_boundary') {
+      const metadata = asRecord(msg.compact_metadata);
+      const trigger = metadata?.trigger === 'manual' ? ' manually' : '';
+      const before = typeof metadata?.pre_tokens === 'number' ? metadata.pre_tokens : null;
+      const after = typeof metadata?.post_tokens === 'number' ? metadata.post_tokens : null;
+      const counts = before !== null && after !== null ? ` (${before} → ${after} tokens)` : '';
+      out.push({ type: 'notice', text: `Claude compacted the conversation${trigger}${counts}.` });
+      return out;
+    }
+  }
+
+  if (msg.type === 'prompt_suggestion' && typeof msg.suggestion === 'string' && msg.suggestion.trim() !== '') {
+    out.push({ type: 'notice', text: `Suggested next prompt: ${msg.suggestion.trim()}` });
+    return out;
+  }
+
   // Partial text, when the SDK is asked for partial messages.
   if (msg.type === 'stream_event') {
     const event = asRecord(msg.event);
     const delta = asRecord(event?.delta);
     if (event?.type !== 'content_block_delta' || !delta) return out;
+    const parentId =
+      typeof msg.parent_tool_use_id === 'string' && msg.parent_tool_use_id !== ''
+        ? msg.parent_tool_use_id
+        : typeof event.parent_tool_use_id === 'string' && event.parent_tool_use_id !== ''
+          ? event.parent_tool_use_id
+          : null;
     if (delta.type === 'text_delta' && typeof delta.text === 'string') {
-      out.push({ type: 'message-delta', text: delta.text });
+      out.push(
+        parentId
+          ? { type: 'subagent-delta', agentId: parentId, chunk: delta.text }
+          : { type: 'message-delta', text: delta.text },
+      );
     } else if (delta.type === 'thinking_delta' && typeof delta.thinking === 'string') {
-      out.push({ type: 'reasoning-delta', text: delta.thinking });
+      out.push(
+        parentId
+          ? { type: 'subagent-delta', agentId: parentId, chunk: delta.thinking }
+          : { type: 'reasoning-delta', text: delta.thinking },
+      );
     }
     return out;
   }
@@ -706,7 +939,11 @@ export function mapSdkMessage(message: unknown): ChatEvent[] {
       const block = asRecord(raw);
       if (!block) continue;
       if (block.type !== 'tool_use' || typeof block.id !== 'string' || typeof block.name !== 'string') continue;
-      const { id, name, input } = block as { id: string; name: string; input: unknown };
+      const { id, name, input } = block as {
+        id: string;
+        name: string;
+        input: unknown;
+      };
       // The todo list is the SDK's plan. It arrives as a tool call whose
       // input IS the plan, so it becomes the plan card rather than a tool row
       // nobody would open — the terminal shows this prominently and the app
@@ -733,7 +970,13 @@ export function mapSdkMessage(message: unknown): ChatEvent[] {
       // find nothing on a Skill call (its keys are paths, commands and
       // queries), so the row would be unopenable and the arguments lost.
       const detail = kind === 'skill' ? call?.args : describeToolInput(input);
-      out.push({ type: 'tool-begin', toolId: id, kind, title: sdkToolTitle(name, input), detail });
+      out.push({
+        type: 'tool-begin',
+        toolId: id,
+        kind,
+        title: sdkToolTitle(name, input),
+        detail,
+      });
       if (kind === 'file-change') {
         const change = sdkFileChange(name, input);
         if (change) out.push({ type: 'file-change', toolId: id, files: [change] });
@@ -756,7 +999,12 @@ export function mapSdkMessage(message: unknown): ChatEvent[] {
       // ids the driver saw open as a Task (tracked by the driver, not here) —
       // this pure mapper cannot know, so it emits a tool-end and the driver
       // rewrites it. See AgentSdkDriver.pump.
-      out.push({ type: 'tool-end', toolId: block.tool_use_id, status, summary: text });
+      out.push({
+        type: 'tool-end',
+        toolId: block.tool_use_id,
+        status,
+        summary: text,
+      });
     }
     return out;
   }
@@ -888,7 +1136,11 @@ export function sdkApprovalFor(
   if (kind === 'file-change') {
     const file = record?.file_path ?? record?.path ?? record?.notebook_path;
     if (typeof file === 'string' && !isInsideRoot(file, projectRoot)) {
-      return { kind: 'file-change', title: 'Write outside the project folder?', detail: file };
+      return {
+        kind: 'file-change',
+        title: 'Write outside the project folder?',
+        detail: file,
+      };
     }
     if (mode === 'ask') {
       return {
@@ -917,7 +1169,11 @@ export function sdkApprovalFor(
     // question anyone can answer — the mcp__server__tool name is the one
     // thing the user can recognise.
     if (mode === 'ask') {
-      return { kind: 'command', title: `Use ${toolName}?`, detail: describeToolInput(input) ?? toolName };
+      return {
+        kind: 'command',
+        title: `Use ${toolName}?`,
+        detail: describeToolInput(input) ?? toolName,
+      };
     }
     return null;
   }
@@ -963,11 +1219,18 @@ export async function sdkUserContent(
         const bytes = await readFile(attachment.path);
         blocks.push({
           type: 'image',
-          source: { type: 'base64', media_type: attachment.mimeType, data: bytes.toString('base64') },
+          source: {
+            type: 'base64',
+            media_type: attachment.mimeType,
+            data: bytes.toString('base64'),
+          },
         });
         continue;
       } catch {
-        blocks.push({ type: 'text', text: `[attached image could not be read: ${attachment.path}]` });
+        blocks.push({
+          type: 'text',
+          text: `[attached image could not be read: ${attachment.path}]`,
+        });
         continue;
       }
     }
@@ -1085,6 +1348,167 @@ export function sdkSlashCommands(raw: unknown): SlashCommandInfo[] {
   return out;
 }
 
+interface PendingInput {
+  answer(response: InputResponse): void;
+  withdraw(): void;
+}
+
+interface ElicitationField {
+  question: InputQuestion;
+  path: string[];
+  json: boolean;
+  choices?: (string | number | boolean)[];
+}
+
+function pointerSegment(value: string): string {
+  return value.replace(/~/g, '~0').replace(/\//g, '~1');
+}
+
+function schemaType(schema: Record<string, unknown>): string | null {
+  if (typeof schema.type === 'string') return schema.type;
+  if (Array.isArray(schema.type)) {
+    return schema.type.find((type): type is string => typeof type === 'string' && type !== 'null') ?? null;
+  }
+  return null;
+}
+
+/**
+ * Flatten an MCP elicitation's JSON Schema into Hearth's typed controls.
+ *
+ * MCP form schemas are ordinary JSON Schema and may contain nested objects.
+ * The renderer intentionally has no generic object editor, so object
+ * properties become JSON-pointer-labelled primitive fields and are rebuilt
+ * before the response goes back to the server. Unsupported leaf shapes retain
+ * full fidelity through a JSON text field instead of being dropped.
+ */
+function elicitationFields(schemaValue: unknown): ElicitationField[] {
+  const root = asRecord(schemaValue);
+  if (!root) return [];
+  const fields: ElicitationField[] = [];
+  const walk = (schema: Record<string, unknown>, fieldPath: string[], required: boolean): void => {
+    const type = schemaType(schema);
+    const properties = asRecord(schema.properties);
+    if ((type === 'object' || properties) && properties) {
+      const requiredNames = new Set(
+        Array.isArray(schema.required)
+          ? schema.required.filter((name): name is string => typeof name === 'string')
+          : [],
+      );
+      for (const [name, raw] of Object.entries(properties)) {
+        const child = asRecord(raw);
+        if (child) walk(child, [...fieldPath, name], required && requiredNames.has(name));
+      }
+      return;
+    }
+
+    const id = `/${fieldPath.map(pointerSegment).join('/')}`;
+    const label =
+      typeof schema.title === 'string' && schema.title.trim() !== ''
+        ? schema.title
+        : (fieldPath[fieldPath.length - 1] ?? 'Response');
+    const description = typeof schema.description === 'string' ? schema.description : undefined;
+    const enumValues = Array.isArray(schema.enum)
+      ? schema.enum.filter((value): value is string | number | boolean =>
+          ['string', 'number', 'boolean'].includes(typeof value),
+        )
+      : [];
+    const itemSchema = asRecord(schema.items);
+    const itemEnum = Array.isArray(itemSchema?.enum)
+      ? itemSchema.enum.filter((value): value is string | number | boolean =>
+          ['string', 'number', 'boolean'].includes(typeof value),
+        )
+      : [];
+    let question: InputQuestion;
+    let json = false;
+    let choices: (string | number | boolean)[] | undefined;
+    if (enumValues.length > 0) {
+      choices = enumValues;
+      question = {
+        id,
+        label,
+        type: 'choice',
+        required,
+        options: enumValues.map((value) => ({
+          value: String(value),
+          label: String(value),
+        })),
+      };
+    } else if (type === 'array' && itemEnum.length > 0) {
+      choices = itemEnum;
+      question = {
+        id,
+        label,
+        type: 'choice',
+        required,
+        multiple: true,
+        options: itemEnum.map((value) => ({
+          value: String(value),
+          label: String(value),
+        })),
+      };
+    } else if (type === 'boolean') {
+      question = { id, label, type: 'boolean', required };
+    } else if (type === 'number' || type === 'integer') {
+      question = {
+        id,
+        label,
+        type: 'number',
+        required,
+        ...(typeof schema.minimum === 'number' ? { min: schema.minimum } : {}),
+        ...(typeof schema.maximum === 'number' ? { max: schema.maximum } : {}),
+      };
+    } else if (type === 'string' || type === null) {
+      const format = typeof schema.format === 'string' ? schema.format : '';
+      question = {
+        id,
+        label,
+        type: format === 'uri' || format === 'url' || format === 'uri-reference' ? 'url' : 'text',
+        required,
+        ...(format === 'password' || schema.writeOnly === true ? { secret: true } : {}),
+        ...(description ? { placeholder: description } : {}),
+      };
+    } else {
+      json = true;
+      question = {
+        id,
+        label,
+        type: 'text',
+        required,
+        placeholder: description ?? 'JSON',
+      };
+    }
+    fields.push({ question, path: fieldPath, json, choices });
+  };
+
+  const rootProperties = asRecord(root.properties);
+  if (rootProperties) {
+    const requiredNames = new Set(
+      Array.isArray(root.required) ? root.required.filter((name): name is string => typeof name === 'string') : [],
+    );
+    for (const [name, raw] of Object.entries(rootProperties)) {
+      const child = asRecord(raw);
+      if (child) walk(child, [name], requiredNames.has(name));
+    }
+  } else {
+    walk(root, [], true);
+  }
+  return fields;
+}
+
+function setNestedValue(target: Record<string, unknown>, pathParts: readonly string[], value: unknown): void {
+  if (pathParts.length === 0) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) Object.assign(target, value);
+    return;
+  }
+  let cursor = target;
+  for (const part of pathParts.slice(0, -1)) {
+    const existing = cursor[part];
+    if (!existing || typeof existing !== 'object' || Array.isArray(existing)) cursor[part] = {};
+    cursor = cursor[part] as Record<string, unknown>;
+  }
+  cursor[pathParts[pathParts.length - 1]] = value;
+}
+
 export class AgentSdkDriver implements ChatDriver {
   readonly kind = 'agent-sdk' as const;
   private queue = new EventQueue<ChatEvent>();
@@ -1093,11 +1517,15 @@ export class AgentSdkDriver implements ChatDriver {
   /** Set once the pump has ended, whatever ended it. Backs `dead`. */
   private finished = false;
   private pump: Promise<void> | null = null;
+  private abortController: AbortController | null = null;
   /** The live query handle, for control requests like `supportedCommands`. */
   private stream: SdkQueryHandle | null = null;
   private projectRoot = '';
   /** tool_use ids opened as a `Task`, so their result closes a subagent card. */
   private subagents = new Set<string>();
+  /** Live menu listeners. Command changes are UI state, never transcript rows. */
+  private commandListeners = new Set<(commands?: SlashCommandInfo[]) => void>();
+  private latestCommands: SlashCommandInfo[] | null = null;
   /**
    * Approvals awaiting an answer from the UI, by approvalId. Each entry can
    * settle two ways, and the transcript tells them apart: `answer` is a
@@ -1106,8 +1534,14 @@ export class AgentSdkDriver implements ChatDriver {
    * run on a question nobody answered), but only `answer` records a decision
    * anyone actually made. See ApprovalResolution.
    */
-  private pending = new Map<string, { answer: (decision: ApprovalDecision) => void; withdraw: () => void }>();
+  private pending = new Map<
+    string,
+    { answer: (decision: ApprovalDecision, choiceId?: string) => void; withdraw: () => void }
+  >();
   private nextApproval = 0;
+  /** Provider questions and MCP elicitations, kept separate from permissions. */
+  private pendingInputs = new Map<string, PendingInput>();
+  private nextInput = 0;
   /**
    * The session id the SDK last named for this conversation. Seeded with the
    * one this driver was asked to resume, so a resume that succeeds (the init
@@ -1167,6 +1601,8 @@ export class AgentSdkDriver implements ChatDriver {
      * mirrored for this backend.
      */
     private readonly onSessionId: (sessionId: string) => void = () => undefined,
+    /** Prefer the user's installed CLI so its workflows/plugins/features survive. */
+    private readonly claudeExecutable: string | null = null,
   ) {
     this.sessionId = resumeSessionId;
   }
@@ -1177,6 +1613,10 @@ export class AgentSdkDriver implements ChatDriver {
 
   get dead(): boolean {
     return this.finished;
+  }
+
+  get closed(): Promise<void> {
+    return this.pump ?? Promise.resolve();
   }
 
   async start(_sessionId: string, projectRoot: string): Promise<void> {
@@ -1192,7 +1632,10 @@ export class AgentSdkDriver implements ChatDriver {
     // The house facts come first, then the person's own voice — see
     // agentFacts.ts for what is (and deliberately is not) said there.
     const append = composeAgentInstructions(
-      hearthFactsPrompt({ probeCli: this.tools?.probeCli === true, skills: mirroredSkills.length > 0 }),
+      hearthFactsPrompt({
+        probeCli: this.tools?.probeCli === true,
+        skills: mirroredSkills.length > 0,
+      }),
       personal,
     );
     // The base env is the login-shell-merged one, never raw process.env. The
@@ -1203,10 +1646,12 @@ export class AgentSdkDriver implements ChatDriver {
     // Same problem the pty path and the codex spawn already solve, solved the
     // same way (see shellEnv.ts). Never throws; a shell that won't answer
     // degrades to process.env.
-    const baseEnv = (await loginShellPathEnv()) ?? process.env;
+    const baseEnv = await projectShellEnv(projectRoot);
     // The shim dir carries `hearth` and (when present) `hearth-probe`, so the
     // Bash the agent runs finds the same tools the embedded terminal does.
     const env = this.tools?.shimDir ? hearthPtyEnv(baseEnv, this.tools.shimDir) : { ...baseEnv };
+    const abortController = new AbortController();
+    this.abortController = abortController;
     const open = (resume: string | null): SdkQueryHandle =>
       this.sdk.query({
         // A per-attempt view of the turn queue, never the queue itself: a
@@ -1215,8 +1660,23 @@ export class AgentSdkDriver implements ChatDriver {
         prompt: this.promptFeed(),
         options: {
           cwd: projectRoot,
+          abortController,
           permissionMode: sdkPermissionMode(this.permissionMode),
+          ...(this.permissionMode === 'skip' ? { allowDangerouslySkipPermissions: true } : {}),
           includePartialMessages: true,
+          // Match the native Claude Code session's durable and observable
+          // behavior. These are additive SDK switches: unknown lifecycle
+          // events remain safely ignored by mapSdkMessage, while the session
+          // itself keeps checkpoints and complete subagent activity.
+          enableFileCheckpointing: true,
+          includeHookEvents: true,
+          forwardSubagentText: true,
+          promptSuggestions: true,
+          // Keep Claude Code's own user/project/local configuration surface:
+          // CLAUDE.md, plugins, hooks, dynamic workflows and feature flags
+          // (including ultracode) must behave as they do in the standalone CLI.
+          settingSources: ['user', 'project', 'local'],
+          ...(this.claudeExecutable ? { pathToClaudeCodeExecutable: this.claudeExecutable } : {}),
           // The key is ADDED when there is one and left out entirely when there
           // is not. Passing an empty ANTHROPIC_API_KEY is not the same as
           // passing none: it overrides the CLI's own credentials with a key that
@@ -1236,9 +1696,21 @@ export class AgentSdkDriver implements ChatDriver {
           // files" rather than as a settings bug. The append always carries the
           // house facts; personalization rides after them when set.
           ...(append
-            ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append } }
+            ? {
+                systemPrompt: {
+                  type: 'preset' as const,
+                  preset: 'claude_code' as const,
+                  append,
+                },
+              }
             : {}),
-          canUseTool: (toolName: string, input: unknown) => this.askPermission(toolName, input),
+          canUseTool: (
+            toolName: string,
+            input: unknown,
+            options?: { suggestions?: unknown[]; signal?: AbortSignal },
+          ) => this.askPermission(toolName, input, options),
+          onElicitation: (request: unknown, options: { signal: AbortSignal }) =>
+            this.askElicitation(request, options.signal),
         },
       });
     // One long-lived pump for the whole session: the SDK yields messages for
@@ -1274,7 +1746,11 @@ export class AgentSdkDriver implements ChatDriver {
               if (this.stopped) break;
               sawMessage = true;
               this.captureSessionId(message);
-              for (const event of mapSdkMessage(message)) this.queue.push(this.retarget(event));
+              this.captureCommandsChanged(message);
+              for (const event of mapSdkMessage(message)) {
+                const retargeted = this.retarget(event);
+                if (retargeted) this.queue.push(retargeted);
+              }
             }
           } catch (err) {
             failure = err as Error;
@@ -1288,7 +1764,10 @@ export class AgentSdkDriver implements ChatDriver {
           // reads as one lying about the conversation it was in.
           if (!sawMessage && resume) {
             resume = null;
-            this.queue.push({ type: 'notice', text: CLAUDE_RESUME_FAILED_NOTICE });
+            this.queue.push({
+              type: 'notice',
+              text: CLAUDE_RESUME_FAILED_NOTICE,
+            });
             continue;
           }
           if (failure) {
@@ -1304,6 +1783,8 @@ export class AgentSdkDriver implements ChatDriver {
         }
       } finally {
         this.finished = true;
+        this.abortController = null;
+        this.stream = null;
         // Nothing will read queued turns again, and nothing will emit again.
         this.turns.close();
         this.queue.close();
@@ -1326,6 +1807,14 @@ export class AgentSdkDriver implements ChatDriver {
     if (typeof sessionId !== 'string' || sessionId === '' || sessionId === this.sessionId) return;
     this.sessionId = sessionId;
     this.onSessionId(sessionId);
+  }
+
+  private captureCommandsChanged(message: unknown): void {
+    const msg = asRecord(message);
+    if (msg?.type !== 'system' || msg.subtype !== 'commands_changed') return;
+    const commands = sdkSlashCommands(msg.commands);
+    this.latestCommands = commands;
+    for (const listener of this.commandListeners) listener(commands);
   }
 
   /**
@@ -1371,14 +1860,28 @@ export class AgentSdkDriver implements ChatDriver {
    * memory and rewrites those into subagent events here — keeping the mapper
    * testable in isolation while the transcript still gets the right shape.
    */
-  private retarget(event: ChatEvent): ChatEvent {
+  private retarget(event: ChatEvent): ChatEvent | null {
     if (event.type === 'subagent-start') {
+      // `Task` first appears as an assistant tool_use and can later be echoed
+      // by the SDK's task_started lifecycle stream. They describe one task.
+      if (this.subagents.has(event.agentId)) return null;
       this.subagents.add(event.agentId);
       return event;
     }
+    if (event.type === 'tool-begin' && this.subagents.has(event.toolId)) {
+      return null;
+    }
     if (event.type === 'tool-end' && 'toolId' in event && this.subagents.has(event.toolId)) {
       this.subagents.delete(event.toolId);
-      return { type: 'subagent-end', agentId: event.toolId, status: event.status, summary: event.summary };
+      return {
+        type: 'subagent-end',
+        agentId: event.toolId,
+        status: event.status,
+        summary: event.summary,
+      };
+    }
+    if (event.type === 'tool-output-delta' && this.subagents.has(event.toolId)) {
+      return { type: 'subagent-delta', agentId: event.toolId, chunk: event.chunk };
     }
     return event;
   }
@@ -1389,18 +1892,44 @@ export class AgentSdkDriver implements ChatDriver {
    * promise this returns is what holds the agent's turn open until the user
    * answers, which is exactly the blocking semantics the transcript shows.
    */
-  private askPermission(toolName: string, input: unknown): Promise<unknown> {
+  private askPermission(
+    toolName: string,
+    input: unknown,
+    options?: { suggestions?: unknown[]; signal?: AbortSignal },
+  ): Promise<unknown> {
+    // Asking for information is not a permission check. In particular,
+    // bypassPermissions must never auto-answer it: skip mode means "do the
+    // work without approvals", not "invent answers on the user's behalf".
+    if (toolName === 'AskUserQuestion') return this.askUserQuestion(input);
     const approval = sdkApprovalFor(toolName, input, this.projectRoot, this.permissionMode);
     if (!approval || this.stopped) return Promise.resolve({ behavior: 'allow', updatedInput: input });
     const approvalId = `a${++this.nextApproval}`;
-    this.queue.push({ type: 'approval-request', approvalId, ...approval });
+    const suggestions = Array.isArray(options?.suggestions) ? options.suggestions : [];
+    this.queue.push({
+      type: 'approval-request',
+      approvalId,
+      ...approval,
+      ...(suggestions.length > 0
+        ? {
+            choices: [
+              { id: 'allow-once', label: 'Allow once', tone: 'allow' as const },
+              { id: 'allow-remember', label: 'Allow and remember', tone: 'allow' as const },
+              { id: 'deny', label: 'Deny', tone: 'deny' as const },
+            ],
+          }
+        : {}),
+    });
     return new Promise((resolve) => {
       this.pending.set(approvalId, {
-        answer: (decision) => {
+        answer: (decision, choiceId) => {
           this.queue.push({ type: 'approval-resolved', approvalId, decision });
           resolve(
             decision === 'allow'
-              ? { behavior: 'allow', updatedInput: input }
+              ? {
+                  behavior: 'allow',
+                  updatedInput: input,
+                  ...(choiceId === 'allow-remember' ? { updatedPermissions: suggestions } : {}),
+                }
               : { behavior: 'deny', message: 'The user declined this.' },
           );
         },
@@ -1409,13 +1938,226 @@ export class AgentSdkDriver implements ChatDriver {
         // that the session ended under the question, not that the user
         // refused it. See ApprovalResolution.
         withdraw: () => {
-          this.queue.push({ type: 'approval-resolved', approvalId, decision: 'withdrawn' });
-          resolve({ behavior: 'deny', message: 'The session ended before the user answered.' });
+          this.queue.push({
+            type: 'approval-resolved',
+            approvalId,
+            decision: 'withdrawn',
+          });
+          resolve({
+            behavior: 'deny',
+            message: 'The session ended before the user answered.',
+          });
         },
       });
     });
   }
 
+  private askUserQuestion(input: unknown): Promise<unknown> {
+    const record = asRecord(input);
+    const rawQuestions = Array.isArray(record?.questions) ? record.questions : [];
+    const source: { text: string; id: string }[] = [];
+    const questions: InputQuestion[] = [];
+    for (const raw of rawQuestions) {
+      const question = asRecord(raw);
+      const text = typeof question?.question === 'string' ? question.question.trim() : '';
+      if (text === '') continue;
+      const id = `q${questions.length}`;
+      const options = Array.isArray(question?.options)
+        ? question.options.flatMap((rawOption) => {
+            const option = asRecord(rawOption);
+            const label = typeof option?.label === 'string' ? option.label.trim() : '';
+            if (label === '') return [];
+            return [
+              {
+                value: label,
+                label,
+                ...(typeof option?.description === 'string' ? { description: option.description } : {}),
+              },
+            ];
+          })
+        : [];
+      questions.push({
+        id,
+        label: text,
+        type: options.length > 0 ? 'choice' : 'text',
+        required: true,
+        ...(options.length > 0 ? { options, allowOther: true } : {}),
+        ...(question?.multiSelect === true ? { multiple: true } : {}),
+      });
+      source.push({ text, id });
+    }
+    if (this.stopped || questions.length === 0) {
+      return Promise.resolve({
+        behavior: 'deny',
+        message: 'The question could not be displayed.',
+      });
+    }
+
+    const inputId = `i${++this.nextInput}`;
+    this.queue.push({
+      type: 'input-request',
+      inputId,
+      title: 'Claude needs your input',
+      questions,
+      allowCancel: true,
+    });
+    return new Promise((resolve) => {
+      this.pendingInputs.set(inputId, {
+        answer: (response) => {
+          this.queue.push({
+            type: 'input-resolved',
+            inputId,
+            action: response.action,
+          });
+          if (response.action === 'cancel') {
+            resolve({
+              behavior: 'deny',
+              message: 'The user cancelled this question.',
+            });
+            return;
+          }
+          const answers: Record<string, string> = {};
+          for (const item of source) {
+            const answer = response.answers?.[item.id];
+            if (answer === undefined) continue;
+            answers[item.text] = Array.isArray(answer) ? answer.join(', ') : String(answer);
+          }
+          resolve({ behavior: 'allow', updatedInput: { ...record, answers } });
+        },
+        withdraw: () => {
+          this.queue.push({
+            type: 'input-resolved',
+            inputId,
+            action: 'withdrawn',
+          });
+          resolve({
+            behavior: 'deny',
+            message: 'The session ended before the user answered.',
+          });
+        },
+      });
+    });
+  }
+
+  private askElicitation(requestValue: unknown, signal: AbortSignal): Promise<unknown> {
+    const request = asRecord(requestValue);
+    const mode = request?.mode === 'url' ? 'url' : 'form';
+    const serverName =
+      typeof request?.serverName === 'string' && request.serverName.trim() !== '' ? request.serverName : 'MCP server';
+    const message = typeof request?.message === 'string' ? request.message : '';
+    if (this.stopped) return Promise.resolve({ action: 'cancel' });
+
+    const inputId = `i${++this.nextInput}`;
+    const fields = mode === 'form' ? elicitationFields(request?.requestedSchema) : [];
+    const questions: InputQuestion[] =
+      mode === 'url'
+        ? [
+            {
+              id: 'confirmed',
+              label: 'I completed authorization',
+              type: 'boolean',
+              required: true,
+            },
+          ]
+        : fields.map((field) => field.question);
+    if (questions.length === 0) {
+      return Promise.resolve({ action: 'decline' });
+    }
+    const url = typeof request?.url === 'string' ? request.url : '';
+    const elicitationId = typeof request?.elicitationId === 'string' ? request.elicitationId : '';
+    let externalAction: InputExternalAction | undefined;
+    if (mode === 'url' && url && elicitationId) {
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+          externalAction = { type: 'open-url', url: parsed.toString(), elicitationId };
+        }
+      } catch {
+        /* malformed provider URLs are displayed as text, never opened */
+      }
+    }
+    this.queue.push({
+      type: 'input-request',
+      inputId,
+      title:
+        typeof request?.title === 'string' && request.title.trim() !== ''
+          ? request.title
+          : typeof request?.displayName === 'string' && request.displayName.trim() !== ''
+            ? request.displayName
+            : serverName,
+      description: mode === 'url' && url ? [message, url].filter(Boolean).join('\n') : message,
+      questions,
+      allowCancel: true,
+      ...(externalAction ? { externalAction } : {}),
+    });
+
+    return new Promise((resolve) => {
+      const onAbort = (): void => this.withdrawInput(inputId);
+      signal.addEventListener('abort', onAbort, { once: true });
+      const clean = (): void => signal.removeEventListener('abort', onAbort);
+      this.pendingInputs.set(inputId, {
+        answer: (response) => {
+          clean();
+          this.queue.push({
+            type: 'input-resolved',
+            inputId,
+            action: response.action,
+          });
+          if (response.action === 'cancel') {
+            resolve({ action: 'cancel' });
+            return;
+          }
+          if (mode === 'url') {
+            resolve(response.answers?.confirmed === true ? { action: 'accept' } : { action: 'decline' });
+            return;
+          }
+          const content: Record<string, unknown> = {};
+          for (const field of fields) {
+            const raw = response.answers?.[field.question.id];
+            if (raw === undefined) continue;
+            let value: unknown = raw;
+            if (field.choices) {
+              const restore = (entry: string): string | number | boolean =>
+                field.choices?.find((choice) => String(choice) === entry) ?? entry;
+              value = Array.isArray(raw) ? raw.map(restore) : restore(String(raw));
+            } else if (field.json && typeof raw === 'string') {
+              try {
+                value = JSON.parse(raw);
+              } catch {
+                value = raw;
+              }
+            }
+            setNestedValue(content, field.path, value);
+          }
+          resolve({ action: 'accept', content });
+        },
+        withdraw: () => {
+          clean();
+          this.queue.push({
+            type: 'input-resolved',
+            inputId,
+            action: 'withdrawn',
+          });
+          resolve({ action: 'cancel' });
+        },
+      });
+      if (signal.aborted) this.withdrawInput(inputId);
+    });
+  }
+
+  answerInput(inputId: string, response: InputResponse): void {
+    const pending = this.pendingInputs.get(inputId);
+    if (!pending) return;
+    this.pendingInputs.delete(inputId);
+    pending.answer(response);
+  }
+
+  private withdrawInput(inputId: string): void {
+    const pending = this.pendingInputs.get(inputId);
+    if (!pending) return;
+    this.pendingInputs.delete(inputId);
+    pending.withdraw();
+  }
 
   /**
    * Ask the live session. Never throws into the menu: an older SDK without the
@@ -1424,6 +2166,7 @@ export class AgentSdkDriver implements ChatDriver {
    * empty one.
    */
   async commands(): Promise<SlashCommandInfo[]> {
+    if (this.latestCommands) return this.latestCommands;
     const handle = this.stream;
     if (!handle?.supportedCommands) return [];
     try {
@@ -1433,11 +2176,25 @@ export class AgentSdkDriver implements ChatDriver {
     }
   }
 
-  approve(approvalId: string, decision: ApprovalDecision): void {
+  onCommandsChanged(listener: (commands?: SlashCommandInfo[]) => void): () => void {
+    this.commandListeners.add(listener);
+    if (this.latestCommands) queueMicrotask(() => {
+      if (this.commandListeners.has(listener) && this.latestCommands) listener(this.latestCommands);
+    });
+    return () => this.commandListeners.delete(listener);
+  }
+
+  invokeCommand(name: string, args = ''): void {
+    const command = name.replace(/^\/+/, '').trim();
+    if (!command) return;
+    this.send(`/${command}${args.trim() ? ` ${args.trim()}` : ''}`);
+  }
+
+  approve(approvalId: string, decision: ApprovalDecision, choiceId?: string): void {
     const pending = this.pending.get(approvalId);
     if (!pending) return;
     this.pending.delete(approvalId);
-    pending.answer(decision);
+    pending.answer(decision, choiceId);
   }
 
   /**
@@ -1449,6 +2206,8 @@ export class AgentSdkDriver implements ChatDriver {
   private withdrawPending(): void {
     for (const [, pending] of this.pending) pending.withdraw();
     this.pending.clear();
+    for (const [, pending] of this.pendingInputs) pending.withdraw();
+    this.pendingInputs.clear();
   }
 
   /**
@@ -1547,6 +2306,7 @@ export class AgentSdkDriver implements ChatDriver {
   }
 
   stop(): void {
+    if (this.stopped) return;
     this.stopped = true;
     this.finished = true;
     // Anything still blocking the agent is withdrawn: the SDK's own turn
@@ -1554,8 +2314,12 @@ export class AgentSdkDriver implements ChatDriver {
     // teardown rather than a Deny nobody pressed.
     this.withdrawPending();
     this.turns.close();
+    this.abortController?.abort();
+    // Withdrawals were queued first, so readers still receive them. Closing
+    // here also makes teardown observable when a malformed/test query ignores
+    // AbortSignal forever; `closed` remains pending in that case, and an
+    // ownership transfer refuses to resume the same provider session.
     this.queue.close();
-    this.pump = null;
   }
 }
 
@@ -1661,6 +2425,7 @@ export async function createChatDriver(
     // was not there.
     const key = await resolveApiKey(projectRoot);
     const sdk = await loadSdk();
+    const claudeExecutable = await resolveClaudeExecutable(projectRoot, settings.claudePath);
     // Only an anthropic-targeted choice names an anthropic model; a codex
     // model id must never reach the SDK.
     const model = agent && (agent.provider ?? 'anthropic') === 'anthropic' ? (agent.model ?? null) : null;
@@ -1673,6 +2438,7 @@ export async function createChatDriver(
           permissionMode,
           options?.resumeSessionId ?? null,
           options?.onSessionId,
+          claudeExecutable,
         )
       : null;
   };

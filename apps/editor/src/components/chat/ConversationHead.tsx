@@ -169,6 +169,12 @@ export function ConversationHead() {
   const mode = useApp((s) => s.conversationMode);
   const providers = useApp((s) => s.providers);
   const driver = useApp((s) => s.chatDriver);
+  const chatBusy = useApp((s) => s.chatBusy);
+  const canContinueInCli = useApp((s) => {
+    const chat = s.chats.find((entry) => entry.id === s.activeChatId);
+    return Boolean(chat?.claudeSessionId || chat?.codexThreadId);
+  });
+  const continueInCli = useApp((s) => s.continueChatInCli);
   const choice = useModelChoice();
   return (
     <div className="conversation-head">
@@ -180,6 +186,13 @@ export function ConversationHead() {
       <span className="conversation-provider conversation-kind">{conversationKindLabel(mode)}</span>
       {/* Chat mode's other read-out: which agent would answer. */}
       {mode === 'chat' && <span className="conversation-provider">{providerLabel(providers, driver, choice)}</span>}
+      {mode === 'chat' && canContinueInCli && (
+        <Tooltip content="Resume this provider session in its full CLI">
+          <Button size="sm" variant="ghost" onClick={continueInCli} disabled={chatBusy}>
+            Continue in CLI
+          </Button>
+        </Tooltip>
+      )}
       {mode === 'terminal' && <TerminalContext />}
     </div>
   );

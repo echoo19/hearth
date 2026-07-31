@@ -40,6 +40,10 @@ vi.mock('../server/shellEnv', () => ({
     ...process.env,
     PATH: `/login-shell-bin:${process.env.PATH ?? ''}`,
   }),
+  projectShellEnv: async (): Promise<NodeJS.ProcessEnv> => ({
+    ...process.env,
+    PATH: `/login-shell-bin:${process.env.PATH ?? ''}`,
+  }),
 }));
 
 /**
@@ -180,7 +184,10 @@ describe('per-folder settings', () => {
   // machine may well have a working codex install and a signed-in ChatGPT
   // account, and a test that asserted "no key means the stub" would pass or
   // fail depending on whose laptop it ran on.
-  const noBackends = { loadAgentSdk: async () => null, createCodexDriver: async () => null };
+  const noBackends = {
+    loadAgentSdk: async () => null,
+    createCodexDriver: async () => null,
+  };
 
   it('falls back to the stub when no backend is available at all', async () => {
     const driver = await createChatDriver(dir, noBackends);
@@ -225,7 +232,10 @@ describe('mapSdkMessage', () => {
     expect(
       mapSdkMessage({
         type: 'stream_event',
-        event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'hi' } },
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'hi' },
+        },
       }),
     ).toEqual([{ type: 'message-delta', text: 'hi' }]);
   });
@@ -234,11 +244,30 @@ describe('mapSdkMessage', () => {
     expect(
       mapSdkMessage({
         type: 'assistant',
-        message: { content: [{ type: 'tool_use', id: 't1', name: 'Write', input: { file_path: '/w/game.js' } }] },
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 't1',
+              name: 'Write',
+              input: { file_path: '/w/game.js' },
+            },
+          ],
+        },
       }),
     ).toEqual([
-      { type: 'tool-begin', toolId: 't1', kind: 'file-change', title: 'Write', detail: '/w/game.js' },
-      { type: 'file-change', toolId: 't1', files: [{ path: '/w/game.js', kind: 'create' }] },
+      {
+        type: 'tool-begin',
+        toolId: 't1',
+        kind: 'file-change',
+        title: 'Write',
+        detail: '/w/game.js',
+      },
+      {
+        type: 'file-change',
+        toolId: 't1',
+        files: [{ path: '/w/game.js', kind: 'create' }],
+      },
     ]);
   });
 
@@ -246,9 +275,26 @@ describe('mapSdkMessage', () => {
     expect(
       mapSdkMessage({
         type: 'assistant',
-        message: { content: [{ type: 'tool_use', id: 't2', name: 'Bash', input: { command: 'npm test' } }] },
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 't2',
+              name: 'Bash',
+              input: { command: 'npm test' },
+            },
+          ],
+        },
       }),
-    ).toEqual([{ type: 'tool-begin', toolId: 't2', kind: 'command', title: 'npm test', detail: 'npm test' }]);
+    ).toEqual([
+      {
+        type: 'tool-begin',
+        toolId: 't2',
+        kind: 'command',
+        title: 'npm test',
+        detail: 'npm test',
+      },
+    ]);
   });
 
   it('turns a Task call into a subagent rather than a tool row', () => {
@@ -257,21 +303,38 @@ describe('mapSdkMessage', () => {
         type: 'assistant',
         message: {
           content: [
-            { type: 'tool_use', id: 'a1', name: 'Task', input: { subagent_type: 'Explore', description: 'Find the loop' } },
+            {
+              type: 'tool_use',
+              id: 'a1',
+              name: 'Task',
+              input: { subagent_type: 'Explore', description: 'Find the loop' },
+            },
           ],
         },
       }),
-    ).toEqual([{ type: 'subagent-start', agentId: 'a1', role: 'Explore', title: 'Find the loop' }]);
+    ).toEqual([
+      {
+        type: 'subagent-start',
+        agentId: 'a1',
+        role: 'Explore',
+        title: 'Find the loop',
+      },
+    ]);
   });
 
   it('turns a tool_result into a tool-end carrying status', () => {
     expect(
-      mapSdkMessage({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1' }] } }),
+      mapSdkMessage({
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: 't1' }] },
+      }),
     ).toEqual([{ type: 'tool-end', toolId: 't1', status: 'ok', summary: undefined }]);
     expect(
       mapSdkMessage({
         type: 'user',
-        message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true }] },
+        message: {
+          content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true }],
+        },
       }),
     ).toEqual([{ type: 'tool-end', toolId: 't1', status: 'error', summary: undefined }]);
   });
@@ -281,6 +344,80 @@ describe('mapSdkMessage', () => {
     expect(mapSdkMessage({ type: 'result', is_error: true, result: 'rate limited' })).toEqual([
       { type: 'error', message: 'rate limited' },
     ]);
+  });
+
+  it('surfaces Claude background lifecycle, compaction, and prompt suggestions', () => {
+    expect(
+      mapSdkMessage({
+        type: 'system',
+        subtype: 'task_started',
+        task_id: 'task-1',
+        description: 'Research the renderer',
+        subagent_type: 'Explore',
+      }),
+    ).toEqual([
+      {
+        type: 'subagent-start',
+        agentId: 'task-1',
+        role: 'Explore',
+        title: 'Research the renderer',
+      },
+    ]);
+    expect(
+      mapSdkMessage({
+        type: 'system',
+        subtype: 'task_progress',
+        task_id: 'task-1',
+        description: 'Reading files',
+        subagent_type: 'Explore',
+        summary: 'Found the message fold',
+      }),
+    ).toEqual([{ type: 'subagent-delta', agentId: 'task-1', chunk: 'Found the message fold' }]);
+    expect(
+      mapSdkMessage({
+        type: 'system',
+        subtype: 'task_notification',
+        task_id: 'task-1',
+        status: 'completed',
+        summary: 'Done',
+      }),
+    ).toEqual([{ type: 'tool-end', toolId: 'task-1', status: 'ok', summary: 'Done' }]);
+    expect(
+      mapSdkMessage({
+        type: 'system',
+        subtype: 'background_tasks_changed',
+        tasks: [{ task_id: 'task-2', task_type: 'bash', description: 'Run tests' }],
+      }),
+    ).toEqual([{ type: 'notice', text: 'Background work running: Run tests' }]);
+    expect(
+      mapSdkMessage({
+        type: 'system',
+        subtype: 'compact_boundary',
+        compact_metadata: { trigger: 'manual', pre_tokens: 12000, post_tokens: 4000 },
+      }),
+    ).toEqual([{ type: 'notice', text: 'Claude compacted the conversation manually (12000 → 4000 tokens).' }]);
+    expect(mapSdkMessage({ type: 'prompt_suggestion', suggestion: ' Add the tests ' })).toEqual([
+      { type: 'notice', text: 'Suggested next prompt: Add the tests' },
+    ]);
+  });
+
+  it('does not put ambient or command-catalogue control messages in the transcript', () => {
+    expect(
+      mapSdkMessage({
+        type: 'system',
+        subtype: 'task_started',
+        task_id: 'ambient',
+        description: 'Housekeeping',
+        skip_transcript: true,
+      }),
+    ).toEqual([]);
+    expect(
+      mapSdkMessage({
+        type: 'system',
+        subtype: 'commands_changed',
+        commands: [{ name: 'ultracode', description: 'Go wide' }],
+      }),
+    ).toEqual([]);
   });
 
   it('yields nothing (rather than throwing) on a shape it does not know', () => {
@@ -360,7 +497,13 @@ describe('AgentSdkDriver', () => {
       query: (args: unknown) => {
         options = ((args as Record<string, unknown>).options ?? {}) as Record<string, unknown>;
         return (async function* () {
-          yield { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'ok' } } };
+          yield {
+            type: 'stream_event',
+            event: {
+              type: 'content_block_delta',
+              delta: { type: 'text_delta', text: 'ok' },
+            },
+          };
           yield { type: 'result' };
         })();
       },
@@ -371,6 +514,105 @@ describe('AgentSdkDriver', () => {
     expect(events).toEqual([{ type: 'message-delta', text: 'ok' }, { type: 'turn-complete' }]);
     expect(options.cwd).toBe('/w/game');
     expect(options.permissionMode).toBe('acceptEdits');
+    driver.stop();
+  });
+
+  it('uses the installed Claude CLI and forwards ultracode/slash text unchanged', async () => {
+    let options: Record<string, unknown> = {};
+    const prompts: unknown[] = [];
+    const sdk = {
+      query: (args: unknown) => {
+        const call = args as { prompt: AsyncIterable<unknown>; options: Record<string, unknown> };
+        options = call.options;
+        void (async () => {
+          for await (const prompt of call.prompt) prompts.push(prompt);
+        })();
+        return liveStream();
+      },
+    };
+    const driver = new AgentSdkDriver(
+      sdk,
+      null,
+      null,
+      null,
+      undefined,
+      null,
+      undefined,
+      '/opt/homebrew/bin/claude',
+    );
+    await driver.start('s1', '/w/game');
+    driver.send('ultracode /workflow deploy');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(options.pathToClaudeCodeExecutable).toBe('/opt/homebrew/bin/claude');
+    expect(options.settingSources).toEqual(['user', 'project', 'local']);
+    expect((prompts[0] as { message: { content: string } }).message.content).toBe('ultracode /workflow deploy');
+    driver.stop();
+  });
+
+  it('pushes a dynamic Claude command replacement without recording it as chat', async () => {
+    const stream = new EventQueue<unknown>();
+    const driver = new AgentSdkDriver({ query: () => stream }, 'sk-test');
+    const seen: unknown[] = [];
+    driver.onCommandsChanged((commands) => seen.push(commands));
+    await driver.start('s1', '/w/game');
+
+    stream.push({
+      type: 'system',
+      subtype: 'commands_changed',
+      commands: [{ name: '/ultracode', description: 'Use the dynamic workflow' }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(seen).toEqual([
+      [{ name: 'ultracode', description: 'Use the dynamic workflow', source: 'builtin' }],
+    ]);
+    expect(await driver.commands()).toEqual(seen[0]);
+    driver.stop();
+  });
+
+  it('keeps lifecycle updates on the Task subagent card even when progress omits its type', async () => {
+    const sdk = {
+      query: () =>
+        liveStream(
+          {
+            type: 'assistant',
+            message: {
+              content: [
+                {
+                  type: 'tool_use',
+                  id: 'tool-1',
+                  name: 'Task',
+                  input: { subagent_type: 'Explore', description: 'Inspect routing' },
+                },
+              ],
+            },
+          },
+          {
+            type: 'system',
+            subtype: 'task_progress',
+            task_id: 'task-1',
+            tool_use_id: 'tool-1',
+            description: 'Reading ws.ts',
+          },
+          {
+            type: 'system',
+            subtype: 'task_notification',
+            task_id: 'task-1',
+            tool_use_id: 'tool-1',
+            status: 'completed',
+            summary: 'Found it',
+          },
+        ),
+    };
+    const driver = new AgentSdkDriver(sdk, 'sk-test');
+    await driver.start('s1', '/w/game');
+
+    expect(await drain(driver.events, 3)).toEqual([
+      { type: 'subagent-start', agentId: 'tool-1', role: 'Explore', title: 'Inspect routing' },
+      { type: 'subagent-delta', agentId: 'tool-1', chunk: 'Reading ws.ts' },
+      { type: 'subagent-end', agentId: 'tool-1', status: 'ok', summary: 'Found it' },
+    ]);
     driver.stop();
   });
 
@@ -524,8 +766,17 @@ describe('approval policy', () => {
   });
 
   it('builds a file change, with a diff when the SDK gave it both sides', () => {
-    expect(sdkFileChange('Write', { file_path: '/a.js' })).toEqual({ path: '/a.js', kind: 'create' });
-    expect(sdkFileChange('Edit', { file_path: '/a.js', old_string: 'a', new_string: 'b' })).toEqual({
+    expect(sdkFileChange('Write', { file_path: '/a.js' })).toEqual({
+      path: '/a.js',
+      kind: 'create',
+    });
+    expect(
+      sdkFileChange('Edit', {
+        file_path: '/a.js',
+        old_string: 'a',
+        new_string: 'b',
+      }),
+    ).toEqual({
       path: '/a.js',
       kind: 'edit',
       diff: '-a\n+b',
@@ -538,21 +789,31 @@ describe('AgentSdkDriver approvals', () => {
   /** Capture the `canUseTool` callback, and the options, the driver hands the SDK. */
   function driverWithPermission(mode?: PermissionMode): {
     driver: AgentSdkDriver;
-    ask: (tool: string, input: unknown) => Promise<unknown>;
+    ask: (tool: string, input: unknown, options?: { suggestions?: unknown[] }) => Promise<unknown>;
+    elicit: (request: unknown, options?: { signal: AbortSignal }) => Promise<unknown>;
     options: () => Record<string, unknown>;
   } {
-    let canUseTool: ((tool: string, input: unknown) => Promise<unknown>) | null = null;
+    let canUseTool:
+      | ((tool: string, input: unknown, options?: { suggestions?: unknown[] }) => Promise<unknown>)
+      | null = null;
+    let onElicitation: ((request: unknown, options: { signal: AbortSignal }) => Promise<unknown>) | null = null;
     let captured: Record<string, unknown> = {};
     const sdk = {
       query: (args: unknown) => {
         const options = (args as { options: Record<string, unknown> }).options;
         captured = options;
         canUseTool = options.canUseTool as typeof canUseTool;
+        onElicitation = options.onElicitation as typeof onElicitation;
         return liveStream();
       },
     };
     const driver = new AgentSdkDriver(sdk, 'sk-test', null, null, mode);
-    return { driver, ask: (tool, input) => canUseTool!(tool, input), options: () => captured };
+    return {
+      driver,
+      ask: (tool, input, options) => canUseTool!(tool, input, options),
+      elicit: (request, options = { signal: new AbortController().signal }) => onElicitation!(request, options),
+      options: () => captured,
+    };
   }
 
   /**
@@ -570,8 +831,28 @@ describe('AgentSdkDriver approvals', () => {
       const { driver, options } = driverWithPermission(mode);
       await driver.start('s1', '/w/game');
       expect(options().permissionMode).toBe(expected);
+      expect(options().allowDangerouslySkipPermissions).toBe(mode === 'skip' ? true : undefined);
+      expect(options()).toMatchObject({
+        enableFileCheckpointing: true,
+        includeHookEvents: true,
+        forwardSubagentText: true,
+        promptSuggestions: true,
+      });
       driver.stop();
     }
+  });
+
+  it('returns Claude permission suggestions only when the user chooses remember', async () => {
+    const { driver, ask } = driverWithPermission('ask');
+    await driver.start('s1', '/w/game');
+    const events = driver.events[Symbol.asyncIterator]();
+    const suggestions = [{ type: 'addDirectories', directories: ['/tmp/work'], destination: 'session' }];
+    const answer = ask('Bash', { command: 'cd /tmp/work' }, { suggestions });
+    const request = (await events.next()).value as Extract<ChatEvent, { type: 'approval-request' }>;
+    expect(request.choices?.map((choice) => choice.label)).toContain('Allow and remember');
+    driver.approve(request.approvalId, 'allow', 'allow-remember');
+    await expect(answer).resolves.toMatchObject({ behavior: 'allow', updatedPermissions: suggestions });
+    driver.stop();
   });
 
   it('asks about work inside the folder in ask mode, and about nothing in skip', async () => {
@@ -579,7 +860,10 @@ describe('AgentSdkDriver approvals', () => {
     await asking.driver.start('s1', '/w/game');
     const iterator = asking.driver.events[Symbol.asyncIterator]();
     void asking.ask('Write', { file_path: '/w/game/a.js' });
-    expect((await iterator.next()).value).toMatchObject({ type: 'approval-request', kind: 'file-change' });
+    expect((await iterator.next()).value).toMatchObject({
+      type: 'approval-request',
+      kind: 'file-change',
+    });
     asking.driver.stop();
 
     const skipping = driverWithPermission('skip');
@@ -588,10 +872,229 @@ describe('AgentSdkDriver approvals', () => {
     skipping.driver.stop();
   });
 
+  it('blocks for AskUserQuestion even in skip mode and returns the real answers', async () => {
+    const { driver, ask } = driverWithPermission('skip');
+    await driver.start('s1', '/w/game');
+    const iterator = driver.events[Symbol.asyncIterator]();
+    const result = ask('AskUserQuestion', {
+      questions: [
+        {
+          header: 'Library',
+          question: 'Which library?',
+          multiSelect: false,
+          options: [
+            { label: 'React', description: 'Use React.' },
+            { label: 'Vue', description: 'Use Vue.' },
+          ],
+        },
+      ],
+    });
+    const request = (await iterator.next()).value as {
+      type: string;
+      inputId: string;
+    };
+    expect(request).toMatchObject({
+      type: 'input-request',
+      questions: [{ id: 'q0', label: 'Which library?', type: 'choice' }],
+    });
+
+    let settled = false;
+    void result.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    driver.answerInput?.(request.inputId, {
+      action: 'submit',
+      answers: { q0: 'React' },
+    });
+    expect(await result).toMatchObject({
+      behavior: 'allow',
+      updatedInput: { answers: { 'Which library?': 'React' } },
+    });
+    expect((await iterator.next()).value).toEqual({
+      type: 'input-resolved',
+      inputId: request.inputId,
+      action: 'submit',
+    });
+    driver.stop();
+  });
+
+  it('renders MCP form elicitation with typed fields and returns values only to the SDK', async () => {
+    const { driver, elicit } = driverWithPermission();
+    await driver.start('s1', '/w/game');
+    const iterator = driver.events[Symbol.asyncIterator]();
+    const result = elicit({
+      serverName: 'deploy',
+      message: 'Enter deployment details.',
+      mode: 'form',
+      requestedSchema: {
+        type: 'object',
+        required: ['region', 'token'],
+        properties: {
+          region: {
+            type: 'string',
+            title: 'Region',
+            enum: ['us-west-2', 'eu-west-1'],
+          },
+          replicas: {
+            type: 'integer',
+            title: 'Replicas',
+            minimum: 1,
+            maximum: 10,
+          },
+          token: { type: 'string', title: 'Access token', format: 'password' },
+          dryRun: { type: 'boolean', title: 'Dry run' },
+        },
+      },
+    });
+    const request = (await iterator.next()).value as {
+      type: string;
+      inputId: string;
+    };
+    expect(request).toMatchObject({
+      type: 'input-request',
+      title: 'deploy',
+      description: 'Enter deployment details.',
+      questions: [
+        {
+          id: '/region',
+          label: 'Region',
+          type: 'choice',
+          required: true,
+          options: [
+            { value: 'us-west-2', label: 'us-west-2' },
+            { value: 'eu-west-1', label: 'eu-west-1' },
+          ],
+        },
+        { id: '/replicas', label: 'Replicas', type: 'number', min: 1, max: 10 },
+        {
+          id: '/token',
+          label: 'Access token',
+          type: 'text',
+          required: true,
+          secret: true,
+        },
+        { id: '/dryRun', label: 'Dry run', type: 'boolean' },
+      ],
+    });
+
+    driver.answerInput?.(request.inputId, {
+      action: 'submit',
+      answers: {
+        '/region': 'eu-west-1',
+        '/replicas': 3,
+        '/token': 'never-write-this-to-the-transcript',
+        '/dryRun': true,
+      },
+    });
+    expect(await result).toEqual({
+      action: 'accept',
+      content: {
+        region: 'eu-west-1',
+        replicas: 3,
+        token: 'never-write-this-to-the-transcript',
+        dryRun: true,
+      },
+    });
+    expect((await iterator.next()).value).toEqual({
+      type: 'input-resolved',
+      inputId: request.inputId,
+      action: 'submit',
+    });
+    driver.stop();
+  });
+
+  it('renders URL elicitation, accepts confirmation, and withdraws it on abort', async () => {
+    const { driver, elicit } = driverWithPermission();
+    await driver.start('s1', '/w/game');
+    const iterator = driver.events[Symbol.asyncIterator]();
+
+    const accepted = elicit({
+      serverName: 'github',
+      message: 'Authorize GitHub.',
+      mode: 'url',
+      url: 'https://example.test/authorize',
+      elicitationId: 'auth-1',
+    });
+    const first = (await iterator.next()).value as {
+      type: string;
+      inputId: string;
+    };
+    expect(first).toMatchObject({
+      type: 'input-request',
+      title: 'github',
+      description: expect.stringContaining('https://example.test/authorize'),
+      questions: [{ id: 'confirmed', type: 'boolean', required: true }],
+      externalAction: {
+        type: 'open-url',
+        url: 'https://example.test/authorize',
+        elicitationId: 'auth-1',
+      },
+    });
+    driver.answerInput?.(first.inputId, {
+      action: 'submit',
+      answers: { confirmed: true },
+    });
+    expect(await accepted).toEqual({ action: 'accept' });
+    expect((await iterator.next()).value).toEqual({
+      type: 'input-resolved',
+      inputId: first.inputId,
+      action: 'submit',
+    });
+
+    const controller = new AbortController();
+    const aborted = elicit(
+      {
+        serverName: 'github',
+        message: 'Authorize again.',
+        mode: 'url',
+        url: 'https://example.test/authorize-again',
+      },
+      { signal: controller.signal },
+    );
+    const second = (await iterator.next()).value as { inputId: string };
+    controller.abort();
+    expect(await aborted).toEqual({ action: 'cancel' });
+    expect((await iterator.next()).value).toEqual({
+      type: 'input-resolved',
+      inputId: second.inputId,
+      action: 'withdrawn',
+    });
+    driver.stop();
+  });
+
+  it('withdraws a pending user question on stop without leaking its values', async () => {
+    const { driver, ask } = driverWithPermission();
+    await driver.start('s1', '/w/game');
+    const iterator = driver.events[Symbol.asyncIterator]();
+    const result = ask('AskUserQuestion', {
+      questions: [
+        {
+          header: 'Secret',
+          question: 'What is the secret?',
+          multiSelect: false,
+          options: [{ label: 'Keep it', description: 'Do not persist it.' }],
+        },
+      ],
+    });
+    const request = (await iterator.next()).value as { inputId: string };
+    driver.stop();
+    expect(await result).toMatchObject({ behavior: 'deny' });
+    expect((await iterator.next()).value).toEqual({
+      type: 'input-resolved',
+      inputId: request.inputId,
+      action: 'withdrawn',
+    });
+  });
+
   it('auto-allows work inside the folder without troubling the user', async () => {
     const { driver, ask } = driverWithPermission();
     await driver.start('s1', '/w/game');
-    expect(await ask('Write', { file_path: '/w/game/a.js' })).toMatchObject({ behavior: 'allow' });
+    expect(await ask('Write', { file_path: '/w/game/a.js' })).toMatchObject({
+      behavior: 'allow',
+    });
     driver.stop();
   });
 
@@ -601,7 +1104,10 @@ describe('AgentSdkDriver approvals', () => {
 
     const iterator = driver.events[Symbol.asyncIterator]();
     const decision = ask('Write', { file_path: '/etc/hosts' });
-    const request = (await iterator.next()).value as { type: string; approvalId: string };
+    const request = (await iterator.next()).value as {
+      type: string;
+      approvalId: string;
+    };
     expect(request.type).toBe('approval-request');
 
     let settled = false;
@@ -658,16 +1164,36 @@ describe('AgentSdkDriver approvals', () => {
         (async function* () {
           yield {
             type: 'assistant',
-            message: { content: [{ type: 'tool_use', id: 'a1', name: 'Task', input: { subagent_type: 'Explore' } }] },
+            message: {
+              content: [
+                {
+                  type: 'tool_use',
+                  id: 'a1',
+                  name: 'Task',
+                  input: { subagent_type: 'Explore' },
+                },
+              ],
+            },
           };
-          yield { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'a1' }] } };
+          yield {
+            type: 'user',
+            message: { content: [{ type: 'tool_result', tool_use_id: 'a1' }] },
+          };
         })(),
     };
     const driver = new AgentSdkDriver(sdk, 'sk-test');
     await driver.start('s1', '/w/game');
     const events = await drain(driver.events, 2);
-    expect(events[0]).toMatchObject({ type: 'subagent-start', agentId: 'a1', role: 'Explore' });
-    expect(events[1]).toMatchObject({ type: 'subagent-end', agentId: 'a1', status: 'ok' });
+    expect(events[0]).toMatchObject({
+      type: 'subagent-start',
+      agentId: 'a1',
+      role: 'Explore',
+    });
+    expect(events[1]).toMatchObject({
+      type: 'subagent-end',
+      agentId: 'a1',
+      status: 'ok',
+    });
     driver.stop();
   });
 });
@@ -704,7 +1230,9 @@ describe('AgentSdkDriver interrupt', () => {
     const sdk = {
       query: (args: unknown) => {
         canUseTool = (args as { options: Record<string, unknown> }).options.canUseTool as typeof canUseTool;
-        return Object.assign(liveStream(), { interrupt: async () => undefined });
+        return Object.assign(liveStream(), {
+          interrupt: async () => undefined,
+        });
       },
     };
     const driver = new AgentSdkDriver(sdk, 'sk-test');
@@ -793,7 +1321,10 @@ describe('AgentSdkDriver session resume', () => {
     const delivered: unknown[] = [];
     const sdk = {
       query: (args: unknown) => {
-        const { prompt, options } = args as { prompt: AsyncIterable<unknown>; options: Record<string, unknown> };
+        const { prompt, options } = args as {
+          prompt: AsyncIterable<unknown>;
+          options: Record<string, unknown>;
+        };
         attempts.push(options.resume as string | undefined);
         if (attempts.length === 1) {
           // What a refused resume looks like from out here: the subprocess
@@ -814,7 +1345,10 @@ describe('AgentSdkDriver session resume', () => {
     // Said out loud: the transcript still reads as one conversation, and an
     // agent that silently lost its memory of it reads as one lying about it.
     const [notice] = await drain(driver.events, 1);
-    expect(notice).toEqual({ type: 'notice', text: CLAUDE_RESUME_FAILED_NOTICE });
+    expect(notice).toEqual({
+      type: 'notice',
+      text: CLAUDE_RESUME_FAILED_NOTICE,
+    });
     await new Promise((resolve) => setTimeout(resolve, 30));
     // One retry, fresh — and the conversation is alive, not stranded.
     expect(attempts).toEqual(['stale', undefined]);
@@ -841,7 +1375,10 @@ describe('AgentSdkDriver environment', () => {
         return liveStream();
       },
     };
-    const driver = new AgentSdkDriver(sdk, 'sk-test', null, { shimDir: '/shim', probeCli: false });
+    const driver = new AgentSdkDriver(sdk, 'sk-test', null, {
+      shimDir: '/shim',
+      probeCli: false,
+    });
     await driver.start('s1', '/w/game');
     const env = options.env as NodeJS.ProcessEnv;
     expect(env.PATH!.startsWith('/shim')).toBe(true); // hearth tools still win

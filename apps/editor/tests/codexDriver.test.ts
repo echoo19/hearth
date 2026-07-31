@@ -14,7 +14,7 @@
  * is the failure this file exists to prevent.
  */
 import { describe, expect, it } from 'vitest';
-import { CodexDriver, type CodexTransport } from '../server/chatDrivers/codex';
+import { CodexDriver, codexSlashCommands, type CodexTransport } from '../server/chatDrivers/codex';
 import { encodeRpc } from '../server/chatDrivers/codexWire';
 import type { AgentTurnOptions, ChatEvent } from '../server/chat';
 import type { PermissionMode } from '../server/permissionMode';
@@ -24,7 +24,13 @@ import type { PermissionMode } from '../server/permissionMode';
  * so a test can assert on what was asked as well as what was rendered.
  */
 class FakeAppServer implements CodexTransport {
-  sent: { id?: number | string; method?: string; params?: Record<string, unknown>; result?: unknown }[] = [];
+  sent: {
+    id?: number | string;
+    method?: string;
+    params?: Record<string, unknown>;
+    result?: unknown;
+    error?: { code?: number; message?: string };
+  }[] = [];
   private onDataCb: ((chunk: string) => void) | null = null;
   private onCloseCb: ((reason: string) => void) | null = null;
   killed = false;
@@ -71,6 +77,9 @@ class FakeAppServer implements CodexTransport {
   /** The last reply the driver sent for a given request id. */
   replyFor(id: number | string): unknown {
     return this.sent.filter((m) => m.id === id && m.method === undefined).pop()?.result;
+  }
+  errorFor(id: number | string): { code?: number; message?: string } | undefined {
+    return this.sent.filter((m) => m.id === id && m.method === undefined).pop()?.error;
   }
   requestsFor(method: string): Record<string, unknown>[] {
     return this.sent.filter((m) => m.method === method).map((m) => m.params ?? {});
@@ -161,6 +170,7 @@ describe('CodexDriver handshake', () => {
 
   it('falls back to a fresh thread when the remembered one is gone', async () => {
     const { driver, server } = makeDriver({ resume: 'thread-gone' });
+    const events = reader(driver.events);
     // A codex that has forgotten the thread rejects the resume.
     server.autoReply['thread/resume'] = undefined as never;
     server.write = ((line: string) => {
@@ -173,6 +183,9 @@ describe('CodexDriver handshake', () => {
     }) as typeof server.write;
     await driver.start('chat-1', '/w/game');
     expect(server.requestsFor('thread/start')).toHaveLength(1);
+    expect(await events.next(1)).toEqual([
+      { type: 'notice', text: 'Codex could not resume the saved thread, so this continues in a fresh Codex thread.' },
+    ]);
     driver.stop();
   });
 });
@@ -227,6 +240,49 @@ describe('CodexDriver permission policy', () => {
 });
 
 describe('CodexDriver turns', () => {
+  it('discovers enabled skills dynamically and invokes them with Codex syntax', async () => {
+    const { driver, server } = makeDriver();
+    server.autoReply['skills/list'] = {
+      data: [
+        {
+          cwd: '/w/game',
+          errors: [],
+          skills: [
+            { name: 'ship', description: 'Ship the project', enabled: true, path: '/skills/ship', scope: 'user' },
+            { name: 'off', description: 'Disabled', enabled: false, path: '/skills/off', scope: 'user' },
+          ],
+        },
+      ],
+    };
+    await driver.start('chat-1', '/w/game');
+
+    expect(await driver.commands()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'compact', source: 'builtin' }),
+        expect.objectContaining({ name: 'review', source: 'builtin' }),
+        expect.objectContaining({ name: 'ship', source: 'skill' }),
+      ]),
+    );
+    driver.send('/ship production');
+    expect(server.requestsFor('turn/start')[0].input).toEqual([
+      { type: 'text', text: '$ship production', text_elements: [] },
+    ]);
+    driver.stop();
+  });
+
+  it('runs compact through the native app-server action', async () => {
+    const { driver, server } = makeDriver();
+    server.autoReply['thread/compact/start'] = {};
+    await driver.start('chat-1', '/w/game');
+    const completed = reader(driver.events).next(1);
+    driver.send('/compact');
+
+    expect(server.requestsFor('thread/compact/start')[0]).toEqual({ threadId: 'thread-1' });
+    expect(await completed).toEqual([{ type: 'turn-complete' }]);
+    expect(server.requestsFor('turn/start')).toHaveLength(0);
+    driver.stop();
+  });
+
   it('sends a turn and maps the stream onto the transcript vocabulary', async () => {
     const { driver, server } = makeDriver();
     await driver.start('chat-1', '/w/game');
@@ -253,6 +309,25 @@ describe('CodexDriver turns', () => {
       { type: 'tool-output-delta', toolId: 'c1', chunk: 'PASS\n' },
       { type: 'tool-end', toolId: 'c1', status: 'ok', exitCode: 0, summary: 'PASS' },
       { type: 'turn-complete' },
+    ]);
+    driver.stop();
+  });
+
+  it('settles image generation even when its external artifact cannot be staged', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    const collected = reader(driver.events).next(2);
+    server.notify('item/completed', {
+      item: {
+        type: 'imageGeneration',
+        id: 'image-1',
+        status: 'completed',
+        savedPath: '../missing-output.png',
+      },
+    });
+    expect(await collected).toEqual([
+      expect.objectContaining({ type: 'notice', text: expect.stringContaining('Could not stage') }),
+      { type: 'tool-end', toolId: 'image-1', status: 'ok' },
     ]);
     driver.stop();
   });
@@ -285,6 +360,24 @@ describe('CodexDriver turns', () => {
     server.close('codex app-server exited (1)');
     expect(await collected).toEqual([{ type: 'error', message: 'codex app-server exited (1)' }]);
     driver.stop();
+  });
+});
+
+describe('codex command catalogue', () => {
+  it('always exposes native actions and ignores disabled or duplicate skills', () => {
+    expect(
+      codexSlashCommands({
+        data: [
+          {
+            skills: [
+              { name: 'compact', description: 'duplicate', enabled: true },
+              { name: 'live', description: 'Live skill', enabled: true },
+              { name: 'off', description: 'Off skill', enabled: false },
+            ],
+          },
+        ],
+      }).map((command) => command.name),
+    ).toEqual(['compact', 'review', 'live']);
   });
 });
 
@@ -356,6 +449,25 @@ describe('CodexDriver approvals', () => {
     driver.stop();
   });
 
+  it('returns an exact server-offered approval value through the shared allow decision', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    const request = reader(driver.events).next(1);
+    server.emit({
+      id: 8,
+      method: 'item/commandExecution/requestApproval',
+      params: {
+        reason: 'Run the formatter',
+        command: ['npm', 'run', 'format'],
+        availableDecisions: ['acceptForSession', 'decline'],
+      },
+    });
+    const approvalId = ((await request)[0] as { approvalId: string }).approvalId;
+    driver.approve(approvalId, 'allow');
+    expect(server.replyFor(8)).toEqual({ decision: 'acceptForSession' });
+    driver.stop();
+  });
+
   it('withdraws anything still pending on stop — codex unwinds, and no Deny is forged', async () => {
     const { driver, server } = makeDriver();
     await driver.start('chat-1', '/w/game');
@@ -377,37 +489,209 @@ describe('CodexDriver approvals', () => {
     expect(await resolved).toEqual([{ type: 'approval-resolved', approvalId, decision: 'withdrawn' }]);
   });
 
-  it('answers an unknown server request rather than leaving it hanging', async () => {
-    const { driver, server } = makeDriver();
-    await driver.start('chat-1', '/w/game');
-    server.emit({ id: 42, method: 'some/futureRequest', params: {} });
-    expect(server.replyFor(42)).toEqual({});
-    driver.stop();
-  });
-
-  /**
-   * Through the DRIVER, not through the pure describeQuestion helper. The
-   * helper being right proves nothing about whether anything calls it — which
-   * is exactly how this shipped unwired the first time.
-   */
-  it('shows the question the agent asked, and still answers it so the turn moves', async () => {
+  it('rejects an unknown server request explicitly and makes the incompatibility visible', async () => {
     const { driver, server } = makeDriver();
     await driver.start('chat-1', '/w/game');
     const events = reader(driver.events).next(1);
+    server.emit({ id: 42, method: 'some/futureRequest', params: {} });
+    expect(server.replyFor(42)).toBeUndefined();
+    expect(server.errorFor(42)).toEqual({
+      code: -32601,
+      message: 'Unsupported codex server request: some/futureRequest',
+    });
+    expect(await events).toEqual([
+      { type: 'notice', text: 'Codex asked Hearth to handle an unsupported request: some/futureRequest.' },
+    ]);
+    driver.stop();
+  });
+
+  it('rejects malformed interactive requests instead of acknowledging them as success', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    const events = reader(driver.events).next(1);
+    server.emit({ id: 46, method: 'item/tool/requestUserInput', params: { questions: [] } });
+    expect(server.errorFor(46)).toEqual({
+      code: -32602,
+      message: 'Invalid codex server request: item/tool/requestUserInput',
+    });
+    expect(await events).toEqual([
+      { type: 'notice', text: 'Codex sent an interactive request Hearth could not safely display.' },
+    ]);
+    driver.stop();
+  });
+
+  it('answers currentTime/read with whole Unix seconds', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    const before = Math.floor(Date.now() / 1000);
+    server.emit({ id: 41, method: 'currentTime/read', params: {} });
+    const after = Math.floor(Date.now() / 1000);
+    expect(server.replyFor(41)).toMatchObject({ currentTimeAt: expect.any(Number) });
+    const currentTimeAt = (server.replyFor(41) as { currentTimeAt: number }).currentTimeAt;
+    expect(currentTimeAt).toBeGreaterThanOrEqual(before);
+    expect(currentTimeAt).toBeLessThanOrEqual(after);
+    driver.stop();
+  });
+
+  it('blocks on requestUserInput and sends the exact submitted answer shape', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    const events = reader(driver.events);
+    const requested = events.next(1);
     server.emit({
       id: 43,
       method: 'item/tool/requestUserInput',
       params: {
-        questions: [{ question: 'Pixel art or vector?', options: [{ label: 'Pixel' }, { label: 'Vector' }] }],
+        questions: [
+          {
+            id: 'style',
+            header: 'Art',
+            question: 'Pixel art or vector?',
+            isOther: true,
+            options: [{ label: 'Pixel' }, { label: 'Vector' }],
+          },
+        ],
       },
     });
-    expect((await events)[0]).toEqual({
-      type: 'notice',
-      text: 'The agent asked: Pixel art or vector? (Pixel / Vector)',
+    const [event] = await requested;
+    expect(event).toMatchObject({
+      type: 'input-request',
+      title: 'Art',
+      questions: [
+        {
+          id: 'style',
+          label: 'Pixel art or vector?',
+          type: 'choice',
+          options: [
+            { value: 'Pixel', label: 'Pixel' },
+            { value: 'Vector', label: 'Vector' },
+          ],
+        },
+      ],
     });
-    // Answered regardless: an unanswered request pauses codex forever.
-    expect(server.replyFor(43)).toEqual({});
+    expect(server.replyFor(43)).toBeUndefined();
+
+    const inputId = (event as { inputId: string }).inputId;
+    const resolved = events.next(1);
+    driver.answerInput(inputId, { action: 'submit', answers: { style: 'Pixel' } });
+    expect(server.replyFor(43)).toEqual({ answers: { style: { answers: ['Pixel'] } } });
+    expect(await resolved).toEqual([{ type: 'input-resolved', inputId, action: 'submit' }]);
     driver.stop();
+  });
+
+  it('answers MCP forms exactly, without writing submitted values into events', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    const events = reader(driver.events);
+    const requested = events.next(1);
+    server.emit({
+      id: 'mcp-1',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        serverName: 'deploy',
+        mode: 'form',
+        message: 'Configure deployment',
+        requestedSchema: {
+          type: 'object',
+          required: ['region'],
+          properties: {
+            region: { type: 'string', title: 'Region' },
+            replicas: { type: 'integer', title: 'Replicas' },
+          },
+        },
+      },
+    });
+    const [event] = await requested;
+    expect(event).toMatchObject({
+      type: 'input-request',
+      title: 'deploy',
+      description: 'Configure deployment',
+    });
+    const inputId = (event as { inputId: string }).inputId;
+    const resolved = events.next(1);
+    driver.answerInput(inputId, { action: 'submit', answers: { region: 'us-west', replicas: 3 } });
+    expect(server.replyFor('mcp-1')).toEqual({
+      action: 'accept',
+      content: { region: 'us-west', replicas: 3 },
+      _meta: null,
+    });
+    expect(await resolved).toEqual([{ type: 'input-resolved', inputId, action: 'submit' }]);
+    driver.stop();
+  });
+
+  it('cancels MCP elicitations with the protocol cancel result', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    const requested = reader(driver.events).next(1);
+    server.emit({
+      id: 'mcp-2',
+      method: 'mcpServer/elicitation/request',
+      params: {
+        serverName: 'deploy',
+        mode: 'form',
+        message: 'Configure deployment',
+        requestedSchema: { type: 'object', properties: { region: { type: 'string' } } },
+      },
+    });
+    const inputId = ((await requested)[0] as { inputId: string }).inputId;
+    driver.answerInput(inputId, { action: 'cancel' });
+    expect(server.replyFor('mcp-2')).toEqual({ action: 'cancel', content: null, _meta: null });
+    driver.stop();
+  });
+
+  it('withdraws a pending input when codex resolves the server request itself', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    const events = reader(driver.events);
+    const requested = events.next(1);
+    server.emit({
+      id: 44,
+      method: 'item/tool/requestUserInput',
+      params: { questions: [{ id: 'name', question: 'Name?' }] },
+    });
+    const inputId = ((await requested)[0] as { inputId: string }).inputId;
+    const resolved = events.next(1);
+    server.notify('serverRequest/resolved', { requestId: 44 });
+    expect(await resolved).toEqual([{ type: 'input-resolved', inputId, action: 'withdrawn' }]);
+    driver.answerInput(inputId, { action: 'submit', answers: { name: 'late' } });
+    expect(server.replyFor(44)).toBeUndefined();
+    driver.stop();
+  });
+
+  it('withdraws a pending approval when codex resolves the server request itself', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    const events = reader(driver.events);
+    const requested = events.next(1);
+    server.emit({
+      id: 47,
+      method: 'item/commandExecution/requestApproval',
+      params: { reason: 'Run it?', command: ['npm', 'test'] },
+    });
+    const approvalId = ((await requested)[0] as { approvalId: string }).approvalId;
+    const resolved = events.next(1);
+    server.notify('serverRequest/resolved', { requestId: 47 });
+    expect(await resolved).toEqual([{ type: 'approval-resolved', approvalId, decision: 'withdrawn' }]);
+    driver.approve(approvalId, 'allow');
+    expect(server.replyFor(47)).toBeUndefined();
+    driver.stop();
+  });
+
+  it('cancels every pending input on stop and records withdrawal rather than an answer', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    const events = reader(driver.events);
+    const requested = events.next(1);
+    server.emit({
+      id: 45,
+      method: 'item/tool/requestUserInput',
+      params: { questions: [{ id: 'token', question: 'Token?', isSecret: true }] },
+    });
+    const inputId = ((await requested)[0] as { inputId: string }).inputId;
+    const resolved = events.next(1);
+    driver.stop();
+    expect(server.replyFor(45)).toEqual({ answers: {} });
+    expect(await resolved).toEqual([{ type: 'input-resolved', inputId, action: 'withdrawn' }]);
   });
 });
 
@@ -479,6 +763,21 @@ describe('CodexDriver model and effort', () => {
  * every message after it evaporated before it ever reached disk.
  */
 describe('CodexDriver when the app-server dies', () => {
+  it('does not report a deliberate stop closed until the transport actually exits', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    let closed = false;
+    void driver.closed.then(() => {
+      closed = true;
+    });
+    driver.stop();
+    await Promise.resolve();
+    expect(closed).toBe(false);
+    server.close('codex app-server exited (signal)');
+    await driver.closed;
+    expect(closed).toBe(true);
+  });
+
   it('reports the loss, ends its stream, and reads dead', async () => {
     const { driver, server } = makeDriver();
     await driver.start('chat-1', '/w/game');

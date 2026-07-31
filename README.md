@@ -87,7 +87,11 @@ either way.
 
 Conversations survive, too. A chat keeps the agent's working memory across app
 restarts and disconnects, and stopping a turn pauses the conversation rather
-than ending it. Setup, attachments, skills, and approvals are in
+than ending it. Live slash commands, structured questions, exact approvals,
+workflows and subagents come from each installed CLI. When a feature belongs
+to the full-screen terminal UI, **Continue in CLI** resumes that exact provider
+session without letting the native adapter run beside it. Setup, attachments,
+skills, and approvals are in
 [docs/agents.md](docs/agents.md).
 
 ## Your files, your folder, no lock-in
