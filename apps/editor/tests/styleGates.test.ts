@@ -211,6 +211,15 @@ describe('style gates', () => {
     expect(fs.existsSync(STYLES_DIR)).toBe(true);
   });
 
+  it('keeps the narrow dev-team header controls reachable without horizontal overflow', () => {
+    const css = fs.readFileSync(path.join(STYLES_DIR, 'app/devteam.css'), 'utf8');
+    const start = css.indexOf('@media (max-width: 680px)');
+    const end = css.indexOf('@media (prefers-reduced-motion: reduce)', start);
+    const narrow = css.slice(start, end);
+    expect(narrow).toMatch(/\.devteam-phase\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(narrow).toMatch(/\.devteam-controls\s*\{[^}]*width:\s*100%/);
+  });
+
   it('Gate A: every font-size under styles/ (and the styles.css manifest) uses a --text-* token', () => {
     const files = [...collectFiles(STYLES_DIR, ['.css']), MANIFEST_CSS];
     const offenders: string[] = [];

@@ -14,6 +14,7 @@ export type { ChatKind };
 export type {
   DevTeamPhase,
   DevTeamPlan,
+  DevTeamCompletedRun,
   DevTeamSnapshot,
   DevTeamState,
   DevTeamTaskRecord,

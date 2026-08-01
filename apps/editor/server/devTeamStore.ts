@@ -62,6 +62,19 @@ export interface DevTeamSteeringRecord {
   text: string;
 }
 
+export interface DevTeamCompletedRun {
+  version: 1;
+  runId: string;
+  plan: DevTeamPlan | null;
+  tasks: DevTeamTaskRecord[];
+  currentMilestone: number;
+  spec: string | null;
+  specVersion: number;
+  summary: string | null;
+  wrap: string | null;
+  completedAt: string;
+}
+
 export interface DevTeamSnapshot {
   version: 1;
   runId: string;
@@ -69,6 +82,7 @@ export interface DevTeamSnapshot {
   plan: DevTeamPlan | null;
   tasks: DevTeamTaskRecord[];
   approvals: DevTeamApprovalRecord[];
+  history: DevTeamCompletedRun[];
   currentMilestone: number;
   spec: string | null;
   specVersion: number;
@@ -199,6 +213,34 @@ const phaseSchema = z.enum([
   'interrupted',
 ]);
 
+const taskRecordSchema = z
+  .object({
+    taskId: z.string(),
+    engineerId: z.string(),
+    status: z.enum(['pending', 'running', 'waiting', 'done', 'error', 'interrupted']),
+    startedAt: z.string().optional(),
+    endedAt: z.string().optional(),
+    summary: z.string().optional(),
+    continuationId: z.string().optional(),
+    files: z.array(z.string()).optional(),
+  })
+  .strict();
+
+const completedRunSchema: z.ZodType<DevTeamCompletedRun> = z
+  .object({
+    version: z.literal(1),
+    runId: z.string(),
+    plan: devTeamPlanSchema.nullable(),
+    tasks: z.array(taskRecordSchema),
+    currentMilestone: z.number().int().nonnegative(),
+    spec: z.string().nullable(),
+    specVersion: z.number().int().nonnegative(),
+    summary: z.string().nullable(),
+    wrap: z.string().nullable(),
+    completedAt: z.string(),
+  })
+  .strict();
+
 const stateSchema: z.ZodType<DevTeamState> = z.object({
   version: z.literal(1),
   runId: z.string(),
@@ -206,21 +248,9 @@ const stateSchema: z.ZodType<DevTeamState> = z.object({
   resumePhase: phaseSchema.nullable(),
   planDigest: z.string().nullable(),
   plan: devTeamPlanSchema.nullable(),
-  tasks: z.array(
-    z
-      .object({
-        taskId: z.string(),
-        engineerId: z.string(),
-        status: z.enum(['pending', 'running', 'waiting', 'done', 'error', 'interrupted']),
-        startedAt: z.string().optional(),
-        endedAt: z.string().optional(),
-        summary: z.string().optional(),
-        continuationId: z.string().optional(),
-        files: z.array(z.string()).optional(),
-      })
-      .strict(),
-  ),
+  tasks: z.array(taskRecordSchema),
   approvals: z.array(z.object({ specVersion: z.number().int().positive(), approvedAt: z.string() }).strict()),
+  history: z.array(completedRunSchema).default([]),
   steering: z.array(z.object({ ts: z.string(), text: z.string() }).strict()),
   currentMilestone: z.number().int().nonnegative(),
   retryCount: z.number().int().nonnegative(),
@@ -249,6 +279,7 @@ function emptyState(over: Partial<DevTeamState> = {}): DevTeamState {
     plan: null,
     tasks: [],
     approvals: [],
+    history: [],
     steering: [],
     currentMilestone: 0,
     retryCount: 0,

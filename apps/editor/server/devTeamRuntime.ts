@@ -21,6 +21,7 @@ import {
   writeDevTeamState,
   type DevTeamPhase,
   type DevTeamPlan,
+  type DevTeamCompletedRun,
   type DevTeamSnapshot,
   type DevTeamState,
   type DevTeamTaskRecord,
@@ -235,6 +236,7 @@ function initialState(): DevTeamState {
     plan: null,
     tasks: [],
     approvals: [],
+    history: [],
     steering: [],
     currentMilestone: 0,
     retryCount: 0,
@@ -253,6 +255,22 @@ function digest(plan: DevTeamPlan): string {
 
 function terminal(status: DevTeamTaskRecord['status']): boolean {
   return status === 'done' || status === 'error' || status === 'interrupted';
+}
+
+function completedRun(state: DevTeamState, completedAt: string): DevTeamCompletedRun {
+  const { version, runId, plan, tasks, currentMilestone, spec, specVersion, summary, wrap } = state;
+  return structuredClone({
+    version,
+    runId,
+    plan,
+    tasks,
+    currentMilestone,
+    spec,
+    specVersion,
+    summary,
+    wrap,
+    completedAt,
+  });
 }
 
 function scopesOverlap(left: readonly string[], right: readonly string[]): boolean {
@@ -302,6 +320,9 @@ export class DevTeamRuntime {
     if (this.state.phase !== 'idle' && this.state.phase !== 'done') return;
     const operation = this.beginLead('interview');
     const approvalHistory = this.state.approvals;
+    const history = this.state.phase === 'done' && this.state.runId
+      ? [...this.state.history, completedRun(this.state, this.now())]
+      : this.state.history;
     const specVersion = this.state.specVersion;
     this.state = {
       ...initialState(),
@@ -309,6 +330,7 @@ export class DevTeamRuntime {
       phase: 'interviewing',
       agent: this.options.agent ?? null,
       approvals: approvalHistory,
+      history,
       specVersion,
     };
     await this.persist();
@@ -692,6 +714,7 @@ export class DevTeamRuntime {
       plan,
       tasks,
       approvals,
+      history,
       currentMilestone,
       spec,
       specVersion,
@@ -706,6 +729,7 @@ export class DevTeamRuntime {
       plan,
       tasks,
       approvals,
+      history,
       currentMilestone,
       spec,
       specVersion,

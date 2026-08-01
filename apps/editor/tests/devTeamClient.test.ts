@@ -17,6 +17,7 @@ const SNAPSHOT: DevTeamSnapshot = {
   plan: null,
   tasks: [{ taskId: 'task-1', engineerId: 'engineer-1', status: 'running' }],
   approvals: [],
+  history: [],
   currentMilestone: 0,
   spec: '# Make a game',
   specVersion: 1,

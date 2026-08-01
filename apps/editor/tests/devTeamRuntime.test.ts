@@ -507,6 +507,22 @@ describe('dev team lead state machine', () => {
       summary: 'Milestone reviewed.',
       wrap: 'Built the requested experience. Known gap: none observed.',
     });
+
+    const completedRunId = run.snapshot().runId;
+    await run.handleUserMessage('Add a second chapter.');
+    expect(run.snapshot()).toMatchObject({
+      phase: 'interviewing',
+      history: [expect.objectContaining({
+        runId: completedRunId,
+        wrap: 'Built the requested experience. Known gap: none observed.',
+        completedAt: expect.any(String),
+      })],
+    });
+    expect(run.snapshot().runId).not.toBe(completedRunId);
+
+    const reopened = runtime();
+    await reopened.start();
+    expect(reopened.snapshot().history).toEqual(run.snapshot().history);
   });
 });
 

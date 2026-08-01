@@ -7,7 +7,7 @@ import {
   pendingLaneAsk,
 } from '../../chat/devteam';
 import { useApp } from '../../store';
-import type { ChatMessage, DevTeamSnapshot, DevTeamTaskRecord } from '../../types';
+import type { ChatMessage, DevTeamCompletedRun, DevTeamSnapshot, DevTeamTaskRecord } from '../../types';
 import { Button } from '../ui/Button';
 import { Composer } from './Composer';
 import { Markdown } from './Markdown';
@@ -116,6 +116,9 @@ function Lane({
   const answer = useApp((s) => s.answerEngineerInput);
   const asks = pendingLaneAsk(messages);
   const activity = engineerId ? devTeamActivity(messages, record?.status) : (messages.some((message) => message.streaming) ? 'Working' : 'Available');
+  const waiting = asks.count > 0
+    ? `, ${asks.count} waiting ${asks.count === 1 ? 'question' : 'questions'}`
+    : '';
   const id = `devteam-lane-${engineerId ?? 'lead'}`;
 
   return (
@@ -125,7 +128,7 @@ function Lane({
         className="devteam-lane-head"
         aria-expanded={open}
         aria-controls={id}
-        aria-label={`${name} lane`}
+        aria-label={`${name} lane, ${activity}${waiting}`}
         onClick={() => setOpen((value) => !value)}
       >
         <span className="devteam-lane-dot" aria-hidden="true" />
@@ -145,8 +148,8 @@ function Lane({
               messages={messages}
               className="devteam-lane-turns"
               controls={engineerId ? {
-                activeApprovalId: keyboardActive ? asks.approvalId : null,
-                activeInputId: keyboardActive ? asks.inputId : null,
+                activeApprovalId: keyboardActive && asks.active?.kind === 'approval' ? asks.active.id : null,
+                activeInputId: keyboardActive && asks.active?.kind === 'input' ? asks.active.id : null,
                 onApproval: (approvalId, decision, choiceId) => approve(engineerId, approvalId, decision, choiceId),
                 onInput: (inputId, action, answers) => answer(engineerId, inputId, action, answers),
               } : undefined}
@@ -158,7 +161,7 @@ function Lane({
   );
 }
 
-function Milestones({ state }: { state: DevTeamSnapshot }) {
+function Milestones({ state }: { state: Pick<DevTeamSnapshot, 'plan' | 'tasks' | 'currentMilestone'> }) {
   if (!state.plan) return <p className="devteam-board-note">The lead is preparing the plan.</p>;
   const records = new Map(state.tasks.map((task) => [task.taskId, task]));
   return (
@@ -219,7 +222,12 @@ function TeamBoard({ state }: { state: DevTeamSnapshot }) {
   );
 }
 
-function RunRecord({ state }: { state: DevTeamSnapshot }) {
+type RunRecordProps =
+  | { state: DevTeamCompletedRun; historical: true }
+  | { state: DevTeamSnapshot; historical?: false };
+
+function RunRecord(props: RunRecordProps) {
+  const { state } = props;
   const finished = state.tasks.filter((task) => task.status === 'done').length;
   return (
     <details className="devteam-run-record">
@@ -230,7 +238,7 @@ function RunRecord({ state }: { state: DevTeamSnapshot }) {
       <div className="devteam-run-body">
         {state.wrap && <Markdown text={state.wrap} live={false} />}
         {!state.wrap && state.summary && <Markdown text={state.summary} live={false} />}
-        <TeamBoard state={state} />
+        {props.historical ? <Milestones state={state} /> : <TeamBoard state={props.state} />}
       </div>
     </details>
   );
@@ -249,6 +257,9 @@ export function DevTeamPane() {
   const copy = composerCopy(state);
   const board = state ? isTeamBoardPhase(state.phase) : false;
   const done = state?.phase === 'done';
+  const approvedSpec = state !== null && state.spec !== null && state.approvals.some(
+    (approval) => approval.specVersion === state.specVersion,
+  );
 
   return (
     <div className="devteam-pane">
@@ -258,6 +269,14 @@ export function DevTeamPane() {
           <p className="devteam-ask-warning" role="status">
             Ask mode pauses engineers for each command and file change. Automatic mode is smoother for team runs.
           </p>
+        )}
+        {state && state.history.length > 0 && (
+          <div className="devteam-history" aria-label="Completed dev team runs">
+            {state.history.map((run) => <RunRecord key={run.runId} state={run} historical />)}
+          </div>
+        )}
+        {state && approvedSpec && board && (
+          <p className="devteam-spec-record">Approved specification v{state.specVersion}</p>
         )}
         {state?.phase === 'spec-review' ? (
           <div className="devteam-flow">

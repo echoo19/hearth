@@ -3,7 +3,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DevTeamPane } from '../src/components/chat/DevTeamPane';
-import { devTeamActivity, devTeamPhaseLabel } from '../src/chat/devteam';
+import { devTeamActivity, devTeamPhaseLabel, pendingLaneAsk } from '../src/chat/devteam';
 import { useApp } from '../src/store';
 import type { ChatMessage, DevTeamSnapshot } from '../src/types';
 
@@ -36,6 +36,7 @@ const snapshot = (over: Partial<DevTeamSnapshot> = {}): DevTeamSnapshot => ({
     { taskId: 'look', engineerId: 'engineer-look', status: 'done', summary: 'Finished two sprites.' },
   ],
   approvals: [{ specVersion: 1, approvedAt: '2026-07-31T00:00:00.000Z' }],
+  history: [],
   currentMilestone: 0,
   spec: '# Tiny world\n\nBuild a small, tactile world.',
   specVersion: 1,
@@ -101,6 +102,36 @@ describe('dev team presentation helpers', () => {
     expect(devTeamActivity(engineerLane)).toBe('Waiting for you');
     expect(devTeamActivity([], 'done')).toBe('Finished');
   });
+
+  it('chooses one pending ask in transcript order even when both kinds are waiting', () => {
+    const both: ChatMessage[] = [{
+      id: 'both',
+      role: 'agent',
+      streaming: true,
+      parts: [
+        {
+          kind: 'input',
+          id: 'input-first',
+          questions: [{ id: 'answer', label: 'Answer', type: 'text' }],
+          allowCancel: false,
+          resolution: null,
+        },
+        {
+          kind: 'approval',
+          id: 'approval-second',
+          approvalKind: 'command',
+          title: 'Run a command',
+          detail: 'npm test',
+          decision: null,
+        },
+      ],
+    }];
+
+    expect(pendingLaneAsk(both)).toEqual({
+      active: { kind: 'input', id: 'input-first' },
+      count: 2,
+    });
+  });
 });
 
 describe('DevTeamPane', () => {
@@ -112,7 +143,9 @@ describe('DevTeamPane', () => {
     expect(lanes[0].textContent).toContain('Lead');
     expect(screen.getByText('Playable loop')).toBeTruthy();
     expect(screen.getAllByText('Build controls').length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: /Gameplay builder lane/i }).getAttribute('aria-expanded')).toBe('false');
+    const engineer = screen.getByRole('button', { name: /Gameplay builder lane/i });
+    expect(engineer.getAttribute('aria-expanded')).toBe('false');
+    expect(engineer.getAttribute('aria-label')).toBe('Gameplay builder lane, Waiting for you, 1 waiting question');
     expect(screen.getByText('Waiting for you')).toBeTruthy();
     expect(screen.getByText(/Ask mode pauses engineers/)).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'Tell the team' }).getAttribute('placeholder')).toBe('Tell the team…');
@@ -216,6 +249,40 @@ describe('DevTeamPane', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Approve & build' }));
     expect(useApp.getState().approveDevTeamSpec).toHaveBeenCalledOnce();
     expect(screen.getByRole('textbox', { name: 'Message the lead' }).getAttribute('placeholder')).toBe('Describe a revision…');
+  });
+
+  it('settles an approved spec to a one-line record during planning and build', () => {
+    act(() => useApp.setState({ devTeam: snapshot({ phase: 'planning' }) }));
+    render(<DevTeamPane />);
+    expect(screen.getByText('Approved specification v1')).toBeTruthy();
+    expect(screen.queryByRole('region', { name: 'Specification' })).toBeNull();
+  });
+
+  it('keeps a completed run reopenable after a later run starts', () => {
+    const completed = {
+      version: 1 as const,
+      runId: 'run-1',
+      plan,
+      tasks: snapshot().tasks,
+      currentMilestone: 0,
+      spec: '# Tiny world',
+      specVersion: 1,
+      summary: 'Reviewed.',
+      wrap: 'Use arrow keys.',
+      completedAt: '2026-07-31T00:01:00.000Z',
+    };
+    act(() => useApp.setState({
+      devTeam: {
+        ...snapshot({ runId: 'run-2', phase: 'interviewing', plan: null, tasks: [], spec: null }),
+        history: [completed],
+      },
+      devTeamLanes: {},
+    }));
+    render(<DevTeamPane />);
+
+    const record = screen.getByText(/Run complete/).closest('details');
+    expect(record).not.toBeNull();
+    expect(record?.hasAttribute('open')).toBe(false);
   });
 
   it('returns to the ordinary transcript with a compact reopenable run record when done', () => {

@@ -310,6 +310,7 @@ describe('Recents, across folders', () => {
           { taskId: 'two', engineerId: 'two', status: 'running' },
         ],
         approvals: [],
+        history: [],
         currentMilestone: 0,
         spec: null,
         specVersion: 0,

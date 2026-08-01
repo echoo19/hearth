@@ -56,26 +56,24 @@ export function devTeamActivity(
 }
 
 export function pendingLaneAsk(messages: readonly ChatMessage[]): {
-  approvalId: string | null;
-  inputId: string | null;
+  active: { kind: 'approval' | 'input'; id: string } | null;
   count: number;
 } {
-  let approvalId: string | null = null;
-  let inputId: string | null = null;
+  let active: { kind: 'approval' | 'input'; id: string } | null = null;
   let count = 0;
   for (const message of messages) {
     for (const part of message.parts) {
       if (part.kind === 'approval' && part.decision === null) {
-        approvalId = part.id;
+        active ??= { kind: 'approval', id: part.id };
         count += 1;
       }
       if (part.kind === 'input' && part.resolution === null) {
-        inputId = part.id;
+        active ??= { kind: 'input', id: part.id };
         count += 1;
       }
     }
   }
-  return { approvalId, inputId, count };
+  return { active, count };
 }
 
 export function devTeamSidebarAnnotation(snapshot: DevTeamSnapshot | null): string | null {

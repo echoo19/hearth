@@ -43,6 +43,7 @@ function state(over: Partial<DevTeamState> = {}): DevTeamState {
     plan: null,
     tasks: [],
     approvals: [],
+    history: [],
     steering: [],
     currentMilestone: 0,
     retryCount: 0,
@@ -68,6 +69,14 @@ afterEach(async () => {
 describe('dev team run state', () => {
   it('reads a missing state as idle', async () => {
     expect(await readDevTeamState(root, chatId)).toEqual(state({ runId: '', phase: 'idle' }));
+  });
+
+  it('loads pre-history state files with an empty durable run history', async () => {
+    await fsp.mkdir(runDir(), { recursive: true });
+    const { history: _history, ...legacy } = state();
+    await fsp.writeFile(stateFile(), JSON.stringify(legacy));
+
+    expect((await readDevTeamState(root, chatId)).history).toEqual([]);
   });
 
   it('returns a visible interrupted state for corruption without overwriting the file', async () => {

@@ -372,6 +372,24 @@
   font-size: var(--text-xs);
 }
 
+.devteam-history,
+.devteam-spec-record {
+  width: 100%;
+  max-width: var(--chat-measure);
+  margin: 0 auto 14px;
+}
+
+.devteam-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.devteam-spec-record {
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+}
+
 .devteam-error {
   grid-column: 1 / -1;
   margin-bottom: 0;
@@ -442,6 +460,16 @@
 }
 
 @media (max-width: 680px) {
+  .devteam-phase {
+    flex-wrap: wrap;
+  }
+
+  .devteam-controls {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+
   .devteam-steps li:not([data-state='current']) span:last-child,
   .devteam-phase-name,
   .devteam-lane-tail {

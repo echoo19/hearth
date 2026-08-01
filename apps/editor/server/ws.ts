@@ -1105,6 +1105,7 @@ export function attachWebSocket(
       plan: state.plan,
       tasks: state.tasks,
       approvals: state.approvals,
+      history: state.history,
       currentMilestone: state.currentMilestone,
       spec: state.spec,
       specVersion: state.specVersion,
