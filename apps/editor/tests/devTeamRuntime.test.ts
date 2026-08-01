@@ -25,6 +25,7 @@ class ScriptedDriver implements ChatDriver {
   stops = 0;
   failStart = false;
   failSend = false;
+  private stopped = false;
 
   get events(): AsyncIterable<ChatEvent> {
     const queue = this.queue;
@@ -59,6 +60,8 @@ class ScriptedDriver implements ChatDriver {
   }
 
   stop(): void {
+    if (this.stopped) return;
+    this.stopped = true;
     this.stops += 1;
     this.queue.close();
   }
@@ -86,6 +89,8 @@ let beforeCreate: ((request: DevTeamEngineerRequest) => Promise<void>) | null;
 let driverFailureStage: 'start' | 'append' | 'send' | null;
 let beforeEngineerAppend: ((record: ChatRecord) => Promise<void>) | null;
 let failLeadSend: boolean;
+let failLeadAppend: boolean;
+let failAgentAppend: boolean;
 let idCounter: number;
 const chatId = 'team-chat';
 const runDir = (): string => path.join(root, '.hearth', 'devteam', chatId);
@@ -112,11 +117,13 @@ function runtime(maxConcurrency = 2): DevTeamRuntime {
       leadPrompts.push(text);
     },
     appendLeadRecord: async (record) => {
+      if (failLeadAppend) throw new Error('lead append failed');
       leadRecords.push(record);
     },
     appendEngineerRecord: async (engineerId, record) => {
       await beforeEngineerAppend?.(record);
       if (driverFailureStage === 'append' && record.role === 'user') throw new Error('append failed');
+      if (failAgentAppend && record.role === 'agent') throw new Error('agent transcript failed');
       engineerRecords.push({ engineerId, record });
     },
     emitSnapshot: (snapshot) => {
@@ -140,6 +147,28 @@ async function putSpec(text = '# Approved spec\n\nBuild exactly what was request
 async function putPlan(value: unknown): Promise<void> {
   await fsp.mkdir(runDir(), { recursive: true });
   await fsp.writeFile(path.join(runDir(), 'plan.json'), JSON.stringify(value));
+}
+
+function blockNextFileRead(fileName: string): { reached: Promise<void>; release: () => void } {
+  const readFile = fsp.readFile.bind(fsp) as (...args: unknown[]) => Promise<unknown>;
+  let release!: () => void;
+  let markReached!: () => void;
+  let blocked = false;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const reached = new Promise<void>((resolve) => {
+    markReached = resolve;
+  });
+  vi.spyOn(fsp, 'readFile').mockImplementation((async (file: unknown, ...args: unknown[]) => {
+    if (!blocked && path.basename(String(file)) === fileName) {
+      blocked = true;
+      markReached();
+      await gate;
+    }
+    return readFile(file, ...args);
+  }) as typeof fsp.readFile);
+  return { reached, release };
 }
 
 async function settleLead(run: DevTeamRuntime, text = 'Lead response'): Promise<void> {
@@ -182,10 +211,13 @@ beforeEach(async () => {
   driverFailureStage = null;
   beforeEngineerAppend = null;
   failLeadSend = false;
+  failLeadAppend = false;
+  failAgentAppend = false;
   idCounter = 0;
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await fsp.rm(root, { recursive: true, force: true });
 });
 
@@ -232,6 +264,11 @@ describe('dev team lead state machine', () => {
     await settleLead(run);
     expect(run.snapshot()).toMatchObject({ phase: 'interrupted', error: expect.stringMatching(/plan/i) });
     expect(await readDevTeamState(root, chatId)).toMatchObject({ retryCount: 3 });
+    const promptCount = leadPrompts.length;
+    await run.resume();
+    expect(run.snapshot()).toMatchObject({ phase: 'planning', error: expect.stringMatching(/plan/i) });
+    expect(leadPrompts).toHaveLength(promptCount + 1);
+    expect(leadPrompts.at(-1)).toMatch(/invalid/i);
   });
 
   it('correlates interview follow-ups and prevents approval while a revision is running', async () => {
@@ -253,6 +290,71 @@ describe('dev team lead state machine', () => {
     await settleLead(run, 'Revision ready.');
     await run.approveSpec();
     expect(run.snapshot()).toMatchObject({ phase: 'planning', spec: '# Revised clear spec\n', specVersion: 1 });
+  });
+
+  it.each(['append', 'send'] as const)('makes a failed lead %s recoverable through Resume', async (stage) => {
+    const run = runtime();
+    failLeadAppend = stage === 'append';
+    failLeadSend = stage === 'send';
+
+    await expect(run.start('A brief.')).rejects.toThrow(`lead ${stage} failed`);
+    expect(run.snapshot()).toMatchObject({ phase: 'interrupted', error: expect.stringMatching(/lead/i) });
+    expect(await readDevTeamState(root, chatId)).toMatchObject({ resumePhase: 'interviewing' });
+
+    failLeadAppend = false;
+    failLeadSend = false;
+    await run.resume();
+    expect(run.snapshot().phase).toBe('interviewing');
+    expect(leadPrompts.at(-1)).toMatch(/continue.*interview/i);
+  });
+
+  it('does not let a stopped interview completion overwrite interruption after spec read', async () => {
+    const run = runtime();
+    await run.start('A brief.');
+    await putSpec('# Spec\n');
+    const blocked = blockNextFileRead('spec.md');
+
+    const completion = settleLead(run, 'Spec ready.');
+    await blocked.reached;
+    await run.stop();
+    blocked.release();
+    await completion;
+
+    expect(run.snapshot().phase).toBe('interrupted');
+    expect(await readDevTeamState(root, chatId)).toMatchObject({ resumePhase: 'interviewing' });
+  });
+
+  it('does not dispatch a stopped planning completion after plan read', async () => {
+    const run = runtime();
+    await reachPlanning(run);
+    await putPlan(plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    const blocked = blockNextFileRead('plan.json');
+
+    const completion = settleLead(run, 'Plan ready.');
+    await blocked.reached;
+    await run.stop();
+    blocked.release();
+    await completion;
+
+    expect(run.snapshot().phase).toBe('interrupted');
+    expect(drivers).toEqual([]);
+  });
+
+  it('does not wrap a stopped review completion after amended-plan read', async () => {
+    const run = runtime();
+    await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    await complete(drivers[0], 'A done.');
+    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    const blocked = blockNextFileRead('plan.json');
+
+    const completion = settleLead(run, 'Review ready.');
+    await blocked.reached;
+    await run.stop();
+    blocked.release();
+    await completion;
+
+    expect(run.snapshot().phase).toBe('interrupted');
+    expect(leadPrompts.at(-1)).toMatch(/Review milestone/);
   });
 
   it('runs plan, build, review, and wrap turns through done', async () => {
@@ -548,6 +650,39 @@ describe('engineer durability and controls', () => {
     expect(drivers[0].stops).toBe(1);
   });
 
+  it('does not start a stale engineer after Stop and Resume race its prompt append', async () => {
+    const run = runtime();
+    await reachPlanning(run);
+    await putPlan(plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    let release!: () => void;
+    let appendReached!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const reached = new Promise<void>((resolve) => {
+      appendReached = resolve;
+    });
+    beforeEngineerAppend = async (record) => {
+      if (record.role !== 'user') return;
+      appendReached();
+      await blocked;
+    };
+
+    const planning = settleLead(run, 'Plan ready.');
+    await reached;
+    await run.stop();
+    beforeEngineerAppend = null;
+    const resuming = run.resume();
+    release();
+    await Promise.all([planning, resuming]);
+    await vi.waitFor(() => expect(drivers).toHaveLength(2));
+
+    expect(drivers[0].sent).toEqual([]);
+    expect(drivers[0].stops).toBe(1);
+    expect(drivers[1].sent).toHaveLength(1);
+    expect(run.snapshot().tasks[0].status).toBe('running');
+  });
+
   it.each(['start', 'append', 'send'] as const)('stops a created driver when engineer %s fails', async (stage) => {
     const run = runtime();
     await reachPlanning(run);
@@ -603,6 +738,19 @@ describe('engineer durability and controls', () => {
     release();
     await vi.waitFor(() => expect(engineerRecords.at(-1)).toMatchObject({ record: { role: 'agent' } }));
     expect(run.snapshot().tasks[0].status).toBe('interrupted');
+  });
+
+  it('stops and settles an engineer when its event transcript write fails', async () => {
+    const run = runtime();
+    await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    failAgentAppend = true;
+
+    drivers[0].queue.push({ type: 'message-delta', text: 'Unpersisted.' });
+
+    await vi.waitFor(() => expect(run.snapshot().tasks[0].status).toBe('error'));
+    expect(run.snapshot().tasks[0].summary).toContain('agent transcript failed');
+    expect(drivers[0].stops).toBe(1);
+    expect(run.snapshot().phase).toBe('reviewing');
   });
 });
 
@@ -802,5 +950,14 @@ describe('restart, steering, and plan rewrites', () => {
     await settleLead(run, 'Corrected.');
     expect(run.snapshot()).toMatchObject({ phase: 'reviewing', error: expect.stringMatching(/amendment/i) });
     expect(await readDevTeamState(root, chatId)).toMatchObject({ retryCount: 2 });
+    await settleLead(run, 'Corrected again.');
+    expect(run.snapshot()).toMatchObject({ phase: 'interrupted', error: expect.stringMatching(/amendment/i) });
+    const promptCount = leadPrompts.length;
+
+    await run.resume();
+
+    expect(run.snapshot()).toMatchObject({ phase: 'reviewing', error: expect.stringMatching(/amendment/i) });
+    expect(leadPrompts).toHaveLength(promptCount + 1);
+    expect(leadPrompts.at(-1)).toMatch(/invalid/i);
   });
 });
