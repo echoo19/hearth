@@ -351,7 +351,7 @@ export class DevTeamRuntime {
     await this.load();
     const message = text.trim();
     if (!message) return false;
-    if (this.state.phase === 'done' && this.state.error === DEV_TEAM_STOPPED) return false;
+    if (this.state.phase === 'done' && this.state.error?.startsWith(DEV_TEAM_STOPPED)) return false;
     if (this.state.phase === 'idle' || this.state.phase === 'done') {
       await this.start(message);
       return true;
@@ -1209,12 +1209,14 @@ export class DevTeamRuntime {
     if (this.active.get(engineerId) !== active) return;
     const record = this.taskRecord(active.task.id);
     if (!record) return;
-    await this.withdrawEngineerAsks(engineerId, active);
+    const withdrawalError = await this.withdrawEngineerAsksBestEffort(engineerId, active);
     if (this.active.get(engineerId) !== active) return;
     record.status = status;
     record.endedAt = this.now();
-    record.summary = active.currentProse.trim() || active.finalProse || (status === 'error' ? 'Engineer failed.' : undefined);
+    const summary = active.currentProse.trim() || active.finalProse || (status === 'error' ? 'Engineer failed.' : '');
+    record.summary = [summary, withdrawalError].filter(Boolean).join(' ') || undefined;
     record.files = [...active.files];
+    if (withdrawalError) this.state.error = withdrawalError;
     this.active.delete(engineerId);
     active.driver.stop();
     await this.persist();
@@ -1228,6 +1230,34 @@ export class DevTeamRuntime {
     return withdrawing.finally(() => {
       if (active.withdrawals === withdrawing) active.withdrawals = null;
     });
+  }
+
+  private async withdrawEngineerAsksBestEffort(
+    engineerId: string,
+    active: ActiveEngineer,
+  ): Promise<string | null> {
+    try {
+      await this.withdrawEngineerAsks(engineerId, active);
+      return null;
+    } catch (error) {
+      this.emitUnpersistedEngineerWithdrawals(engineerId, active);
+      return `Engineer ${active.task.id} ask withdrawals could not be persisted: ${(error as Error).message}`;
+    }
+  }
+
+  private emitUnpersistedEngineerWithdrawals(engineerId: string, active: ActiveEngineer): void {
+    for (const approvalId of [...active.approvals]) {
+      active.approvals.delete(approvalId);
+      this.options.emitEngineerEvent(engineerId, {
+        type: 'approval-resolved',
+        approvalId,
+        decision: 'withdrawn',
+      });
+    }
+    for (const inputId of [...active.inputs]) {
+      active.inputs.delete(inputId);
+      this.options.emitEngineerEvent(engineerId, { type: 'input-resolved', inputId, action: 'withdrawn' });
+    }
   }
 
   private async persistEngineerWithdrawals(engineerId: string, active: ActiveEngineer): Promise<void> {
@@ -1269,8 +1299,10 @@ export class DevTeamRuntime {
     this.dispatches.clear();
     const phase = this.state.phase;
     const resumePhase = phase === 'paused' ? this.state.resumePhase : phase;
+    const withdrawalErrors: string[] = [];
     for (const [engineerId, active] of [...this.active]) {
-      await this.withdrawEngineerAsks(engineerId, active);
+      const withdrawalError = await this.withdrawEngineerAsksBestEffort(engineerId, active);
+      if (withdrawalError) withdrawalErrors.push(withdrawalError);
       this.active.delete(engineerId);
       active.driver.interrupt?.();
       active.driver.stop();
@@ -1288,7 +1320,7 @@ export class DevTeamRuntime {
     const stopped = error === DEV_TEAM_STOPPED;
     this.state.phase = stopped ? 'done' : 'interrupted';
     this.state.resumePhase = stopped ? null : resumePhase;
-    this.state.error = error;
+    this.state.error = [error, ...withdrawalErrors].filter(Boolean).join(' ') || null;
     await this.persist();
   }
 }

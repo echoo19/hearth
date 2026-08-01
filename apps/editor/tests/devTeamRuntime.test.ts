@@ -91,6 +91,7 @@ let beforeEngineerAppend: ((record: ChatRecord) => Promise<void>) | null;
 let failLeadSend: boolean;
 let failLeadAppend: boolean;
 let failAgentAppend: boolean;
+let persistentlyFailAgentAppend: boolean;
 let idCounter: number;
 const chatId = 'team-chat';
 const runDir = (): string => path.join(root, '.hearth', 'devteam', chatId);
@@ -123,6 +124,7 @@ function runtime(maxConcurrency = 2): DevTeamRuntime {
     appendEngineerRecord: async (engineerId, record) => {
       await beforeEngineerAppend?.(record);
       if (driverFailureStage === 'append' && record.role === 'user') throw new Error('append failed');
+      if (persistentlyFailAgentAppend && record.role === 'agent') throw new Error('persistent agent transcript failure');
       if (failAgentAppend && record.role === 'agent') {
         failAgentAppend = false;
         throw new Error('agent transcript failed');
@@ -234,6 +236,7 @@ beforeEach(async () => {
   failLeadSend = false;
   failLeadAppend = false;
   failAgentAppend = false;
+  persistentlyFailAgentAppend = false;
   idCounter = 0;
 });
 
@@ -794,6 +797,40 @@ describe('engineer durability and controls', () => {
     ]);
   });
 
+  it('still ends and interrupts the run when ask withdrawal writes keep failing', async () => {
+    const run = runtime();
+    await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    const engineerId = run.snapshot().tasks[0].engineerId;
+    drivers[0].queue.push({
+      type: 'approval-request',
+      approvalId: 'unpersisted-approval',
+      kind: 'command',
+      title: 'Run',
+      detail: 'Run',
+    });
+    drivers[0].queue.push({
+      type: 'input-request',
+      inputId: 'unpersisted-input',
+      questions: [{ id: 'x', label: 'X', type: 'text' }],
+    });
+    await vi.waitFor(() => expect(engineerEvents).toHaveLength(2));
+    persistentlyFailAgentAppend = true;
+
+    await expect(run.stop()).resolves.toBeUndefined();
+
+    expect(drivers[0].interrupts).toBe(1);
+    expect(drivers[0].stops).toBe(1);
+    expect(run.snapshot()).toMatchObject({
+      phase: 'done',
+      error: expect.stringMatching(/withdraw.*persist|persist.*withdraw/i),
+      tasks: [{ status: 'interrupted' }],
+    });
+    expect(engineerEvents.slice(-2)).toEqual([
+      { engineerId, event: { type: 'approval-resolved', approvalId: 'unpersisted-approval', decision: 'withdrawn' } },
+      { engineerId, event: { type: 'input-resolved', inputId: 'unpersisted-input', action: 'withdrawn' } },
+    ]);
+  });
+
   it('stop cancels an engineer whose driver is still being created', async () => {
     const run = runtime();
     await reachPlanning(run);
@@ -995,6 +1032,35 @@ describe('engineer durability and controls', () => {
         },
       },
     ]);
+  });
+
+  it('settles a bare stream end when ask withdrawal writes keep failing', async () => {
+    const run = runtime();
+    await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    const engineerId = run.snapshot().tasks[0].engineerId;
+    drivers[0].queue.push({
+      type: 'approval-request',
+      approvalId: 'unpersisted-at-end',
+      kind: 'command',
+      title: 'Run',
+      detail: 'Run',
+    });
+    await vi.waitFor(() => expect(engineerEvents).toHaveLength(1));
+    persistentlyFailAgentAppend = true;
+
+    drivers[0].queue.close();
+
+    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    expect(run.snapshot()).toMatchObject({
+      phase: 'reviewing',
+      error: expect.stringMatching(/withdraw.*persist|persist.*withdraw/i),
+      tasks: [{ status: 'error', summary: expect.stringMatching(/withdraw.*persist|persist.*withdraw/i) }],
+    });
+    expect(drivers[0].stops).toBe(1);
+    expect(engineerEvents.at(-1)).toEqual({
+      engineerId,
+      event: { type: 'approval-resolved', approvalId: 'unpersisted-at-end', decision: 'withdrawn' },
+    });
   });
 });
 
