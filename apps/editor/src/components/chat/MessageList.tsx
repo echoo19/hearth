@@ -8,7 +8,7 @@
  */
 import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useApp } from '../../store';
-import type { ChatMessage, ChatPart } from '../../types';
+import type { ApprovalDecision, ChatMessage, ChatPart, InputAction, InputAnswer } from '../../types';
 import { greetingFor } from '../home/Home';
 import { Button } from '../ui/Button';
 import { ApprovalPrompt } from './ApprovalPrompt';
@@ -132,7 +132,28 @@ function ChatEmptyState({ agent }: { agent: AgentReadiness }) {
  * the transcript was showing the brackets. Yours is not: you can see what you
  * typed, and quietly restyling it afterwards is the app editing your words.
  */
-function Part({ part, live, role }: { part: ChatPart; live: boolean; role: ChatMessage['role'] }) {
+export interface ControlledTurnActions {
+  activeApprovalId?: string | null;
+  activeInputId?: string | null;
+  onApproval?: (approvalId: string, decision: ApprovalDecision, choiceId?: string) => void;
+  onInput?: (
+    inputId: string,
+    action: InputAction,
+    answers?: Record<string, InputAnswer>,
+  ) => boolean;
+}
+
+function Part({
+  part,
+  live,
+  role,
+  controls,
+}: {
+  part: ChatPart;
+  live: boolean;
+  role: ChatMessage['role'];
+  controls?: ControlledTurnActions;
+}) {
   switch (part.kind) {
     case 'text':
       return role === 'agent' ? (
@@ -151,9 +172,21 @@ function Part({ part, live, role }: { part: ChatPart; live: boolean; role: ChatM
     case 'subagent':
       return <SubagentCard part={part} />;
     case 'approval':
-      return <ApprovalPrompt part={part} />;
+      return (
+        <ApprovalPrompt
+          part={part}
+          active={controls ? controls.activeApprovalId === part.id : undefined}
+          onRespond={controls?.onApproval}
+        />
+      );
     case 'input':
-      return <InputPrompt part={part} />;
+      return (
+        <InputPrompt
+          part={part}
+          active={controls ? controls.activeInputId === part.id : undefined}
+          onRespond={controls?.onInput}
+        />
+      );
     case 'plan':
       return <PlanCard part={part} />;
     case 'image':
@@ -221,7 +254,19 @@ function TurnActions({ message }: { message: ChatMessage }) {
   );
 }
 
-function Turn({ message }: { message: ChatMessage }) {
+export function MessageTurn({ message, controls }: { message: ChatMessage; controls?: ControlledTurnActions }) {
+  if (message.orchestration) {
+    return (
+      <details className="orchestration-record">
+        <summary>Dev team instruction</summary>
+        <div className="orchestration-body">
+          {message.parts.map((part, index) =>
+            part.kind === 'text' ? <p key={index}>{part.text}</p> : null,
+          )}
+        </div>
+      </details>
+    );
+  }
   const last = message.parts.length - 1;
   // A live reasoning fold is already a working line — it says "Thinking",
   // carries the pulse and counts. Drawing another one under it would print the
@@ -251,6 +296,7 @@ function Turn({ message }: { message: ChatMessage }) {
             part={item.part}
             live={message.streaming && item.index === last}
             role={message.role}
+            controls={controls}
           />
         ),
       )}
@@ -260,6 +306,26 @@ function Turn({ message }: { message: ChatMessage }) {
       {message.streaming && !thinking && <WorkingRow message={message} />}
       <TurnActions message={message} />
     </article>
+  );
+}
+
+export function MessageTurns({
+  messages,
+  controls,
+  className,
+}: {
+  messages: readonly ChatMessage[];
+  controls?: ControlledTurnActions;
+  className?: string | null;
+}) {
+  const turns = messages.map((message) => (
+    <MessageTurn key={message.id} message={message} controls={controls} />
+  ));
+  if (!className) return <>{turns}</>;
+  return (
+    <div className={className}>
+      {turns}
+    </div>
   );
 }
 
@@ -323,9 +389,7 @@ export function MessageList() {
         <ChatEmptyState agent={agent} />
       ) : (
         <div className="chat-turns">
-          {messages.map((message) => (
-            <Turn key={message.id} message={message} />
-          ))}
+          <MessageTurns messages={messages} />
           {/* Below the running turn, where they will appear once sent. */}
           <QueuedMessages />
         </div>

@@ -1,0 +1,481 @@
+/* Dev Team mode changes the conversation's shape without changing its visual
+   language: charcoal surfaces, ember only for the current action, and the
+   transcript's own folds for every agent lane. */
+
+.conversation-layer.is-devteam {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.chat-column[data-mode='devteam'] .conversation-head {
+  width: 100%;
+  max-width: calc(var(--chat-measure) + var(--chat-gutter) * 2);
+  margin: 0 auto;
+}
+
+.devteam-pane {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.devteam-phase {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 8px var(--chat-gutter);
+  border-bottom: 1px solid var(--border);
+}
+
+.devteam-steps {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.devteam-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.devteam-steps li[data-state='current'] {
+  color: var(--ink);
+}
+
+.devteam-steps li[data-state='done'] {
+  color: var(--ink-mute);
+}
+
+.devteam-step-mark,
+.devteam-task-mark {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+}
+
+.devteam-steps li[data-state='current'] .devteam-step-mark {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.devteam-steps li[data-state='done'] .devteam-step-mark {
+  border-color: var(--ink-faint);
+  background: var(--ink-faint);
+}
+
+.devteam-phase-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.devteam-controls {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.devteam-scroll {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px var(--chat-gutter);
+}
+
+.devteam-scroll > .chat-scroll,
+.devteam-flow > .chat-scroll {
+  min-height: auto;
+  overflow: visible;
+  padding: 0;
+}
+
+.devteam-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  max-width: var(--chat-measure);
+  margin: 0 auto;
+}
+
+.devteam-flow .chat-turns {
+  max-width: none;
+  padding-bottom: 0;
+}
+
+.devteam-spec {
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-1);
+}
+
+.devteam-spec-head,
+.devteam-spec-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+}
+
+.devteam-spec-head {
+  border-bottom: 1px solid var(--border);
+}
+
+.devteam-spec-body {
+  max-width: 72ch;
+  padding: 16px;
+}
+
+.devteam-spec-actions {
+  justify-content: flex-start;
+  border-top: 1px solid var(--border);
+}
+
+.devteam-board {
+  display: grid;
+  grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr);
+  gap: 24px;
+  width: 100%;
+  max-width: 58rem;
+  margin: 0 auto;
+}
+
+.devteam-board-note,
+.devteam-lane-empty {
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+}
+
+.devteam-milestones {
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.devteam-milestone + .devteam-milestone {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--guide);
+}
+
+.devteam-milestone h3 {
+  margin: 0 0 10px;
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.devteam-milestone[aria-current='step'] h3 {
+  color: var(--ink);
+}
+
+.devteam-milestone ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.devteam-milestone li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 1px 8px;
+  align-items: baseline;
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+}
+
+.devteam-milestone li > :last-child {
+  grid-column: 2;
+  color: var(--ink-faint);
+  font-size: var(--text-2xs);
+}
+
+.devteam-milestone li[data-status='running'] .devteam-task-mark {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.devteam-milestone li[data-status='done'] .devteam-task-mark {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+
+.devteam-milestone li[data-status='error'] .devteam-task-mark,
+.devteam-milestone li[data-status='interrupted'] .devteam-task-mark {
+  border-color: var(--err);
+  background: var(--err);
+}
+
+.devteam-milestone li[data-status='waiting'] .devteam-task-mark {
+  border-color: var(--warn);
+  background: var(--warn);
+}
+
+.devteam-lanes {
+  min-width: 0;
+  border-top: 1px solid var(--border);
+}
+
+.devteam-lane {
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.devteam-lane-head {
+  display: grid;
+  grid-template-columns: auto minmax(8rem, auto) auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: var(--ctl-h);
+  padding: 9px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-mute);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.devteam-lane-head:hover {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+.devteam-lane-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+
+.devteam-lane[data-status='running'] .devteam-lane-dot {
+  background: var(--accent);
+}
+
+.devteam-lane[data-status='done'] .devteam-lane-dot {
+  background: var(--ok);
+}
+
+.devteam-lane[data-status='waiting'] .devteam-lane-dot {
+  background: var(--warn);
+}
+
+.devteam-lane[data-status='error'] .devteam-lane-dot,
+.devteam-lane[data-status='interrupted'] .devteam-lane-dot {
+  background: var(--err);
+}
+
+.devteam-lane-who {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.devteam-lane-who strong {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.devteam-lane-who span,
+.devteam-lane-activity,
+.devteam-lane-tail {
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-size: var(--text-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.devteam-lane-activity {
+  color: var(--ink-mute);
+}
+
+.devteam-ask-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--ctl-h-xs);
+  height: var(--ctl-h-xs);
+  border-radius: var(--radius-sm);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--text-2xs);
+}
+
+.devteam-lane-chevron {
+  grid-column: -1;
+  color: var(--ink-faint);
+  transform: rotate(0deg);
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.devteam-lane-head[aria-expanded='true'] .devteam-lane-chevron {
+  transform: rotate(90deg);
+}
+
+.devteam-lane-body {
+  padding: 4px 8px 16px 24px;
+}
+
+.devteam-lane-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.devteam-lane-turns .msg-text,
+.devteam-lane-turns .md {
+  font-size: var(--text-sm);
+}
+
+.devteam-ask-warning,
+.devteam-error {
+  width: 100%;
+  max-width: 58rem;
+  margin: 0 auto 14px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--warn-soft);
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+}
+
+.devteam-error {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+  background: var(--err-soft);
+  color: var(--ink);
+}
+
+.devteam-run-record {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.devteam-run-record > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--ctl-h);
+  padding: 8px;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.devteam-run-record > summary span:last-child {
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+}
+
+.devteam-run-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 8px 8px 18px;
+}
+
+.devteam-run-body > .md {
+  max-width: 72ch;
+}
+
+.orchestration-record {
+  align-self: flex-start;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+}
+
+.orchestration-record > summary {
+  min-height: var(--ctl-h-xs);
+  cursor: pointer;
+}
+
+.orchestration-body {
+  max-width: 68ch;
+  padding: 6px 0 0 18px;
+  color: var(--ink-mute);
+}
+
+.orchestration-body p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.chat-live {
+  flex: none;
+  color: var(--ink-mute);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
+
+@media (max-width: 680px) {
+  .devteam-steps li:not([data-state='current']) span:last-child,
+  .devteam-phase-name,
+  .devteam-lane-tail {
+    display: none;
+  }
+
+  .devteam-board {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .devteam-milestones {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+  }
+
+  .devteam-milestone {
+    min-width: 12rem;
+  }
+
+  .devteam-milestone + .devteam-milestone {
+    margin-top: 0;
+    padding-top: 4px;
+    border-top: 0;
+  }
+
+  .devteam-lane-head {
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .devteam-lane-head,
+  .devteam-lane-chevron {
+    transition: none;
+  }
+}

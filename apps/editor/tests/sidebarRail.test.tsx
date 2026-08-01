@@ -292,6 +292,36 @@ describe('Recents, across folders', () => {
     expect(title).not.toBeNull();
     expect(title?.getAttribute('title')).toBe(long);
   });
+
+  it('annotates the active team conversation with live build activity', async () => {
+    const entry = { ...chat('team', 'Build together', HERE), kind: 'devteam' as const };
+    reset({
+      projectPath: HERE,
+      projectName: 'game',
+      activeChatId: entry.id,
+      recentChats: [entry],
+      devTeam: {
+        version: 1,
+        runId: 'run-1',
+        phase: 'building',
+        plan: null,
+        tasks: [
+          { taskId: 'one', engineerId: 'one', status: 'running' },
+          { taskId: 'two', engineerId: 'two', status: 'running' },
+        ],
+        approvals: [],
+        currentMilestone: 0,
+        spec: null,
+        specVersion: 0,
+        summary: null,
+        wrap: null,
+        error: null,
+      },
+    });
+    render(<Sidebar />);
+
+    expect((await screen.findByRole('status')).textContent).toBe('building · 2 working');
+  });
 });
 
 describe('search', () => {

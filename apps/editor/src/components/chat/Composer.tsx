@@ -99,7 +99,16 @@ export function pasteCarriesFiles(data: DataTransfer | null): boolean {
   return filesFromTransfer(data).length > 0;
 }
 
-export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {}) {
+export function Composer({
+  variant = 'chat',
+  label = 'Message the agent',
+  placeholder,
+}: {
+  variant?: ComposerVariant;
+  /** Allows a conversation mode to name who receives the message without replacing the composer. */
+  label?: string;
+  placeholder?: string;
+} = {}) {
   const sendChat = useApp((s) => s.sendChat);
   // Stop interrupts the TURN and keeps the conversation's agent alive, so the
   // next message continues with everything it already knows — pressing Stop
@@ -318,8 +327,8 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
           className="composer-input"
           rows={1}
           value={text}
-          placeholder={PLACEHOLDER[variant]}
-          aria-label="Message the agent"
+          placeholder={placeholder ?? PLACEHOLDER[variant]}
+          aria-label={label}
           onFocus={() => {
             if (!isHome) refreshChatCommands();
           }}

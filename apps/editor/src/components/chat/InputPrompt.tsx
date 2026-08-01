@@ -11,6 +11,17 @@ import { pendingInputId, useApp } from '../../store';
 import type { ChatInputPart, InputAnswer, InputQuestion } from '../../types';
 import { Button } from '../ui/Button';
 
+export interface InputPromptProps {
+  part: ChatInputPart;
+  /** Controlled lanes provide their own active ask instead of reading the lead transcript. */
+  active?: boolean;
+  onRespond?: (
+    inputId: string,
+    action: 'submit' | 'cancel',
+    answers?: Record<string, InputAnswer>,
+  ) => boolean;
+}
+
 type DraftAnswers = Record<string, InputAnswer | undefined>;
 
 function settledVerb(resolution: NonNullable<ChatInputPart['resolution']>): string {
@@ -249,9 +260,11 @@ function QuestionField({
   );
 }
 
-export function InputPrompt({ part }: { part: ChatInputPart }) {
-  const answer = useApp((state) => state.answerChatInput);
-  const active = useApp((state) => pendingInputId(state.messages) === part.id);
+export function InputPrompt({ part, active: activeProp, onRespond }: InputPromptProps) {
+  const answerChatInput = useApp((state) => state.answerChatInput);
+  const leadActive = useApp((state) => pendingInputId(state.messages) === part.id);
+  const active = activeProp ?? leadActive;
+  const answer = onRespond ?? answerChatInput;
   const [values, setValues] = useState<DraftAnswers>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const formRef = useRef<HTMLFormElement>(null);

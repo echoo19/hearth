@@ -14,6 +14,13 @@ import { pendingApprovalId, useApp } from '../../store';
 import type { ApprovalResolution, ChatApprovalPart } from '../../types';
 import { Button } from '../ui/Button';
 
+export interface ApprovalPromptProps {
+  part: ChatApprovalPart;
+  /** Controlled lanes provide their own active ask instead of reading the lead transcript. */
+  active?: boolean;
+  onRespond?: (approvalId: string, decision: 'allow' | 'deny', choiceId?: string) => void;
+}
+
 /**
  * How an answered ask reads afterwards. Past tense — it is history now.
  * `withdrawn` is deliberately neutral: the session ended under the question,
@@ -24,11 +31,13 @@ export function approvalRecordVerb(decision: ApprovalResolution): string {
   return decision === 'allow' ? 'Allowed' : 'Denied';
 }
 
-export function ApprovalPrompt({ part }: { part: ChatApprovalPart }) {
+export function ApprovalPrompt({ part, active: activeProp, onRespond }: ApprovalPromptProps) {
   const approveChat = useApp((s) => s.approveChat);
   // Only the ask the transcript is actually waiting on owns the keyboard; a
   // second one that somehow stacked stays a click-only control until its turn.
-  const active = useApp((s) => pendingApprovalId(s.messages) === part.id);
+  const leadActive = useApp((s) => pendingApprovalId(s.messages) === part.id);
+  const active = activeProp ?? leadActive;
+  const respond = onRespond ?? approveChat;
   const allowRef = useRef<HTMLButtonElement>(null);
   const decision = part.decision;
   const pending = decision === null;
@@ -54,19 +63,19 @@ export function ApprovalPrompt({ part }: { part: ChatApprovalPart }) {
       if (target?.closest('dialog[open]')) return;
       if (event.key === 'Escape') {
         event.preventDefault();
-        approveChat(part.id, 'deny', defaultDeny?.id);
+        respond(part.id, 'deny', defaultDeny?.id);
         return;
       }
       // A focused button already answers Enter by activating itself; handling
       // it here too would answer twice — and, on Deny, answer the wrong way.
       if (event.key === 'Enter' && tag !== 'BUTTON') {
         event.preventDefault();
-        approveChat(part.id, 'allow', defaultAllow?.id);
+        respond(part.id, 'allow', defaultAllow?.id);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, pending, approveChat, part.id, defaultAllow?.id, defaultDeny?.id]);
+  }, [active, pending, respond, part.id, defaultAllow?.id, defaultDeny?.id]);
 
   if (decision !== null) {
     return (
@@ -92,17 +101,17 @@ export function ApprovalPrompt({ part }: { part: ChatApprovalPart }) {
               key={choice.id}
               ref={choice.id === focusedChoiceId ? allowRef : undefined}
               variant={choice.tone === 'allow' ? 'primary' : undefined}
-              onClick={() => approveChat(part.id, choice.tone === 'allow' ? 'allow' : 'deny', choice.id)}
+              onClick={() => respond(part.id, choice.tone === 'allow' ? 'allow' : 'deny', choice.id)}
             >
               {choice.label}
             </Button>
           ))
         ) : (
           <>
-            <Button ref={allowRef} variant="primary" onClick={() => approveChat(part.id, 'allow')}>
+            <Button ref={allowRef} variant="primary" onClick={() => respond(part.id, 'allow')}>
               Allow
             </Button>
-            <Button onClick={() => approveChat(part.id, 'deny')}>Deny</Button>
+            <Button onClick={() => respond(part.id, 'deny')}>Deny</Button>
           </>
         )}
         {active && <span className="approval-hint">↵ allow · esc deny</span>}

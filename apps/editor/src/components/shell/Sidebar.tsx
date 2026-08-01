@@ -33,6 +33,7 @@ import type {
   RecentWorkspace,
 } from '../../types';
 import { activeProvider, useModelChoice } from '../../chat/modelChoice';
+import { devTeamSidebarAnnotation } from '../../chat/devteam';
 import { hearthNative } from '../../native';
 import { ProjectMark } from '../../projects/ProjectMark';
 import { whereHints } from '../../projects/ProjectSelector';
@@ -295,6 +296,7 @@ function ChatRow({
   onOpen,
   onRename,
   onDelete,
+  annotation,
 }: {
   entry: RecentChatEntry;
   active: boolean;
@@ -305,6 +307,7 @@ function ChatRow({
   onOpen: () => void;
   onRename: (title: string) => void;
   onDelete: () => void;
+  annotation?: string | null;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(entry.title);
@@ -367,7 +370,11 @@ function ChatRow({
         <span className="chat-title" title={entry.title}>
           {entry.title}
         </span>
-        <span className="chat-when">{relativeTime(entry.updatedAt)}</span>
+        {annotation ? (
+          <span className="chat-live" role="status">{annotation}</span>
+        ) : (
+          <span className="chat-when">{relativeTime(entry.updatedAt)}</span>
+        )}
       </button>
       {local && (
         <span className="chat-actions">
@@ -644,6 +651,7 @@ export function Sidebar() {
   const recentChats = useApp((s) => s.recentChats);
   const recentChatsLoaded = useApp((s) => s.recentChatsLoaded);
   const activeChatId = useApp((s) => s.activeChatId);
+  const devTeam = useApp((s) => s.devTeam);
   const newChat = useApp((s) => s.newChat);
   const newDevTeam = useApp((s) => s.newDevTeam);
   const openTerminal = useApp((s) => s.openTerminal);
@@ -1022,6 +1030,11 @@ export function Sidebar() {
                   onOpen={() => void openRecentChat(entry)}
                   onRename={(title) => void renameChat(entry.id, title)}
                   onDelete={() => setPendingDelete(entry)}
+                  annotation={
+                    inProject && entry.id === activeChatId && entry.project.path === projectPath
+                      ? devTeamSidebarAnnotation(devTeam)
+                      : null
+                  }
                 />
               ))}
             </div>

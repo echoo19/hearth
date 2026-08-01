@@ -69,6 +69,7 @@ function resetStore(over: Partial<ReturnType<typeof useApp.getState>> = {}): voi
 const chooseMode = (mode: 'chat' | 'terminal') => act(() => useApp.getState().setConversationMode(mode));
 const terminalLayer = () => document.querySelector('.conversation-layer.is-terminal');
 const chatLayer = () => document.querySelector('.conversation-layer.is-chat');
+const devTeamLayer = () => document.querySelector('.conversation-layer.is-devteam');
 
 beforeEach(() => {
   localStorage.clear();
@@ -299,6 +300,22 @@ describe('the terminal survives the toggle', () => {
     resetStore({ conversationMode: 'terminal' });
     render(<ChatColumn />);
     expect(terminalLayer()?.getAttribute('data-active')).toBe('true');
+  });
+});
+
+describe('the dev team is a lazy third conversation layer', () => {
+  it('mounts only after first use, then stays mounted when another conversation kind is shown', () => {
+    render(<ChatColumn />);
+    expect(devTeamLayer()).toBeNull();
+
+    act(() => useApp.setState({ conversationMode: 'devteam' }));
+    const mounted = devTeamLayer();
+    expect(mounted).not.toBeNull();
+    expect(mounted?.getAttribute('data-active')).toBe('true');
+
+    act(() => useApp.setState({ conversationMode: 'chat' }));
+    expect(devTeamLayer()).toBe(mounted);
+    expect(mounted?.getAttribute('aria-hidden')).toBe('true');
   });
 });
 

@@ -191,8 +191,8 @@ export function ConversationHead() {
           a way out. */}
       <span className="conversation-provider conversation-kind">{conversationKindLabel(mode)}</span>
       {/* Chat mode's other read-out: which agent would answer. */}
-      {mode === 'chat' && <span className="conversation-provider">{providerLabel(providers, driver, choice)}</span>}
-      {mode === 'chat' && canContinueInCli && (
+      {mode !== 'terminal' && <span className="conversation-provider">{providerLabel(providers, driver, choice)}</span>}
+      {mode !== 'terminal' && canContinueInCli && (
         <Tooltip content="Resume this provider session in its full CLI">
           <Button size="sm" variant="ghost" onClick={continueInCli} disabled={chatBusy}>
             Continue in CLI

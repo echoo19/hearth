@@ -15,15 +15,18 @@ import { ConversationHead } from './ConversationHead';
 import { MessageList } from './MessageList';
 import { Composer } from './Composer';
 import { TerminalPane } from './TerminalPane';
+import { DevTeamPane } from './DevTeamPane';
 
 export function ChatColumn() {
   const mode = useApp((s) => s.conversationMode);
   // Once shown, always mounted: this latch is what makes a mode flip a hide
   // rather than a teardown.
   const [terminalShown, setTerminalShown] = useState(mode === 'terminal');
+  const [devTeamShown, setDevTeamShown] = useState(mode === 'devteam');
 
   useEffect(() => {
     if (mode === 'terminal') setTerminalShown(true);
+    if (mode === 'devteam') setDevTeamShown(true);
   }, [mode]);
 
   return (
@@ -34,6 +37,15 @@ export function ChatColumn() {
           <MessageList />
           <Composer />
         </div>
+        {devTeamShown && (
+          <div
+            className="conversation-layer is-devteam"
+            data-active={mode === 'devteam'}
+            aria-hidden={mode !== 'devteam'}
+          >
+            <DevTeamPane />
+          </div>
+        )}
         {terminalShown && (
           <div
             className="conversation-layer is-terminal"
