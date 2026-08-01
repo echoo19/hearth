@@ -289,6 +289,21 @@ describe('dev team lead state machine', () => {
     expect(leadPrompts.at(-1)).toMatch(/invalid/i);
   });
 
+  it('queues planning direction into repair exactly once after its tracked completion', async () => {
+    const run = runtime();
+    await reachPlanning(run);
+    expect(await run.handleUserMessage('Keep the repair within the existing scope.')).toBe(true);
+    await putPlan({ version: 1, roles: [], milestones: [] });
+
+    await settleLead(run);
+    expect(leadPrompts.at(-1)).toContain('Keep the repair within the existing scope.');
+    expect((await readDevTeamState(root, chatId)).steering).toHaveLength(1);
+
+    await settleLead(run);
+    expect(leadPrompts.at(-1)).not.toContain('Keep the repair within the existing scope.');
+    expect((await readDevTeamState(root, chatId)).steering).toEqual([]);
+  });
+
   it('correlates interview follow-ups and prevents approval while a revision is running', async () => {
     const run = runtime();
     await run.start('An incomplete brief.');
@@ -302,12 +317,14 @@ describe('dev team lead state machine', () => {
 
     await run.handleUserMessage('Make the result clearer.');
     expect(run.snapshot().phase).toBe('drafting-spec');
+    expect(await run.handleUserMessage('Also keep the language concise.')).toBe(true);
     await run.approveSpec();
     expect(run.snapshot().specVersion).toBe(0);
     await putSpec('# Revised clear spec\n');
     await settleLead(run, 'Revision ready.');
     await run.approveSpec();
     expect(run.snapshot()).toMatchObject({ phase: 'planning', spec: '# Revised clear spec\n', specVersion: 1 });
+    expect(leadPrompts.at(-1)).toContain('Also keep the language concise.');
   });
 
   it.each(['append', 'send'] as const)('makes a failed lead %s recoverable through Resume', async (stage) => {
@@ -953,6 +970,30 @@ describe('restart, steering, and plan rewrites', () => {
     await complete(drivers[0], 'A done.');
     await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
     expect(leadPrompts.at(-1)).toContain('Please emphasize clarity.');
+    expect((await readDevTeamState(root, chatId)).steering).toHaveLength(1);
+    await settleLead(run, 'Review complete.');
+    expect((await readDevTeamState(root, chatId)).steering).toEqual([]);
+    expect(leadPrompts.at(-1)).not.toContain('Please emphasize clarity.');
+  });
+
+  it('runs a tracked follow-up wrap for direction received during wrapping', async () => {
+    const run = runtime();
+    await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    await complete(drivers[0], 'A done.');
+    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await settleLead(run, 'Review complete.');
+    expect(run.snapshot().phase).toBe('wrapping');
+    const promptCount = leadPrompts.length;
+
+    expect(await run.handleUserMessage('Mention the alternate launch path.')).toBe(true);
+    await settleLead(run, 'First wrap.');
+    expect(run.snapshot().phase).toBe('wrapping');
+    expect(leadPrompts).toHaveLength(promptCount + 1);
+    expect(leadPrompts.at(-1)).toContain('Mention the alternate launch path.');
+    expect((await readDevTeamState(root, chatId)).steering).toHaveLength(1);
+
+    await settleLead(run, 'Final wrap.');
+    expect(run.snapshot()).toMatchObject({ phase: 'done', wrap: 'Final wrap.' });
     expect((await readDevTeamState(root, chatId)).steering).toEqual([]);
   });
 

@@ -375,8 +375,28 @@ describe('dev team websocket integration', () => {
     await until(() => harness.drivers[1].sent.length === beforeResume + 1);
     expect(harness.drivers[1].sent).toHaveLength(beforeResume + 1);
     expect(harness.drivers[1].sent[0].text).toContain('new provider detail');
-    harness.drivers[1].emit({ type: 'turn-complete' });
+    harness.drivers[1].holdStop = true;
+    inbox.socket.send(JSON.stringify({
+      type: 'chat-send', text: 'second provider detail', agent: { provider: 'anthropic', model: 'model-c' },
+    }));
+    await until(() => harness.drivers.length === 3);
+    await until(async () => (await readDevTeamState(harness.root, chatId)).phase === 'interrupted');
+    expect((await readDevTeamState(harness.root, chatId)).steering.map((item) => item.text)).toEqual([
+      'new provider detail',
+      'second provider detail',
+    ]);
+    expect(harness.drivers[2].sent).toEqual([]);
+    harness.drivers[1].releaseStop({ type: 'turn-complete' });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect((await readDevTeamState(harness.root, chatId)).phase).toBe('interrupted');
+
+    inbox.socket.send(JSON.stringify({ type: 'devteam-resume' }));
+    await until(() => harness.drivers[2].sent.length === 1);
+    expect(harness.drivers[2].sent[0].text).toContain('new provider detail');
+    expect(harness.drivers[2].sent[0].text).toContain('second provider detail');
+    harness.drivers[2].emit({ type: 'turn-complete' });
     await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'building');
+    expect((await readDevTeamState(harness.root, chatId)).steering).toEqual([]);
     inbox.socket.close();
   });
 

@@ -212,6 +212,7 @@ interface LeadOperation {
   currentProse: string;
   finalProse: string;
   bindingId?: string | null;
+  steeringCount: number;
 }
 
 const ACTIVE_PHASES = new Set<DevTeamPhase>([
@@ -336,7 +337,14 @@ export class DevTeamRuntime {
       this.acceptLead(this.beginLead('interview'));
       return false;
     }
-    if (this.state.phase === 'building' || this.state.phase === 'paused' || this.state.phase === 'reviewing') {
+    if (
+      this.state.phase === 'drafting-spec' ||
+      this.state.phase === 'planning' ||
+      this.state.phase === 'building' ||
+      this.state.phase === 'reviewing' ||
+      this.state.phase === 'wrapping' ||
+      this.state.phase === 'paused'
+    ) {
       this.state.steering.push({ ts: this.now(), text: message });
       await this.persist();
       return true;
@@ -385,6 +393,7 @@ export class DevTeamRuntime {
     this.leadQueue.shift();
     if (operation.stale) return;
     this.processingLead = operation;
+    await this.acknowledgeSteering(operation);
     const finalProse = operation.currentProse.trim() || operation.finalProse;
     operation.currentProse = '';
     operation.finalProse = '';
@@ -436,6 +445,15 @@ export class DevTeamRuntime {
       }
       if (turn === 'wrap' && phase === 'wrapping') {
         this.state.wrap = finalProse || null;
+        if (this.state.steering.length > 0 && this.state.plan) {
+          const next = this.beginLead('wrap');
+          await this.persist();
+          await this.sendLeadWithSteering(
+            (steering) => buildWrapPrompt(this.state.plan!, steering),
+            next,
+          );
+          return;
+        }
         this.state.phase = 'done';
         this.state.resumePhase = null;
         await this.persist();
@@ -506,7 +524,10 @@ export class DevTeamRuntime {
       agent: this.state.agent,
     };
     await this.persist();
-    await this.sendLead(buildPlanPrompt(this.options.chatId, approved.spec), operation);
+    await this.sendLeadWithSteering(
+      (steering) => buildPlanPrompt(this.options.chatId, approved.spec!, steering),
+      operation,
+    );
   }
 
   async pause(): Promise<void> {
@@ -699,6 +720,7 @@ export class DevTeamRuntime {
       currentProse: '',
       finalProse: '',
       bindingId: this.options.leadBindingId?.(),
+      steeringCount: 0,
     };
     this.pendingLead = operation;
     return operation;
@@ -768,9 +790,14 @@ export class DevTeamRuntime {
   ): Promise<void> {
     const count = this.state.steering.length;
     const steering = this.state.steering.slice(0, count).map((record) => record.text).join('\n');
+    operation.steeringCount = count;
     await this.sendLead(build(steering), operation);
-    if (count === 0 || operation.stale || !operation.accepted) return;
-    this.state.steering.splice(0, count);
+  }
+
+  private async acknowledgeSteering(operation: LeadOperation): Promise<void> {
+    if (operation.steeringCount === 0) return;
+    this.state.steering.splice(0, operation.steeringCount);
+    operation.steeringCount = 0;
     await this.persist();
   }
 
@@ -804,7 +831,10 @@ export class DevTeamRuntime {
       const next = paused ? null : this.beginLead('planning');
       await this.persist();
       if (next) {
-        await this.sendLead(buildPlanRepairPrompt(this.options.chatId, result.error ?? 'unknown error'), next);
+        await this.sendLeadWithSteering(
+          (steering) => buildPlanRepairPrompt(this.options.chatId, result.error ?? 'unknown error', steering),
+          next,
+        );
       }
       return;
     }
@@ -878,7 +908,10 @@ export class DevTeamRuntime {
     const next = paused ? null : this.beginLead('review');
     await this.persist();
     if (next) {
-      await this.sendLead(buildPlanRepairPrompt(this.options.chatId, this.state.error), next);
+      await this.sendLeadWithSteering(
+        (steering) => buildPlanRepairPrompt(this.options.chatId, this.state.error!, steering),
+        next,
+      );
     }
     return false;
   }
