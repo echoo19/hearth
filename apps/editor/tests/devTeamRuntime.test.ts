@@ -304,6 +304,29 @@ describe('dev team lead state machine', () => {
     expect((await readDevTeamState(root, chatId)).steering).toEqual([]);
   });
 
+  it('resumes a paused accepted lead turn without duplicating it or losing later steering', async () => {
+    const run = runtime();
+    await reachPlanning(run);
+    const promptCount = leadPrompts.length;
+    await run.pause();
+    expect(await run.handleUserMessage('Carry this into milestone review.')).toBe(true);
+
+    await run.resume();
+    expect(run.snapshot().phase).toBe('planning');
+    expect(leadPrompts).toHaveLength(promptCount);
+
+    await putPlan(plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    await settleLead(run, 'Original planning turn complete.');
+    await vi.waitFor(() => expect(run.snapshot().phase).toBe('building'));
+    expect((await readDevTeamState(root, chatId)).steering).toHaveLength(1);
+
+    await complete(drivers[0], 'A done.');
+    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    expect(leadPrompts.at(-1)).toContain('Carry this into milestone review.');
+    await settleLead(run, 'Review complete.');
+    expect((await readDevTeamState(root, chatId)).steering).toEqual([]);
+  });
+
   it('correlates interview follow-ups and prevents approval while a revision is running', async () => {
     const run = runtime();
     await run.start('An incomplete brief.');

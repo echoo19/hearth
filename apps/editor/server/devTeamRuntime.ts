@@ -392,14 +392,15 @@ export class DevTeamRuntime {
 
     this.leadQueue.shift();
     if (operation.stale) return;
+    const turn = operation.turn;
+    const paused = this.state.phase === 'paused';
+    const phase = paused ? this.state.resumePhase : this.state.phase;
+    if (phase === null || !this.leadTurnMatchesPhase(turn, phase)) return;
     this.processingLead = operation;
     await this.acknowledgeSteering(operation);
     const finalProse = operation.currentProse.trim() || operation.finalProse;
     operation.currentProse = '';
     operation.finalProse = '';
-    const turn = operation.turn;
-    const paused = this.state.phase === 'paused';
-    const phase = paused ? this.state.resumePhase : this.state.phase;
     try {
       if (
         (turn === 'interview' && (phase === 'interviewing' || phase === 'drafting-spec')) ||
@@ -545,8 +546,11 @@ export class DevTeamRuntime {
     const retryError = this.state.error;
     const needsRepair =
       this.state.retryCount > 0 && retryError !== null && (phase === 'planning' || phase === 'reviewing');
+    const retainedOperation = this.leadOperationForPhase(phase);
     const operation =
-      phase === 'interviewing' || phase === 'drafting-spec'
+      retainedOperation
+        ? null
+        : phase === 'interviewing' || phase === 'drafting-spec'
         ? this.beginLead('interview')
         : phase === 'planning'
           ? this.beginLead('planning')
@@ -568,6 +572,7 @@ export class DevTeamRuntime {
     this.state.resumePhase = null;
     this.state.error = needsRepair ? retryError : null;
     await this.persist();
+    if (retainedOperation) return;
     if (operation && !this.operationCurrent(operation)) return;
     if (phase === 'building') await this.schedule();
     else if (phase === 'interviewing' || phase === 'drafting-spec') {
@@ -729,6 +734,19 @@ export class DevTeamRuntime {
   private operationCurrent(operation: LeadOperation): boolean {
     return !operation.stale &&
       (this.pendingLead === operation || this.processingLead === operation || this.leadQueue.includes(operation));
+  }
+
+  private leadTurnMatchesPhase(turn: LeadTurn, phase: DevTeamPhase): boolean {
+    return (turn === 'interview' && (phase === 'interviewing' || phase === 'drafting-spec')) ||
+      (turn === 'revision' && (phase === 'drafting-spec' || phase === 'spec-review')) ||
+      (turn === 'planning' && phase === 'planning') ||
+      (turn === 'review' && phase === 'reviewing') ||
+      (turn === 'wrap' && phase === 'wrapping');
+  }
+
+  private leadOperationForPhase(phase: DevTeamPhase): LeadOperation | null {
+    return [this.pendingLead, this.processingLead, ...this.leadQueue]
+      .find((operation) => operation !== null && !operation.stale && this.leadTurnMatchesPhase(operation.turn, phase)) ?? null;
   }
 
   private acceptLead(operation: LeadOperation): boolean {
