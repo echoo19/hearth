@@ -58,13 +58,32 @@ beforeEach(() => {
 
 describe('dev team frame folding', () => {
   it('replaces the authoritative snapshot without discarding engineer lanes', () => {
-    receive({ type: 'devteam-event', chatId: 'team-chat', engineerId: 'engineer-1', event: { type: 'text-delta', text: 'Working' } });
     receive({ type: 'devteam-state', chatId: 'team-chat', state: SNAPSHOT });
+    receive({ type: 'devteam-event', chatId: 'team-chat', engineerId: 'engineer-1', event: { type: 'text-delta', text: 'Working' } });
     const next = { ...SNAPSHOT, phase: 'reviewing' as const, summary: 'Milestone ready' };
     receive({ type: 'devteam-state', chatId: 'team-chat', state: next });
 
     expect(useApp.getState().devTeam).toEqual(next);
     expect(useApp.getState().devTeamLanes['engineer-1']).toHaveLength(1);
+  });
+
+  it('starts fresh engineer lanes when the authoritative run changes', () => {
+    receive({ type: 'devteam-state', chatId: 'team-chat', state: SNAPSHOT });
+    receive({ type: 'devteam-event', chatId: 'team-chat', engineerId: 'engineer-1', event: { type: 'message-delta', text: 'Old run' } });
+    receive({ type: 'devteam-event', chatId: 'team-chat', engineerId: 'engineer-1', event: { type: 'turn-complete' } });
+
+    receive({
+      type: 'devteam-state',
+      chatId: 'team-chat',
+      state: { ...SNAPSHOT, runId: 'run-2', phase: 'building' },
+    });
+    expect(useApp.getState().devTeamLanes).toEqual({});
+
+    receive({ type: 'devteam-event', chatId: 'team-chat', engineerId: 'engineer-1', event: { type: 'message-delta', text: 'New run' } });
+    expect(useApp.getState().devTeamLanes['engineer-1'][0]).toMatchObject({
+      streaming: true,
+      parts: [{ kind: 'text', text: 'New run' }],
+    });
   });
 
   it('seeds each engineer lane and folds normalized chat events into it', () => {

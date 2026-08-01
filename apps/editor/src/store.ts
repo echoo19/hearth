@@ -1847,7 +1847,10 @@ export const useApp = create<AppState>((set, get) => {
           chatIntent?.type !== 'chat-open' ||
           chatIntent.chatId !== frame.chatId
         ) return;
-        set({ devTeam: frame.state });
+        set((state) => ({
+          devTeam: frame.state,
+          devTeamLanes: state.devTeam?.runId === frame.state.runId ? state.devTeamLanes : {},
+        }));
         return;
       case 'devteam-event':
         if (

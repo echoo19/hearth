@@ -54,6 +54,7 @@ export const DOCS_URL = 'https://hearthengine.com';
 /** What the conversation column can be, in View-menu order. */
 const CONVERSATION_MODES: { id: ConversationMode; label: string }[] = [
   { id: 'chat', label: 'Chat' },
+  { id: 'devteam', label: 'Dev team' },
   { id: 'terminal', label: 'Terminal' },
 ];
 

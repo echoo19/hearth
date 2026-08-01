@@ -112,6 +112,7 @@ describe('buildAppMenu', () => {
       it(`greys the column items on ${what}, folder open or not`, () => {
         const sections = buildAppMenu(mockStore(over), baseCtx());
         expect(item(sections, 'mode:chat').enabled).toBe(false);
+        expect(item(sections, 'mode:devteam').enabled).toBe(false);
         expect(item(sections, 'mode:terminal').enabled).toBe(false);
         expect(item(sections, 'pane').enabled).toBe(false);
         expect(item(sections, 'pane:game').enabled).toBe(false);
@@ -131,21 +132,34 @@ describe('buildAppMenu', () => {
     });
   });
 
-  it('checks the current conversation mode — the terminal is reachable from View', () => {
+  it('offers and checks every conversation mode', () => {
     const chat = buildAppMenu(mockStore({ conversationMode: 'chat' }), baseCtx());
+    expect(items(chat, 'view').filter((entry) => entry.id.startsWith('mode:')).map((entry) => [entry.id, entry.label]))
+      .toEqual([
+        ['mode:chat', 'Chat'],
+        ['mode:devteam', 'Dev team'],
+        ['mode:terminal', 'Terminal'],
+      ]);
     expect(item(chat, 'mode:chat').checked).toBe(true);
+    expect(item(chat, 'mode:devteam').checked).toBe(false);
     expect(item(chat, 'mode:terminal').checked).toBe(false);
+
+    const devTeam = buildAppMenu(mockStore({ conversationMode: 'devteam' }), baseCtx());
+    expect(item(devTeam, 'mode:chat').checked).toBe(false);
+    expect(item(devTeam, 'mode:devteam').checked).toBe(true);
+    expect(item(devTeam, 'mode:terminal').checked).toBe(false);
 
     const terminal = buildAppMenu(mockStore({ conversationMode: 'terminal' }), baseCtx());
     expect(item(terminal, 'mode:chat').checked).toBe(false);
+    expect(item(terminal, 'mode:devteam').checked).toBe(false);
     expect(item(terminal, 'mode:terminal').checked).toBe(true);
   });
 
   it('routes a conversation-mode selection to the store', () => {
     const setConversationMode = vi.fn();
     const sections = buildAppMenu(mockStore({ setConversationMode }), baseCtx());
-    item(sections, 'mode:terminal').onSelect();
-    expect(setConversationMode).toHaveBeenCalledWith('terminal');
+    item(sections, 'mode:devteam').onSelect();
+    expect(setConversationMode).toHaveBeenCalledWith('devteam');
   });
 
   it('reflects code peek as a checkbox', () => {
