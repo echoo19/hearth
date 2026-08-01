@@ -314,6 +314,31 @@ describe('dev team actions', () => {
     expect(useApp.getState().devTeamByChat).toEqual({});
   });
 
+  it('does not let a delayed snapshot recreate deleted status before authoritative reappearance', async () => {
+    useApp.setState({
+      activeChatId: 'ordinary-chat',
+      devTeamByChat: { 'team-chat': SNAPSHOT },
+    });
+    await useApp.getState().deleteChat('team-chat');
+
+    receive({ type: 'devteam-state', chatId: 'team-chat', state: SNAPSHOT });
+    expect(useApp.getState().devTeamByChat).toEqual({});
+
+    receive({
+      type: 'chat-opened',
+      chat: {
+        id: 'team-chat',
+        title: 'Dev team again',
+        kind: 'devteam',
+        createdAt: '2026-07-31T00:00:00.000Z',
+        updatedAt: '2026-07-31T00:00:00.000Z',
+      },
+      records: [],
+    });
+    receive({ type: 'devteam-state', chatId: 'team-chat', state: SNAPSHOT });
+    expect(useApp.getState().devTeamByChat['team-chat']).toEqual(SNAPSHOT);
+  });
+
   it('does not let late frames refill the blank New chat surface', () => {
     useApp.setState({ devTeam: SNAPSHOT, devTeamLanes: { 'engineer-1': [] } });
     useApp.getState().newChat();

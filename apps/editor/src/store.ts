@@ -1625,6 +1625,8 @@ export const useApp = create<AppState>((set, get) => {
    * below read it, so nothing should re-render for it.
    */
   let openedChat: ChatSummary | null = null;
+  /** Deleted ids reject late run snapshots until this workspace or id is opened afresh. */
+  const deletedChatIds = new Set<string>();
 
   /** The conversation this window has open, as its record. Null on Home. */
   function activeConversation(): ChatSummary | null {
@@ -1822,6 +1824,9 @@ export const useApp = create<AppState>((set, get) => {
         // The only place this window is told what kind of thing it is looking
         // at while the conversation is still too new to be in any list.
         openedChat = frame.chat;
+        // Unlike a delayed run snapshot, a successful open is authoritative:
+        // this id exists again and may publish fresh team status.
+        deletedChatIds.delete(frame.chat.id);
         // The record decides what the column shows. This is the whole of the
         // rule "a conversation has a kind": whatever the window was showing a
         // moment ago, it now shows the thing that was opened.
@@ -1857,6 +1862,7 @@ export const useApp = create<AppState>((set, get) => {
         drainQueue();
         return;
       case 'devteam-state': {
+        if (deletedChatIds.has(frame.chatId)) return;
         const belongsToOpenPane =
           frame.chatId === get().activeChatId &&
           chatIntent?.type === 'chat-open' &&
@@ -2174,6 +2180,7 @@ export const useApp = create<AppState>((set, get) => {
       const info: WorkspaceInfo = res.info;
       chatIntent = null;
       abandonedChatId = null;
+      deletedChatIds.clear();
       try {
         localStorage.setItem(LAST_WORKSPACE_KEY, info.path);
       } catch {
@@ -2309,6 +2316,7 @@ export const useApp = create<AppState>((set, get) => {
       const closing = get().projectPath;
       if (closing !== null) void apiCloseWorkspace(closing);
       disconnectWs();
+      deletedChatIds.clear();
       // The unsent message goes with the folder it was written in, and its
       // pictures are let go of rather than left behind. See openWorkspace.
       get().clearDrafts(FOLDER_DRAFT_KEYS);
@@ -2840,6 +2848,7 @@ export const useApp = create<AppState>((set, get) => {
         return;
       }
       if (get().projectPath !== project) return;
+      deletedChatIds.add(chatId);
       set((state) => ({
         chats: res.chats,
         devTeamByChat: withoutKey(state.devTeamByChat, chatId),
