@@ -67,6 +67,7 @@ import {
 } from './projectContext.js';
 import { announceProviders, beginOpenAiLogin, readChatProviders } from './chatProviders.js';
 import { createChat, deleteChat, getChat, listChats, renameChat, type ChatKind } from './chatStore.js';
+import { deleteDevTeamArtifacts } from './devTeamStore.js';
 import { ChatAttachmentStager } from './chatAttachments.js';
 import { resolveProjectsHome, slugFromName, slugFromPrompt, uniqueFolderName } from './workspaceSlug.js';
 import { readCapabilities, sensesFromCapabilities } from './probeCapabilities.js';
@@ -2057,7 +2058,8 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
           status: 403,
           body: { ok: false, error: 'Folder is not open.' },
         };
-      if (!(await getChat(root, chatId))) {
+      const chat = await getChat(root, chatId);
+      if (!chat) {
         return {
           status: 404,
           body: { ok: false, error: 'No such conversation.' },
@@ -2070,6 +2072,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
           status: 404,
           body: { ok: false, error: 'No such conversation.' },
         };
+      if (chat.kind === 'devteam') await deleteDevTeamArtifacts(root, chatId);
       return { status: 200, body: { ok: true, chats: await listChats(root) } };
     },
 
@@ -3724,7 +3727,7 @@ export function hearthProjectServer(options: ProjectServerOptions = {}): Plugin 
         attachProbeStream(httpServer, ctx.probeBus, ctx.isOpenRoot);
         // A dev-server restart re-runs this hook, so the previous run's
         // listener has to go or its port leaks for the process's lifetime.
-        httpServer.on('close', () => game?.close());
+        httpServer.on('close', () => void game?.close());
       }
     },
   };

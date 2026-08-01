@@ -58,7 +58,7 @@ export interface GameServerHandle {
   /** Absolute origin the client must build game URLs against, e.g. http://127.0.0.1:52341 */
   origin: string;
   port: number;
-  close(): void;
+  close(): Promise<void>;
 }
 
 /**
@@ -129,10 +129,14 @@ export function startGameServer(source: GameMountSource): Promise<GameServerHand
         reject(new Error('Could not determine the game server port'));
         return;
       }
+      let closing: Promise<void> | null = null;
       resolve({
         origin: `http://127.0.0.1:${address.port}`,
         port: address.port,
-        close: () => server.close(),
+        close: () => {
+          closing ??= new Promise<void>((closeResolve) => server.close(() => closeResolve()));
+          return closing;
+        },
       });
     });
   });

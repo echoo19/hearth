@@ -83,7 +83,7 @@ uses stored Claude session or Codex thread continuation ids where available.
 - Run history and engineer transcript replay are currently uncapped, so a very
   long-lived conversation can make `state.json` and reopen replay grow.
 - Deleting a conversation first stops its lead and engineers, then removes the
-  chat entry and lead transcript. Its `.hearth/devteam/<chatId>/` artifacts are
-  retained as an interrupted local record and can be removed manually.
+  chat entry, lead transcript, and that conversation's `.hearth/devteam/<chatId>/`
+  artifacts.
 - The private playtester and terminal-door agents are not automatic team
   members.

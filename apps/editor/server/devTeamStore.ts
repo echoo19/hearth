@@ -7,6 +7,14 @@ import { parseTranscript, safeChatId, type ChatRecord } from './chatStore.js';
 export const DEVTEAM_DIR = path.join('.hearth', 'devteam');
 export const DEVTEAM_STATE_UNREADABLE = 'Dev team state is unreadable.';
 
+/** Remove one explicitly deleted conversation's artifacts without exposing a path builder. */
+export async function deleteDevTeamArtifacts(root: string, chatId: string): Promise<boolean> {
+  const id = safeChatId(chatId);
+  if (!id) return false;
+  await fsp.rm(path.join(root, DEVTEAM_DIR, id), { recursive: true, force: true });
+  return true;
+}
+
 export type DevTeamPhase =
   | 'idle'
   | 'interviewing'

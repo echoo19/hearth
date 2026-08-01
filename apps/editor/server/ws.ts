@@ -392,6 +392,11 @@ export const PTY_DETACH_LINGER_MS = 60 * 60_000;
 /** Same reload/sleep grace period for native chat agents. */
 export const CHAT_DETACH_LINGER_MS = 60 * 60_000;
 
+export interface WebSocketHandle {
+  /** Settles after HTTP close has finished all durable WebSocket cleanup. */
+  closed: Promise<void>;
+}
+
 /**
  * Mount the /api/ws upgrade handler on an existing http server. `ptyBackend`
  * is test-only: it injects a fake PtyBackend so suites never spawn a real
@@ -428,7 +433,7 @@ export function attachWebSocket(
     /** Test-only gate after durable replay capture and before frames are sent. */
     beforeDevTeamReplaySend?: () => Promise<void>;
   },
-): void {
+): WebSocketHandle {
   // An explicit ceiling rather than ws's silent 100 MiB default: attachments
   // are the only thing that makes a frame big, and a limit the app does not
   // state is a limit that shows up as a dropped socket. Comfortably above one
@@ -437,6 +442,10 @@ export function attachWebSocket(
   const wss = new WebSocketServer({
     noServer: true,
     maxPayload: 64 * 1024 * 1024,
+  });
+  let resolveClosed!: () => void;
+  const closed = new Promise<void>((resolve) => {
+    resolveClosed = resolve;
   });
   const channels = new Map<string, ProjectChannel>(); // key: resolved project root
   const nodeFs = new NodeFileSystem();
@@ -457,7 +466,27 @@ export function attachWebSocket(
   const devTeamRuntimes = new Map<string, DevTeamRuntime>();
   const devTeamLeadAttachments = new Map<string, readonly ChatAttachment[]>();
   /** A replay in flight supersedes live frames; disk will contain them. */
-  const socketOpeningChat = new Map<WebSocket, string>();
+  const socketOpeningChats = new Map<WebSocket, Map<number, string>>();
+  let nextChatOpenGeneration = 0;
+
+  function beginChatOpen(socket: WebSocket, chatId: string): number {
+    const generation = ++nextChatOpenGeneration;
+    const openings = socketOpeningChats.get(socket) ?? new Map<number, string>();
+    openings.set(generation, chatId);
+    socketOpeningChats.set(socket, openings);
+    return generation;
+  }
+
+  function finishChatOpen(socket: WebSocket, generation: number): void {
+    const openings = socketOpeningChats.get(socket);
+    if (!openings) return;
+    openings.delete(generation);
+    if (openings.size === 0) socketOpeningChats.delete(socket);
+  }
+
+  function isOpeningChat(socket: WebSocket, chatId: string): boolean {
+    return [...(socketOpeningChats.get(socket)?.values() ?? [])].includes(chatId);
+  }
   const socketChat = new Map<WebSocket, string>();
 
   /**
@@ -990,12 +1019,12 @@ export function attachWebSocket(
   }
 
   function broadcastDevTeamState(root: string, chatId: string, state: DevTeamSnapshot): void {
-    const sockets = watchersOf(root, chatId).filter((socket) => socketOpeningChat.get(socket) !== chatId);
+    const sockets = watchersOf(root, chatId).filter((socket) => !isOpeningChat(socket, chatId));
     broadcast(new Set(sockets), { type: 'devteam-state', chatId, state });
   }
 
   function broadcastDevTeamEvent(root: string, chatId: string, engineerId: string, event: ChatEvent): void {
-    const sockets = watchersOf(root, chatId).filter((socket) => socketOpeningChat.get(socket) !== chatId);
+    const sockets = watchersOf(root, chatId).filter((socket) => !isOpeningChat(socket, chatId));
     broadcast(new Set(sockets), { type: 'devteam-event', chatId, engineerId, event });
   }
 
@@ -1110,7 +1139,6 @@ export function attachWebSocket(
       for (const item of replay) {
         send(socket, { type: 'devteam-event', chatId, engineerId: item.engineerId, event: item.event });
       }
-      if (socketOpeningChat.get(socket) === chatId) socketOpeningChat.delete(socket);
     });
   }
 
@@ -1612,7 +1640,7 @@ export function attachWebSocket(
     detachPty(socket);
     detachChat(socket);
     socketChat.delete(socket);
-    socketOpeningChat.delete(socket);
+    socketOpeningChats.delete(socket);
     const channel = channels.get(root);
     if (!channel) return;
     channel.sockets.delete(socket);
@@ -1760,14 +1788,12 @@ export function attachWebSocket(
           case 'chat-open':
             {
               const chatId = typeof frame.chatId === 'string' ? frame.chatId : '';
-              socketOpeningChat.set(ws, chatId);
+              const generation = beginChatOpen(ws, chatId);
               enqueueChatOp(ws, async () => {
                 try {
                   await openChatForSocket(root, ws, chatId);
                 } finally {
-                  if (socketOpeningChat.get(ws) === chatId) {
-                    socketOpeningChat.delete(ws);
-                  }
+                  finishChatOpen(ws, generation);
                 }
               });
             }
@@ -1946,6 +1972,8 @@ export function attachWebSocket(
               const key = chatKey(root, chatId);
               detach(
                 enqueueChatLane(key, async () => {
+                  const chat = await getChat(root, chatId);
+                  if (chat?.kind !== 'devteam') return;
                   let lead = chatSessions.get(key) ?? null;
                   if (
                     (frame.type === 'devteam-approve-spec' || frame.type === 'devteam-resume') &&
@@ -2176,28 +2204,49 @@ export function attachWebSocket(
     });
   });
 
-  httpServer.on('close', () => {
-    unsubscribeBeforeChatDelete();
-    ctx.exportBus.off('frame', onExportFrame);
-    ctx.testerBus.off('frame', onTesterFrame);
-    providerBus.off('changed', onProviderChange);
-    for (const channel of channels.values()) channel.dispose();
-    channels.clear();
-    // Detached sessions hold linger timers and live ptys; app quit reaps
-    // both (killAll covers every spawned pty, attached or detached).
-    for (const session of detachedPtys.values()) {
-      if (session.lingerTimer) clearTimeout(session.lingerTimer);
-    }
-    detachedPtys.clear();
-    failedHandoffs.clear();
-    ptySessions.clear();
-    ptyManager.killAll();
-    for (const [key, runtime] of devTeamRuntimes) {
-      detach(runtime.dispose(), `dev team ${key}: could not interrupt on server close`);
-    }
-    devTeamRuntimes.clear();
-    for (const session of [...chatSessions.values()]) retireChatSession(session, null);
-    chatSessions.clear();
-    socketChat.clear();
+  httpServer.once('close', () => {
+    void (async () => {
+      unsubscribeBeforeChatDelete();
+      ctx.exportBus.off('frame', onExportFrame);
+      ctx.testerBus.off('frame', onTesterFrame);
+      providerBus.off('changed', onProviderChange);
+      for (const channel of channels.values()) channel.dispose();
+      channels.clear();
+      // Detached sessions hold linger timers and live ptys; app quit reaps
+      // both (killAll covers every spawned pty, attached or detached).
+      for (const session of detachedPtys.values()) {
+        if (session.lingerTimer) clearTimeout(session.lingerTimer);
+      }
+      detachedPtys.clear();
+      failedHandoffs.clear();
+      ptySessions.clear();
+      ptyManager.killAll();
+
+      const runtimes = [...devTeamRuntimes];
+      devTeamRuntimes.clear();
+      await Promise.all(
+        runtimes.map(async ([key, runtime]) => {
+          try {
+            await runtime.dispose();
+          } catch (err) {
+            console.error(
+              `[hearth] dev team ${key}: could not interrupt on server close: ${(err as Error)?.message ?? String(err)}`,
+            );
+          }
+        }),
+      );
+
+      const sessions = [...chatSessions.values()];
+      for (const session of sessions) retireChatSession(session, null);
+      await Promise.all(sessions.map((session) => waitForDriverClose(session)));
+      chatSessions.clear();
+      socketChat.clear();
+    })()
+      .catch((err: unknown) => {
+        console.error(`[hearth] WebSocket shutdown cleanup failed: ${(err as Error)?.message ?? String(err)}`);
+      })
+      .finally(resolveClosed);
   });
+
+  return { closed };
 }

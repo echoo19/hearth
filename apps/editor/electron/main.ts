@@ -80,7 +80,7 @@ const MIME: Record<string, string> = {
  * which is the honest outcome: the alternative would be putting the agent's
  * HTML back on the origin that spawns shells.
  */
-async function startServer(uiRoot: string): Promise<{ port: number; close: () => void }> {
+async function startServer(uiRoot: string): Promise<{ port: number; close: () => Promise<void> }> {
   const ctx = createProjectServerContext();
   let game: GameServerHandle | null = null;
   try {
@@ -110,7 +110,7 @@ async function startServer(uiRoot: string): Promise<{ port: number; close: () =>
     res.setHeader('Content-Type', MIME[path.extname(finalPath)] ?? 'application/octet-stream');
     fs.createReadStream(finalPath).pipe(res);
   });
-  attachWebSocket(server, ctx);
+  const webSockets = attachWebSocket(server, ctx);
   // The running-sweep picture rides its own upgrade path; see probeStream.ts.
   attachProbeStream(server, ctx.probeBus, ctx.isOpenRoot);
   return new Promise((resolve, reject) => {
@@ -119,11 +119,20 @@ async function startServer(uiRoot: string): Promise<{ port: number; close: () =>
     server.listen(0, '127.0.0.1', () => {
       const address = server.address();
       if (address && typeof address === 'object') {
+        let closing: Promise<void> | null = null;
         resolve({
           port: address.port,
           close: () => {
-            server.close();
-            game?.close();
+            closing ??= (async () => {
+              await Promise.all([
+                new Promise<void>((closeResolve, closeReject) => {
+                  server.close((err) => err ? closeReject(err) : closeResolve());
+                }),
+                game?.close() ?? Promise.resolve(),
+              ]);
+              await webSockets.closed;
+            })();
+            return closing;
           },
         });
       } else {
@@ -131,6 +140,38 @@ async function startServer(uiRoot: string): Promise<{ port: number; close: () =>
       }
     });
   });
+}
+
+export interface PreventableQuitEvent {
+  preventDefault(): void;
+}
+
+/** Build an idempotent Electron will-quit gate around asynchronous server cleanup. */
+export function createWillQuitHandler(
+  close: () => Promise<void>,
+  quit: () => void,
+  report: (error: unknown) => void = (error) => {
+    console.error(`[hearth] editor server could not close cleanly: ${(error as Error)?.message ?? String(error)}`);
+  },
+): (event: PreventableQuitEvent) => void {
+  let closing: Promise<void> | null = null;
+  let finished = false;
+  return (event) => {
+    if (finished) return;
+    event.preventDefault();
+    if (closing) return;
+    try {
+      closing = close();
+    } catch (error) {
+      closing = Promise.reject(error);
+    }
+    void closing
+      .catch(report)
+      .finally(() => {
+        finished = true;
+        quit();
+      });
+  };
 }
 
 /**
@@ -341,6 +382,7 @@ async function main(): Promise<void> {
 
   let win: BrowserWindow | null = null;
   let hasUnsavedScripts = false;
+  let closeEditorServer: (() => Promise<void>) | null = null;
   // Outlives any one window on purpose: a game popup opened after a mute
   // toggle still has to come up silent, and the state has to survive the
   // popup (and the main window) closing and reopening.
@@ -383,6 +425,10 @@ async function main(): Promise<void> {
     }
     event.preventDefault();
   });
+  app.on('will-quit', createWillQuitHandler(
+    () => closeEditorServer?.() ?? Promise.resolve(),
+    () => app.quit(),
+  ));
 
   let url = START_URL;
   if (!url) {
@@ -396,7 +442,9 @@ async function main(): Promise<void> {
       app.quit();
       return;
     }
-    const { port } = await startServer(uiRoot);
+    const serverHandle = await startServer(uiRoot);
+    closeEditorServer = serverHandle.close;
+    const { port } = serverHandle;
     url = `http://127.0.0.1:${port}`;
   }
 

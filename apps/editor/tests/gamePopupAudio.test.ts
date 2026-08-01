@@ -39,7 +39,7 @@ vi.mock('electron', () => ({
 
 vi.mock('electron-updater', () => ({ autoUpdater: {} }));
 
-import { GamePopupAudio, type MutableWebContents } from '../electron/main';
+import { createWillQuitHandler, GamePopupAudio, type MutableWebContents } from '../electron/main';
 
 function fakeWebContents(): MutableWebContents & { setAudioMuted: ReturnType<typeof vi.fn> } {
   let destroyed = false;
@@ -52,6 +52,48 @@ function fakeWebContents(): MutableWebContents & { setAudioMuted: ReturnType<typ
     },
   } as unknown as MutableWebContents & { setAudioMuted: ReturnType<typeof vi.fn>; _destroy(): void };
 }
+
+describe('desktop server shutdown', () => {
+  it('prevents quit until one shared asynchronous close finishes', async () => {
+    let release!: () => void;
+    const closing = new Promise<void>((resolve) => { release = resolve; });
+    const close = vi.fn(() => closing);
+    const quit = vi.fn();
+    const handler = createWillQuitHandler(close, quit);
+    const first = { preventDefault: vi.fn() };
+    const second = { preventDefault: vi.fn() };
+
+    handler(first);
+    handler(second);
+    expect(first.preventDefault).toHaveBeenCalledOnce();
+    expect(second.preventDefault).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledOnce();
+    expect(quit).not.toHaveBeenCalled();
+
+    release();
+    await closing;
+    await Promise.resolve();
+    expect(quit).toHaveBeenCalledOnce();
+
+    const afterClose = { preventDefault: vi.fn() };
+    handler(afterClose);
+    expect(afterClose.preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('reports a close failure but still releases quit', async () => {
+    const failure = new Error('close failed');
+    const quit = vi.fn();
+    const report = vi.fn();
+    const handler = createWillQuitHandler(() => Promise.reject(failure), quit, report);
+
+    handler({ preventDefault: vi.fn() });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(report).toHaveBeenCalledWith(failure);
+    expect(quit).toHaveBeenCalledOnce();
+  });
+});
 
 describe('GamePopupAudio', () => {
   it('starts unmuted, so a popup opened before any toggle is not silenced by default', () => {

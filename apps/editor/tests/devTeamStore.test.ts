@@ -5,6 +5,7 @@ import path from 'node:path';
 import {
   approveDevTeamSpec,
   appendEngineerRecord,
+  deleteDevTeamArtifacts,
   readDevTeamPlan,
   readDevTeamSpec,
   readDevTeamState,
@@ -307,5 +308,19 @@ describe('engineer transcripts and path ids', () => {
     );
     expect(await readDevTeamState(root, '../outside')).toEqual(state({ runId: '', phase: 'idle' }));
     expect(await readEngineerRecords(root, chatId, '../outside')).toEqual([]);
+  });
+
+  it('deletes only the validated dev team run directory', async () => {
+    const sibling = path.join(root, '.hearth', 'devteam', 'keep-me');
+    await fsp.mkdir(runDir(), { recursive: true });
+    await fsp.mkdir(sibling, { recursive: true });
+    await fsp.writeFile(path.join(runDir(), 'state.json'), '{}');
+    await fsp.writeFile(path.join(sibling, 'state.json'), '{}');
+
+    expect(await deleteDevTeamArtifacts(root, chatId)).toBe(true);
+    await expect(fsp.stat(runDir())).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fsp.readFile(path.join(sibling, 'state.json'), 'utf8')).toBe('{}');
+    expect(await deleteDevTeamArtifacts(root, '../keep-me')).toBe(false);
+    expect(await fsp.readFile(path.join(sibling, 'state.json'), 'utf8')).toBe('{}');
   });
 });
