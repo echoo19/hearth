@@ -90,25 +90,27 @@ export function buildInterviewPrompt(chatId: string, request: string): string {
   ].join('\n');
 }
 
-export function buildRevisionPrompt(chatId: string, revision: string): string {
+export function buildRevisionPrompt(chatId: string, revision: string, steering = ''): string {
   return [
     `Revise and rewrite ${runPath(chatId, 'spec.md')} to incorporate the person's feedback below.`,
     'Preserve decisions that were not changed, keep the specification project-appropriate and genre-neutral, then end the turn.',
     '',
     'Revision request:',
     revision,
+    ...(steering ? ['', 'Earlier queued direction:', steering] : []),
   ].join('\n');
 }
 
-export function buildInterviewResumePrompt(chatId: string): string {
+export function buildInterviewResumePrompt(chatId: string, steering = ''): string {
   return [
     'Continue the interrupted interview from the conversation context. Ask only for material decisions that are still missing.',
     `When the brief is ready, write the complete specification to ${runPath(chatId, 'spec.md')} and end the turn.`,
     'Remain project-appropriate and do not assume a genre, dimension, engine, role, or input method.',
+    ...(steering ? ['', 'New direction from the person:', steering] : []),
   ].join('\n');
 }
 
-export function buildPlanPrompt(chatId: string, spec: string): string {
+export function buildPlanPrompt(chatId: string, spec: string, steering = ''): string {
   return [
     'Create the smallest capable team and an executable milestone plan for the approved specification below.',
     'Invent roles for this project; do not use a fixed organization chart. Keep tasks focused, dependencies explicit, scopes safe relative path prefixes, and effort low, medium, or high only when useful.',
@@ -116,13 +118,15 @@ export function buildPlanPrompt(chatId: string, spec: string): string {
     '',
     'Approved specification:',
     spec,
+    ...(steering ? ['', 'New direction from the person:', steering] : []),
   ].join('\n');
 }
 
-export function buildPlanRepairPrompt(chatId: string, error: string): string {
+export function buildPlanRepairPrompt(chatId: string, error: string, steering = ''): string {
   return [
     `The plan at ${runPath(chatId, 'plan.json')} is invalid: ${error}`,
     'Correct that same file as schema version 1 JSON. Keep roles project-specific, dependencies valid, and scopes safe relative path prefixes, then end the turn.',
+    ...(steering ? ['', 'New direction from the person:', steering] : []),
   ].join('\n');
 }
 
@@ -322,7 +326,10 @@ export class DevTeamRuntime {
       const operation = this.beginLead('revision');
       this.state.phase = 'drafting-spec';
       await this.persist();
-      await this.sendLead(buildRevisionPrompt(this.options.chatId, message), operation);
+      await this.sendLeadWithSteering(
+        (steering) => buildRevisionPrompt(this.options.chatId, message, steering),
+        operation,
+      );
       return true;
     }
     if (this.state.phase === 'interviewing') {
@@ -330,6 +337,11 @@ export class DevTeamRuntime {
       return false;
     }
     if (this.state.phase === 'building' || this.state.phase === 'paused' || this.state.phase === 'reviewing') {
+      this.state.steering.push({ ts: this.now(), text: message });
+      await this.persist();
+      return true;
+    }
+    if (this.state.phase === 'interrupted') {
       this.state.steering.push({ ts: this.now(), text: message });
       await this.persist();
       return true;
@@ -538,14 +550,28 @@ export class DevTeamRuntime {
     if (operation && !this.operationCurrent(operation)) return;
     if (phase === 'building') await this.schedule();
     else if (phase === 'interviewing' || phase === 'drafting-spec') {
-      await this.sendLead(buildInterviewResumePrompt(this.options.chatId), operation!);
+      await this.sendLeadWithSteering(
+        (steering) => buildInterviewResumePrompt(this.options.chatId, steering),
+        operation!,
+      );
     } else if (phase === 'planning' && this.state.spec) {
       if (needsRepair && this.state.error) {
-        await this.sendLead(buildPlanRepairPrompt(this.options.chatId, this.state.error), operation!);
-      } else await this.sendLead(buildPlanPrompt(this.options.chatId, this.state.spec), operation!);
+        await this.sendLeadWithSteering(
+          (steering) => buildPlanRepairPrompt(this.options.chatId, this.state.error!, steering),
+          operation!,
+        );
+      } else {
+        await this.sendLeadWithSteering(
+          (steering) => buildPlanPrompt(this.options.chatId, this.state.spec!, steering),
+          operation!,
+        );
+      }
     } else if (phase === 'reviewing' && this.state.plan) {
       if (needsRepair && this.state.error) {
-        await this.sendLead(buildPlanRepairPrompt(this.options.chatId, this.state.error), operation!);
+        await this.sendLeadWithSteering(
+          (steering) => buildPlanRepairPrompt(this.options.chatId, this.state.error!, steering),
+          operation!,
+        );
       } else await this.beginReview(operation!);
     } else if (phase === 'wrapping' && this.state.plan) {
       await this.sendLeadWithSteering((steering) => buildWrapPrompt(this.state.plan!, steering), operation!);

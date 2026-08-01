@@ -351,10 +351,12 @@ describe('dev team websocket integration', () => {
     inbox.socket.send(JSON.stringify({
       type: 'chat-send', text: 'new provider detail', agent: { provider: 'openai', model: 'model-b' },
     }));
-    await until(() => harness.drivers.length === 2 && harness.drivers[1].sent.length === 1);
+    await until(() => harness.drivers.length === 2);
     await until(async () => (await readDevTeamState(harness.root, chatId)).phase === 'interrupted');
     const interrupted = await readDevTeamState(harness.root, chatId);
     expect(interrupted.resumePhase).toBe('planning');
+    expect(interrupted.steering.map((item) => item.text)).toEqual(['new provider detail']);
+    expect(harness.drivers[1].sent).toEqual([]);
 
     await fsp.writeFile(path.join(harness.root, '.hearth', 'devteam', chatId, 'plan.json'), JSON.stringify({
       version: 1,
@@ -372,6 +374,7 @@ describe('dev team websocket integration', () => {
     inbox.socket.send(JSON.stringify({ type: 'devteam-resume' }));
     await until(() => harness.drivers[1].sent.length === beforeResume + 1);
     expect(harness.drivers[1].sent).toHaveLength(beforeResume + 1);
+    expect(harness.drivers[1].sent[0].text).toContain('new provider detail');
     harness.drivers[1].emit({ type: 'turn-complete' });
     await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'building');
     inbox.socket.close();
