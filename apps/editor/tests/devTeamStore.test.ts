@@ -115,6 +115,75 @@ describe('dev team run state', () => {
     expect((await fsp.readdir(runDir())).filter((name) => name.includes('.tmp'))).toEqual([]);
   });
 
+  it('does not start or settle a second state write until the first rename completes', async () => {
+    const initial = state({ phase: 'planning', retryCount: 0 });
+    const first = state({ phase: 'building', retryCount: 1 });
+    const second = state({ phase: 'reviewing', retryCount: 2 });
+    await writeDevTeamState(root, chatId, initial);
+
+    const realRename = fsp.rename.bind(fsp);
+    const renameOrder: string[] = [];
+    const completionOrder: string[] = [];
+    let releaseFirst!: () => void;
+    let releaseSecond!: () => void;
+    let firstRenameReached!: () => void;
+    let secondRenameReached!: () => void;
+    const firstReached = new Promise<void>((resolve) => {
+      firstRenameReached = resolve;
+    });
+    const secondReached = new Promise<void>((resolve) => {
+      secondRenameReached = resolve;
+    });
+    const firstReleased = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const secondReleased = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    vi.spyOn(fsp, 'rename').mockImplementation(async (from, to) => {
+      const label = renameOrder.length === 0 ? 'first' : 'second';
+      renameOrder.push(label);
+      if (label === 'first') {
+        firstRenameReached();
+        await firstReleased;
+      } else {
+        secondRenameReached();
+        await secondReleased;
+      }
+      await realRename(from, to);
+    });
+
+    const firstWriting = writeDevTeamState(root, chatId, first).then(() => {
+      completionOrder.push('first');
+    });
+    await firstReached;
+    const mkdir = vi.spyOn(fsp, 'mkdir').mockResolvedValue(undefined);
+    const secondWriting = writeDevTeamState(root, chatId, second).then(() => {
+      completionOrder.push('second');
+    });
+
+    try {
+      expect(mkdir).not.toHaveBeenCalled();
+      expect(renameOrder).toEqual(['first']);
+      expect(completionOrder).toEqual([]);
+
+      releaseFirst();
+      await firstWriting;
+      await secondReached;
+      expect(renameOrder).toEqual(['first', 'second']);
+      expect(completionOrder).toEqual(['first']);
+
+      releaseSecond();
+      await secondWriting;
+      expect(completionOrder).toEqual(['first', 'second']);
+      expect(JSON.parse(await fsp.readFile(stateFile(), 'utf8'))).toEqual(second);
+    } finally {
+      releaseFirst();
+      releaseSecond();
+      await Promise.allSettled([firstWriting, secondWriting]);
+    }
+  });
+
   it('keeps the old whole state visible until the atomic rename', async () => {
     const before = state({ phase: 'building', retryCount: 1 });
     const after = state({ phase: 'reviewing', retryCount: 2 });
