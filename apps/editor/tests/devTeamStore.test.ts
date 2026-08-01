@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,6 +13,7 @@ import {
   type DevTeamPlan,
   type DevTeamState,
 } from '../server/devTeamStore';
+import * as devTeamStore from '../server/devTeamStore';
 
 let root: string;
 const chatId = 'chat-1';
@@ -34,6 +35,7 @@ const validPlan: DevTeamPlan = {
 
 function state(over: Partial<DevTeamState> = {}): DevTeamState {
   return {
+    version: 1,
     runId: 'run-1',
     phase: 'planning',
     resumePhase: null,
@@ -59,6 +61,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await fsp.rm(root, { recursive: true, force: true });
 });
 
@@ -76,13 +79,68 @@ describe('dev team run state', () => {
     expect(await fsp.readFile(stateFile(), 'utf8')).toBe('{ broken');
   });
 
+  it('rejects future versions and unknown fields without rewriting their state', async () => {
+    await fsp.mkdir(runDir(), { recursive: true });
+    for (const future of [
+      { ...state(), version: 2, futureRuntimeData: { doNotLose: true } },
+      { ...state(), version: 1, futureRuntimeData: { doNotLose: true } },
+    ]) {
+      const raw = JSON.stringify(future);
+      await fsp.writeFile(stateFile(), raw);
+      expect(await readDevTeamState(root, chatId)).toMatchObject({
+        phase: 'interrupted',
+        error: 'Dev team state is unreadable.',
+      });
+      expect(await fsp.readFile(stateFile(), 'utf8')).toBe(raw);
+    }
+  });
+
+  it('refuses to write a state derived from an unreadable sentinel', async () => {
+    await fsp.mkdir(runDir(), { recursive: true });
+    await fsp.writeFile(stateFile(), '{ preserve this damage');
+    const unreadable = await readDevTeamState(root, chatId);
+
+    await expect(writeDevTeamState(root, chatId, { ...unreadable, retryCount: 1 })).rejects.toThrow(
+      'Unreadable dev team state cannot be written.',
+    );
+    expect(await fsp.readFile(stateFile(), 'utf8')).toBe('{ preserve this damage');
+  });
+
   it('serializes atomic state writes so concurrent callers leave one whole state', async () => {
     const building = state({ phase: 'building', retryCount: 1 });
     const reviewing = state({ phase: 'reviewing', retryCount: 2 });
     await Promise.all([writeDevTeamState(root, chatId, building), writeDevTeamState(root, chatId, reviewing)]);
 
-    expect([building, reviewing]).toContainEqual(JSON.parse(await fsp.readFile(stateFile(), 'utf8')));
+    expect(JSON.parse(await fsp.readFile(stateFile(), 'utf8'))).toEqual(reviewing);
     expect((await fsp.readdir(runDir())).filter((name) => name.includes('.tmp'))).toEqual([]);
+  });
+
+  it('keeps the old whole state visible until the atomic rename', async () => {
+    const before = state({ phase: 'building', retryCount: 1 });
+    const after = state({ phase: 'reviewing', retryCount: 2 });
+    await writeDevTeamState(root, chatId, before);
+
+    const realRename = fsp.rename.bind(fsp);
+    let releaseRename!: () => void;
+    let renameReached!: () => void;
+    const reached = new Promise<void>((resolve) => {
+      renameReached = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      releaseRename = resolve;
+    });
+    vi.spyOn(fsp, 'rename').mockImplementationOnce(async (from, to) => {
+      renameReached();
+      await released;
+      await realRename(from, to);
+    });
+
+    const writing = writeDevTeamState(root, chatId, after);
+    await reached;
+    expect(JSON.parse(await fsp.readFile(stateFile(), 'utf8'))).toEqual(before);
+    releaseRename();
+    await writing;
+    expect(JSON.parse(await fsp.readFile(stateFile(), 'utf8'))).toEqual(after);
   });
 });
 
@@ -119,6 +177,10 @@ describe('spec and plan files', () => {
 });
 
 describe('engineer transcripts and path ids', () => {
+  it('does not expose an unchecked run-directory path builder', () => {
+    expect('devTeamRunDir' in devTeamStore).toBe(false);
+  });
+
   it('round-trips an engineer transcript in order', async () => {
     await appendEngineerRecord(root, chatId, 'engineer-1', { role: 'user', ts: 't1', text: 'Build the loop' });
     await appendEngineerRecord(root, chatId, 'engineer-1', {

@@ -63,6 +63,7 @@ export interface DevTeamSteeringRecord {
 }
 
 export interface DevTeamSnapshot {
+  version: 1;
   runId: string;
   phase: DevTeamPhase;
   plan: DevTeamPlan | null;
@@ -82,6 +83,8 @@ export interface DevTeamState extends DevTeamSnapshot {
   steering: DevTeamSteeringRecord[];
   retryCount: number;
   agent: AgentTurnOptions | null;
+  /** Set only on a read sentinel. Never valid persisted state. */
+  unreadable?: true;
 }
 
 const idSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
@@ -197,25 +200,28 @@ const phaseSchema = z.enum([
 ]);
 
 const stateSchema: z.ZodType<DevTeamState> = z.object({
+  version: z.literal(1),
   runId: z.string(),
   phase: phaseSchema,
   resumePhase: phaseSchema.nullable(),
   planDigest: z.string().nullable(),
   plan: devTeamPlanSchema.nullable(),
   tasks: z.array(
-    z.object({
-      taskId: z.string(),
-      engineerId: z.string(),
-      status: z.enum(['pending', 'running', 'waiting', 'done', 'error', 'interrupted']),
-      startedAt: z.string().optional(),
-      endedAt: z.string().optional(),
-      summary: z.string().optional(),
-      continuationId: z.string().optional(),
-      files: z.array(z.string()).optional(),
-    }),
+    z
+      .object({
+        taskId: z.string(),
+        engineerId: z.string(),
+        status: z.enum(['pending', 'running', 'waiting', 'done', 'error', 'interrupted']),
+        startedAt: z.string().optional(),
+        endedAt: z.string().optional(),
+        summary: z.string().optional(),
+        continuationId: z.string().optional(),
+        files: z.array(z.string()).optional(),
+      })
+      .strict(),
   ),
-  approvals: z.array(z.object({ specVersion: z.number().int().positive(), approvedAt: z.string() })),
-  steering: z.array(z.object({ ts: z.string(), text: z.string() })),
+  approvals: z.array(z.object({ specVersion: z.number().int().positive(), approvedAt: z.string() }).strict()),
+  steering: z.array(z.object({ ts: z.string(), text: z.string() }).strict()),
   currentMilestone: z.number().int().nonnegative(),
   retryCount: z.number().int().nonnegative(),
   agent: z
@@ -224,16 +230,18 @@ const stateSchema: z.ZodType<DevTeamState> = z.object({
       model: z.string().nullable().optional(),
       effort: z.string().nullable().optional(),
     })
+    .strict()
     .nullable(),
   spec: z.string().nullable(),
   specVersion: z.number().int().nonnegative(),
   summary: z.string().nullable(),
   wrap: z.string().nullable(),
   error: z.string().nullable(),
-});
+}).strict();
 
 function emptyState(over: Partial<DevTeamState> = {}): DevTeamState {
   return {
+    version: 1,
     runId: '',
     phase: 'idle',
     resumePhase: null,
@@ -254,7 +262,7 @@ function emptyState(over: Partial<DevTeamState> = {}): DevTeamState {
   };
 }
 
-export function devTeamRunDir(root: string, chatId: string): string {
+function devTeamRunDir(root: string, chatId: string): string {
   return path.join(root, DEVTEAM_DIR, chatId);
 }
 
@@ -288,11 +296,13 @@ async function readStateFile(root: string, chatId: string): Promise<DevTeamState
   const file = path.join(devTeamRunDir(root, chatId), 'state.json');
   try {
     const parsed = stateSchema.safeParse(JSON.parse(await fsp.readFile(file, 'utf8')));
-    return parsed.success ? parsed.data : emptyState({ phase: 'interrupted', error: DEVTEAM_STATE_UNREADABLE });
+    return parsed.success
+      ? parsed.data
+      : emptyState({ phase: 'interrupted', error: DEVTEAM_STATE_UNREADABLE, unreadable: true });
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'ENOENT'
       ? emptyState()
-      : emptyState({ phase: 'interrupted', error: DEVTEAM_STATE_UNREADABLE });
+      : emptyState({ phase: 'interrupted', error: DEVTEAM_STATE_UNREADABLE, unreadable: true });
   }
 }
 
@@ -305,6 +315,7 @@ export function readDevTeamState(root: string, chatId: string): Promise<DevTeamS
 export function writeDevTeamState(root: string, chatId: string, state: DevTeamState): Promise<void> {
   const id = safeChatId(chatId);
   if (!id) return Promise.reject(new Error('Chat id must be a safe id.'));
+  if (state.unreadable === true) return Promise.reject(new Error('Unreadable dev team state cannot be written.'));
   const parsed = stateSchema.parse(state);
   return serialize(root, id, () =>
     writeAtomic(path.join(devTeamRunDir(root, id), 'state.json'), `${JSON.stringify(parsed, null, 2)}\n`),
