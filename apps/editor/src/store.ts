@@ -225,6 +225,8 @@ export interface AppState {
   devTeam: DevTeamSnapshot | null;
   /** Existing chat folds, one per Hearth-run engineer. */
   devTeamLanes: Record<string, ChatMessage[]>;
+  /** Latest team snapshot per conversation, for live status outside the open pane. */
+  devTeamByChat: Record<string, DevTeamSnapshot>;
   /** True from send until the turn's `done`/`error` — gates the composer. */
   chatBusy: boolean;
   /**
@@ -856,6 +858,10 @@ export function globalPlace(state: {
  */
 export function conversationKind(chat: { kind?: ChatKind }): ChatKind {
   return chat.kind === 'terminal' || chat.kind === 'devteam' ? chat.kind : 'chat';
+}
+
+function withoutKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+  return Object.fromEntries(Object.entries(record).filter(([entryKey]) => entryKey !== key));
 }
 
 /**
@@ -1656,11 +1662,15 @@ export const useApp = create<AppState>((set, get) => {
       composing: false,
       projectView: false,
       screen: null,
+      messages: [],
       chatBusy: false,
+      chatDriver: null,
+      slashCommands: [],
       chatError: null,
       queued: [],
       devTeam: null,
       devTeamLanes: {},
+      narrowTab: 'chat',
     });
     applyConversationMode(kind);
     requestChat({
@@ -1816,11 +1826,16 @@ export const useApp = create<AppState>((set, get) => {
         // rule "a conversation has a kind": whatever the window was showing a
         // moment ago, it now shows the thing that was opened.
         applyConversationMode(conversationKind(frame.chat));
-        set({
+        set((state) => ({
           activeChatId: frame.chat.id,
-          messages: replayTranscript(frame.records, get().projectPath ?? ''),
+          messages: replayTranscript(frame.records, state.projectPath ?? ''),
           devTeam: null,
           devTeamLanes: {},
+          // A non-team record is authoritative too: it cannot retain a stale
+          // team badge merely because an older frame once used the same id.
+          devTeamByChat: conversationKind(frame.chat) === 'devteam'
+            ? state.devTeamByChat
+            : withoutKey(state.devTeamByChat, frame.chat.id),
           chatBusy: false,
           chatDriver: null,
           slashCommands: [],
@@ -1835,23 +1850,28 @@ export const useApp = create<AppState>((set, get) => {
           // conversation for its project is an explicit act, so it is cleared
           // by the explicit actions instead: `openChat` and `newChat`.
           composing: false,
-        });
+        }));
         // Switching conversations empties the queue, so anything still in it
         // here survived a dropped socket rather than belonging to somewhere
         // else. The connection is back; send it.
         drainQueue();
         return;
-      case 'devteam-state':
-        if (
-          frame.chatId !== get().activeChatId ||
-          chatIntent?.type !== 'chat-open' ||
-          chatIntent.chatId !== frame.chatId
-        ) return;
+      case 'devteam-state': {
+        const belongsToOpenPane =
+          frame.chatId === get().activeChatId &&
+          chatIntent?.type === 'chat-open' &&
+          chatIntent.chatId === frame.chatId;
         set((state) => ({
-          devTeam: frame.state,
-          devTeamLanes: state.devTeam?.runId === frame.state.runId ? state.devTeamLanes : {},
+          devTeamByChat: { ...state.devTeamByChat, [frame.chatId]: frame.state },
+          ...(belongsToOpenPane
+            ? {
+                devTeam: frame.state,
+                devTeamLanes: state.devTeam?.runId === frame.state.runId ? state.devTeamLanes : {},
+              }
+            : {}),
         }));
         return;
+      }
       case 'devteam-event':
         if (
           frame.chatId !== get().activeChatId ||
@@ -2073,6 +2093,7 @@ export const useApp = create<AppState>((set, get) => {
     messages: [],
     devTeam: null,
     devTeamLanes: {},
+    devTeamByChat: {},
     chatBusy: false,
     queued: [],
     chatDriver: null,
@@ -2201,6 +2222,7 @@ export const useApp = create<AppState>((set, get) => {
         activeChatId: null,
         devTeam: null,
         devTeamLanes: {},
+        devTeamByChat: {},
         queued: [],
         journalFeed: [],
         game: EMPTY_GAME,
@@ -2308,6 +2330,7 @@ export const useApp = create<AppState>((set, get) => {
         activeChatId: null,
         devTeam: null,
         devTeamLanes: {},
+        devTeamByChat: {},
         queued: [],
         journalFeed: [],
         game: EMPTY_GAME,
@@ -2817,7 +2840,10 @@ export const useApp = create<AppState>((set, get) => {
         return;
       }
       if (get().projectPath !== project) return;
-      set({ chats: res.chats });
+      set((state) => ({
+        chats: res.chats,
+        devTeamByChat: withoutKey(state.devTeamByChat, chatId),
+      }));
       // Deleting the conversation you are reading leaves nowhere to be: land in
       // the next one, or start a fresh one.
       if (get().activeChatId !== chatId) return;
@@ -2959,13 +2985,13 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     approveEngineer(engineerId, approvalId, decision, choiceId) {
-      get().sendFrame({
+      if (!get().sendFrame({
         type: 'devteam-engineer-approval',
         engineerId,
         approvalId,
         decision,
         ...(choiceId ? { choiceId } : {}),
-      });
+      })) return;
       set((state) => ({
         devTeamLanes: {
           ...state.devTeamLanes,

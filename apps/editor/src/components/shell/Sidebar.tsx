@@ -652,6 +652,7 @@ export function Sidebar() {
   const recentChatsLoaded = useApp((s) => s.recentChatsLoaded);
   const activeChatId = useApp((s) => s.activeChatId);
   const devTeam = useApp((s) => s.devTeam);
+  const devTeamByChat = useApp((s) => s.devTeamByChat);
   const newChat = useApp((s) => s.newChat);
   const newDevTeam = useApp((s) => s.newDevTeam);
   const openTerminal = useApp((s) => s.openTerminal);
@@ -1030,11 +1031,11 @@ export function Sidebar() {
                   onOpen={() => void openRecentChat(entry)}
                   onRename={(title) => void renameChat(entry.id, title)}
                   onDelete={() => setPendingDelete(entry)}
-                  annotation={
+                  annotation={devTeamSidebarAnnotation(
                     inProject && entry.id === activeChatId && entry.project.path === projectPath
-                      ? devTeamSidebarAnnotation(devTeam)
-                      : null
-                  }
+                      ? devTeam ?? devTeamByChat[entry.id] ?? null
+                      : devTeamByChat[entry.id] ?? null,
+                  )}
                 />
               ))}
             </div>

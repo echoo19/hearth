@@ -51,6 +51,8 @@ function reset(over: Partial<ReturnType<typeof useApp.getState>> = {}): void {
     chats: [],
     recentChats: [],
     activeChatId: null,
+    devTeam: null,
+    devTeamByChat: {},
     providers: null,
     updateReady: null,
     sidebarCollapsed: false,
@@ -322,6 +324,37 @@ describe('Recents, across folders', () => {
     render(<Sidebar />);
 
     expect((await screen.findByRole('status')).textContent).toBe('building · 2 working');
+  });
+
+  it('keeps annotating a live team conversation after another chat is selected', async () => {
+    const team = { ...chat('team', 'Build together', HERE), kind: 'devteam' as const };
+    const ordinary = chat('ordinary', 'Plan the next game', HERE);
+    const snapshot = {
+      version: 1 as const,
+      runId: 'run-1',
+      phase: 'paused' as const,
+      plan: null,
+      tasks: [],
+      approvals: [],
+      history: [],
+      currentMilestone: 0,
+      spec: null,
+      specVersion: 0,
+      summary: null,
+      wrap: null,
+      error: null,
+    };
+    reset({
+      projectPath: HERE,
+      projectName: 'game',
+      activeChatId: ordinary.id,
+      recentChats: [team, ordinary],
+      devTeam: null,
+      devTeamByChat: { [team.id]: snapshot },
+    });
+    render(<Sidebar />);
+
+    expect((await screen.findByRole('status')).textContent).toBe('paused');
   });
 });
 

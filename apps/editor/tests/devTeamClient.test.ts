@@ -8,6 +8,7 @@ vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/api')>()),
   apiCloseWorkspace: vi.fn(async () => {}),
   apiChatProviders: vi.fn(async () => null),
+  apiDeleteChat: vi.fn(async () => ({ ok: true, chats: [] })),
 }));
 
 const SNAPSHOT: DevTeamSnapshot = {
@@ -40,6 +41,7 @@ beforeEach(() => {
     activeChatId: 'team-chat',
     devTeam: null,
     devTeamLanes: {},
+    devTeamByChat: {},
     messages: [],
     sendFrame: vi.fn(() => true),
     composing: false,
@@ -112,11 +114,12 @@ describe('dev team frame folding', () => {
     expect(useApp.getState().devTeamLanes['engineer-1'][0].streaming).toBe(false);
   });
 
-  it('rejects state and events for a conversation that is no longer open', () => {
+  it('keeps inactive conversation status without leaking its stream into the open pane', () => {
     receive({ type: 'devteam-state', chatId: 'old-chat', state: SNAPSHOT });
     receive({ type: 'devteam-event', chatId: 'old-chat', engineerId: 'engineer-1', event: { type: 'message-delta', text: 'Late' } });
     expect(useApp.getState().devTeam).toBeNull();
     expect(useApp.getState().devTeamLanes).toEqual({});
+    expect(useApp.getState().devTeamByChat['old-chat']).toEqual(SNAPSHOT);
   });
 
   it('reconstructs a finished engineer lane exactly like the live stream', () => {
@@ -139,6 +142,24 @@ describe('dev team frame folding', () => {
       { role: 'user', ts: 't1', text: 'Prepare the milestone review.', orchestration: true },
     ]);
     expect(messages[0]).toMatchObject({ role: 'user', orchestration: true });
+  });
+
+  it('drops a stale team cache entry when that id opens as a terminal', () => {
+    useApp.setState({ devTeamByChat: { 'team-chat': SNAPSHOT } });
+
+    receive({
+      type: 'chat-opened',
+      chat: {
+        id: 'team-chat',
+        title: 'Terminal',
+        kind: 'terminal',
+        createdAt: '2026-07-31T00:00:00.000Z',
+        updatedAt: '2026-07-31T00:00:00.000Z',
+      },
+      records: [],
+    });
+
+    expect(useApp.getState().devTeamByChat).toEqual({});
   });
 });
 
@@ -169,6 +190,19 @@ describe('dev team actions', () => {
       }],
       devTeam: SNAPSHOT,
       devTeamLanes: { 'engineer-1': [] },
+      messages: [{
+        id: 'old-message',
+        role: 'user',
+        parts: [{ kind: 'text', text: 'Old transcript' }],
+        streaming: false,
+        attachments: [{ name: 'old.png', mimeType: 'image/png', url: 'data:image/png;base64,old' }],
+      }],
+      chatBusy: true,
+      chatDriver: 'codex',
+      slashCommands: [{ name: 'old', description: 'Old command', source: 'skill' }],
+      chatError: 'Old error',
+      queued: [{ id: 'queued', text: 'Old follow-up', attachments: [] }],
+      narrowTab: 'pane',
     });
 
     useApp.getState().newDevTeam();
@@ -178,6 +212,15 @@ describe('dev team actions', () => {
     expect(useApp.getState().chats[0].kind).toBe('chat');
     expect(useApp.getState().devTeam).toBeNull();
     expect(useApp.getState().devTeamLanes).toEqual({});
+    expect(useApp.getState()).toMatchObject({
+      messages: [],
+      chatBusy: false,
+      chatDriver: null,
+      slashCommands: [],
+      chatError: null,
+      queued: [],
+      narrowTab: 'chat',
+    });
   });
 
   it('routes and optimistically settles an engineer approval in its own lane', () => {
@@ -198,6 +241,21 @@ describe('dev team actions', () => {
       decision: 'allow',
       choiceId: 'once',
     });
+  });
+
+  it('leaves an engineer approval pending when its socket send fails', () => {
+    receive({
+      type: 'devteam-event',
+      chatId: 'team-chat',
+      engineerId: 'engineer-1',
+      event: { type: 'approval-request', approvalId: 'approval-1', kind: 'command', title: 'Run tests', detail: 'npm test' },
+    });
+    useApp.setState({ sendFrame: vi.fn(() => false) });
+
+    useApp.getState().approveEngineer('engineer-1', 'approval-1', 'allow', 'once');
+
+    const approval = useApp.getState().devTeamLanes['engineer-1'][0].parts.find((part) => part.kind === 'approval');
+    expect(approval).toMatchObject({ id: 'approval-1', decision: null });
   });
 
   it('routes and optimistically settles an engineer input in its own lane', () => {
@@ -235,6 +293,7 @@ describe('dev team actions', () => {
     useApp.getState().closeWorkspace();
     expect(useApp.getState().devTeam).toBeNull();
     expect(useApp.getState().devTeamLanes).toEqual({});
+    expect(useApp.getState().devTeamByChat).toEqual({});
   });
 
   it('keeps the run state when the already-open conversation is selected again', () => {
@@ -242,6 +301,17 @@ describe('dev team actions', () => {
     useApp.getState().openChat('team-chat');
     expect(useApp.getState().devTeam).toEqual(SNAPSHOT);
     expect(useApp.getState().devTeamLanes).toEqual({ 'engineer-1': [] });
+  });
+
+  it('removes cached team status when an inactive conversation is deleted', async () => {
+    useApp.setState({
+      activeChatId: 'ordinary-chat',
+      devTeamByChat: { 'team-chat': SNAPSHOT },
+    });
+
+    await useApp.getState().deleteChat('team-chat');
+
+    expect(useApp.getState().devTeamByChat).toEqual({});
   });
 
   it('does not let late frames refill the blank New chat surface', () => {
