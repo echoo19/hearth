@@ -1,0 +1,349 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import http from 'node:http';
+import { promises as fsp } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import WebSocket from 'ws';
+import { EventQueue, StubDriver, type AgentTurnOptions, type ChatDriver, type ChatEvent, type InputResponse } from '../server/chat';
+import { createProjectServerContext } from '../server/projectServer';
+import { attachWebSocket, type WsFrame } from '../server/ws';
+import { readTranscript } from '../server/chatStore';
+import { buildInterviewPrompt } from '../server/devTeamRuntime';
+import { readDevTeamState } from '../server/devTeamStore';
+import type { PermissionMode } from '../server/permissionMode';
+import type { PtyBackend, PtyHandle } from '../server/ptyManager';
+
+class NoopPtyHandle implements PtyHandle {
+  onData(_listener: (data: string) => void): void {}
+  onExit(_listener: (event: { exitCode: number }) => void): void {}
+  onError(_listener: (error: Error) => void): void {}
+  write(_data: string): void {}
+  resize(_cols: number, _rows: number): void {}
+  kill(): void {}
+}
+
+class NoopPtyBackend implements PtyBackend {
+  spawn(): PtyHandle {
+    return new NoopPtyHandle();
+  }
+}
+
+class FakeDriver implements ChatDriver {
+  readonly kind = 'agent-sdk' as const;
+  readonly queue = new EventQueue<ChatEvent>();
+  readonly sent: Array<{ text: string; agent?: AgentTurnOptions }> = [];
+  readonly approvals: Array<{ id: string; decision: string; choiceId?: string }> = [];
+  readonly inputs: Array<{ id: string; response: InputResponse }> = [];
+  starts: Array<{ id: string; root: string }> = [];
+  eventReaders = 0;
+  stopped = false;
+  interrupted = false;
+
+  get events(): AsyncIterable<ChatEvent> {
+    this.eventReaders += 1;
+    return this.queue;
+  }
+
+  async start(id: string, root: string): Promise<void> {
+    this.starts.push({ id, root });
+  }
+
+  send(text: string, agent?: AgentTurnOptions): void {
+    this.sent.push({ text, agent });
+  }
+
+  approve(id: string, decision: 'allow' | 'deny', choiceId?: string): void {
+    this.approvals.push({ id, decision, choiceId });
+  }
+
+  answerInput(id: string, response: InputResponse): void {
+    this.inputs.push({ id, response });
+  }
+
+  interrupt(): void {
+    this.interrupted = true;
+  }
+
+  stop(): void {
+    this.stopped = true;
+    this.queue.close();
+  }
+
+  emit(event: ChatEvent): void {
+    this.queue.push(event);
+  }
+}
+
+interface Inbox {
+  socket: WebSocket;
+  frames: WsFrame[];
+  next(match: (frame: WsFrame) => boolean, timeoutMs?: number): Promise<WsFrame>;
+}
+
+interface Harness {
+  tmp: string;
+  root: string;
+  server: http.Server;
+  port: number;
+  drivers: FakeDriver[];
+  options: Array<{
+    agent?: AgentTurnOptions | null;
+    permissionMode?: PermissionMode | null;
+    resumeThreadId?: string | null;
+    resumeSessionId?: string | null;
+    onThreadId?: (id: string) => void;
+    onSessionId?: (id: string) => void;
+  }>;
+  connect(): Promise<Inbox>;
+  close(): Promise<void>;
+}
+
+const openHarnesses = new Set<Harness>();
+
+async function until(ready: () => boolean | Promise<boolean>, timeoutMs = 4000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!(await ready())) {
+    if (Date.now() > deadline) throw new Error('timed out waiting');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+async function makeHarness(
+  factory?: (options: Harness['options'][number] | undefined) => Promise<ChatDriver>,
+): Promise<Harness> {
+  const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-wsdevteam-'));
+  const root = path.join(tmp, 'game');
+  await fsp.mkdir(root, { recursive: true });
+  const oldHome = process.env.HEARTH_HOME;
+  process.env.HEARTH_HOME = path.join(tmp, 'home');
+  const ctx = createProjectServerContext({ recentsFile: path.join(tmp, 'recents.json'), repoRoot: tmp });
+  await ctx.openWorkspace(root);
+  const server = http.createServer();
+  const drivers: FakeDriver[] = [];
+  const options: Harness['options'] = [];
+  const sockets = new Set<WebSocket>();
+  attachWebSocket(server, ctx, new NoopPtyBackend(), async () => process.env, {
+    chatDetachLingerMs: 50,
+    createChatDriver: async (_root, driverOptions) => {
+      options.push(driverOptions ?? {});
+      if (factory) return factory(driverOptions);
+      const driver = new FakeDriver();
+      drivers.push(driver);
+      return driver;
+    },
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as { port: number }).port;
+  let closed = false;
+  const harness: Harness = {
+    tmp,
+    root,
+    server,
+    port,
+    drivers,
+    options,
+    async connect() {
+      const socket = new WebSocket(`ws://127.0.0.1:${port}/api/ws?project=${encodeURIComponent(root)}`);
+      sockets.add(socket);
+      socket.once('close', () => sockets.delete(socket));
+      const frames: WsFrame[] = [];
+      socket.on('message', (raw) => frames.push(JSON.parse(raw.toString()) as WsFrame));
+      await new Promise<void>((resolve, reject) => {
+        socket.once('open', () => resolve());
+        socket.once('error', reject);
+      });
+      return {
+        socket,
+        frames,
+        async next(match, timeoutMs = 4000) {
+          let found: WsFrame | undefined;
+          await until(() => {
+            const index = frames.findIndex(match);
+            if (index < 0) return false;
+            [found] = frames.splice(index, 1);
+            return true;
+          }, timeoutMs);
+          return found!;
+        },
+      };
+    },
+    async close() {
+      if (closed) return;
+      closed = true;
+      for (const socket of sockets) socket.terminate();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      if (oldHome === undefined) delete process.env.HEARTH_HOME;
+      else process.env.HEARTH_HOME = oldHome;
+      await fsp.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 });
+      openHarnesses.delete(harness);
+    },
+  };
+  openHarnesses.add(harness);
+  return harness;
+}
+
+afterEach(async () => {
+  for (const harness of [...openHarnesses]) await harness.close();
+});
+
+async function newDevTeam(inbox: Inbox): Promise<string> {
+  inbox.socket.send(JSON.stringify({ type: 'chat-new', kind: 'devteam' }));
+  const opened = await inbox.next((frame) => frame.type === 'chat-opened');
+  if (opened.type !== 'chat-opened') throw new Error('expected chat-opened');
+  return opened.chat.id;
+}
+
+describe('dev team websocket integration', () => {
+  it('accepts devteam at creation and defaults an invalid kind to chat', async () => {
+    const harness = await makeHarness();
+    const inbox = await harness.connect();
+    inbox.socket.send(JSON.stringify({ type: 'chat-new', kind: 'devteam' }));
+    const team = await inbox.next((frame) => frame.type === 'chat-opened');
+    expect(team.type === 'chat-opened' && team.chat.kind).toBe('devteam');
+    inbox.socket.send(JSON.stringify({ type: 'chat-new', kind: 'not-real' }));
+    const fallback = await inbox.next((frame) => frame.type === 'chat-opened');
+    expect(fallback.type === 'chat-opened' && fallback.chat.kind).toBe('chat');
+    inbox.socket.close();
+  });
+
+  it('records the first request and exact orchestration prompt separately and consumes the lead stream once', async () => {
+    const harness = await makeHarness();
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    const request = 'Build a tiny game with a surprising interaction.';
+    const agent = { provider: 'anthropic' as const, model: 'claude-test', effort: 'high' as const };
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: request, agent }));
+    const state = await inbox.next(
+      (frame) => frame.type === 'devteam-state' && frame.chatId === chatId && frame.state.phase === 'interviewing',
+    );
+    expect(state.type === 'devteam-state' && state.state.phase).toBe('interviewing');
+    expect(harness.drivers[0].sent).toEqual([{ text: buildInterviewPrompt(chatId, request), agent }]);
+    expect(harness.drivers[0].eventReaders).toBe(1);
+    const records = await readTranscript(harness.root, chatId);
+    expect(records.filter((record) => record.role === 'user')).toEqual([
+      expect.objectContaining({ role: 'user', text: request }),
+      expect.objectContaining({ role: 'user', text: buildInterviewPrompt(chatId, request), orchestration: true }),
+    ]);
+    inbox.socket.close();
+  });
+
+  it('keeps a stub-backed dev team idle and surfaces the ordinary connection guidance', async () => {
+    const harness = await makeHarness(async () => new StubDriver());
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'build this' }));
+    await inbox.next((frame) => frame.type === 'chat-event' && frame.chatId === chatId && frame.event.type === 'turn-complete');
+    expect((await readDevTeamState(harness.root, chatId)).phase).toBe('idle');
+    expect((await readTranscript(harness.root, chatId)).some((record) => record.role === 'user' && record.orchestration)).toBe(false);
+    inbox.socket.close();
+  });
+
+  it('preserves one runtime across a model rebind and routes run controls', async () => {
+    const harness = await makeHarness();
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({
+      type: 'chat-send',
+      text: 'first brief',
+      agent: { provider: 'anthropic', model: 'model-a' },
+    }));
+    const first = await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    const runId = first.type === 'devteam-state' ? first.state.runId : '';
+    inbox.socket.send(JSON.stringify({
+      type: 'chat-send',
+      text: 'one more detail',
+      agent: { provider: 'anthropic', model: 'model-b' },
+    }));
+    await until(() => harness.drivers.length === 2 && harness.drivers[1].sent.length === 1);
+    expect((await readDevTeamState(harness.root, chatId)).runId).toBe(runId);
+    inbox.socket.send(JSON.stringify({ type: 'devteam-pause' }));
+    const paused = await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'paused');
+    expect(paused.type === 'devteam-state' && paused.chatId).toBe(chatId);
+    inbox.socket.send(JSON.stringify({ type: 'devteam-resume' }));
+    const resumed = await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    expect(resumed.type === 'devteam-state' && resumed.state.runId).toBe(runId);
+    inbox.socket.send(JSON.stringify({ type: 'devteam-stop' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interrupted');
+    inbox.socket.close();
+  });
+
+  it('broadcasts correlated engineer activity, routes asks, queues steering, and replays state before activity', async () => {
+    const harness = await makeHarness();
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    const agent = { provider: 'openai' as const, model: 'codex-test', effort: 'medium' as const };
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'make the project', agent }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    await fsp.mkdir(path.join(harness.root, '.hearth', 'devteam', chatId), { recursive: true });
+    await fsp.writeFile(path.join(harness.root, '.hearth', 'devteam', chatId, 'spec.md'), '# Spec\nBuild it.\n');
+    harness.drivers[0].emit({ type: 'turn-complete' });
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'spec-review');
+    inbox.socket.send(JSON.stringify({ type: 'devteam-approve-spec' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'planning');
+    const plan = {
+      version: 1,
+      roles: [{ id: 'builder', name: 'Builder', focus: 'Implement the project.' }],
+      milestones: [{
+        id: 'm1', title: 'Build', goal: 'Finish the project.',
+        tasks: [{ id: 'task1', title: 'Implement', roleId: 'builder', detail: 'Implement the approved specification.', scope: ['src'], effort: 'high' }],
+      }],
+    };
+    await fsp.writeFile(path.join(harness.root, '.hearth', 'devteam', chatId, 'plan.json'), JSON.stringify(plan));
+    harness.drivers[0].emit({ type: 'turn-complete' });
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'building');
+    await until(() => harness.drivers.length === 2 && harness.drivers[1].sent.length === 1);
+    expect(harness.options[1]?.agent).toEqual(agent);
+    expect(harness.drivers[1].sent[0].agent).toEqual({ ...agent, effort: 'high' });
+    harness.options[1]?.onThreadId?.('thread-task1');
+    await until(async () => (await readDevTeamState(harness.root, chatId)).tasks[0]?.continuationId === 'thread-task1');
+
+    const engineerId = `devteam-${chatId}-task1`;
+    harness.drivers[1].emit({
+      type: 'approval-request', approvalId: 'approval-1', kind: 'command', title: 'Run check', detail: 'npm test',
+    });
+    const approval = await inbox.next((frame) => frame.type === 'devteam-event' && frame.engineerId === engineerId);
+    expect(approval.type === 'devteam-event' && approval.chatId).toBe(chatId);
+    inbox.socket.send(JSON.stringify({
+      type: 'devteam-engineer-approval', engineerId, approvalId: 'approval-1', decision: 'allow', choiceId: 'once',
+    }));
+    await until(() => harness.drivers[1].approvals.length === 1);
+    expect(harness.drivers[1].approvals[0]).toEqual({ id: 'approval-1', decision: 'allow', choiceId: 'once' });
+
+    harness.drivers[1].emit({
+      type: 'input-request', inputId: 'input-1', questions: [{ id: 'name', label: 'Name', type: 'text' }], allowCancel: true,
+    });
+    await inbox.next((frame) => frame.type === 'devteam-event' && frame.event.type === 'input-request');
+    inbox.socket.send(JSON.stringify({
+      type: 'devteam-engineer-input', engineerId, inputId: 'input-1', action: 'submit', answers: { name: 'Hearth' },
+    }));
+    await until(() => harness.drivers[1].inputs.length === 1);
+
+    const leadSends = harness.drivers[0].sent.length;
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'Keep the interface quiet.' }));
+    await until(async () => (await readDevTeamState(harness.root, chatId)).steering.length === 1);
+    expect(harness.drivers[0].sent).toHaveLength(leadSends);
+    expect((await readTranscript(harness.root, chatId)).some((record) => record.role === 'user' && record.text === 'Keep the interface quiet.')).toBe(true);
+
+    const second = await harness.connect();
+    second.socket.send(JSON.stringify({ type: 'chat-open', chatId }));
+    await until(() => second.frames.some((frame) => frame.type === 'devteam-event'));
+    const openedIndex = second.frames.findIndex((frame) => frame.type === 'chat-opened');
+    const stateIndex = second.frames.findIndex((frame) => frame.type === 'devteam-state');
+    const eventIndex = second.frames.findIndex((frame) => frame.type === 'devteam-event');
+    expect([openedIndex, stateIndex, eventIndex]).toEqual([0, 1, 2]);
+    second.socket.close();
+    inbox.socket.close();
+  });
+
+  it('interrupts an active run when the server closes', async () => {
+    const harness = await makeHarness();
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'start it' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    inbox.socket.terminate();
+    await new Promise<void>((resolve) => harness.server.close(() => resolve()));
+    await until(async () => (await readDevTeamState(harness.root, chatId)).phase === 'interrupted');
+    expect((await readDevTeamState(harness.root, chatId)).error).toContain('closed');
+  });
+});

@@ -46,6 +46,7 @@ import {
   parseAgentOptions,
   readAppSettings,
   resolveClaudeExecutable,
+  StubDriver,
   type AgentToolAccess,
   type AgentTurnOptions,
   type ApprovalDecision,
@@ -64,6 +65,7 @@ import {
   parseStagedAttachmentInputs,
   saveAttachments,
   storedAttachment,
+  type ChatAttachment,
 } from './chatAttachments.js';
 import {
   appendChatRecord,
@@ -81,6 +83,8 @@ import {
   type ChatRecord,
   type ChatSummary,
 } from './chatStore.js';
+import { appendEngineerRecord, readDevTeamState, readEngineerRecords, type DevTeamSnapshot } from './devTeamStore.js';
+import { DevTeamRuntime, type DevTeamEngineerRequest } from './devTeamRuntime.js';
 import { type ProjectServerContext, resolveToolPaths } from './projectServer.js';
 import { PtyManager, ScrollbackBuffer, type PtyBackend, type PtyHandle } from './ptyManager.js';
 import { ensureHearthShim, hearthPtyEnv } from './hearthShim.js';
@@ -179,6 +183,24 @@ export type WsFrame =
       action: 'submit' | 'cancel';
       answers?: Record<string, string | number | boolean | string[]>;
     } // client -> server
+  | { type: 'devteam-approve-spec' } // client -> server
+  | { type: 'devteam-pause' } // client -> server
+  | { type: 'devteam-resume' } // client -> server
+  | { type: 'devteam-stop' } // client -> server
+  | {
+      type: 'devteam-engineer-approval';
+      engineerId: string;
+      approvalId: string;
+      decision: ApprovalDecision;
+      choiceId?: string;
+    } // client -> server
+  | {
+      type: 'devteam-engineer-input';
+      engineerId: string;
+      inputId: string;
+      action: 'submit' | 'cancel';
+      answers?: Record<string, string | number | boolean | string[]>;
+    } // client -> server
   | { type: 'chat-commands-list' } // client -> server
   | { type: 'chat-commands'; chatId?: string; commands: SlashCommandInfo[] }
   // Stop the running turn but KEEP the conversation: `chat-cancel` tears the
@@ -198,6 +220,8 @@ export type WsFrame =
   // `chatId` is not the one it is showing. Optional so a client that predates
   // it is unaffected.
   | { type: 'chat-event'; chatId?: string; event: ChatEvent }
+  | { type: 'devteam-state'; chatId: string; state: DevTeamSnapshot }
+  | { type: 'devteam-event'; chatId: string; engineerId: string; event: ChatEvent }
   | { type: 'chat-opened'; chat: ChatSummary; records: ChatRecord[] }
   | { type: 'chat-list'; chats: ChatSummary[] }
   // Provider auth moved (a key was saved, a ChatGPT sign-in completed in a
@@ -262,6 +286,8 @@ interface ChatSession {
    * from restarting the agent every message.
    */
   agentKey: string | null;
+  /** Last normalized selection for this binding, including per-turn effort. */
+  agent: AgentTurnOptions | null;
   sockets: Set<WebSocket>;
   /** Retires a detached chat nobody reattached to. */
   lingerTimer?: ReturnType<typeof setTimeout>;
@@ -387,6 +413,7 @@ export function attachWebSocket(
         resumeSessionId?: string | null;
         onSessionId?: (sessionId: string) => void;
         agent?: AgentTurnOptions | null;
+        tools?: AgentToolAccess | null;
         permissionMode?: PermissionMode | null;
       },
     ) => Promise<ChatDriver>;
@@ -416,6 +443,8 @@ export function attachWebSocket(
   // first chat-send so a window that never talks never resolves an agent
   // backend. `socketChat` is which chat each socket is currently looking at.
   const chatSessions = new Map<string, ChatSession>();
+  const devTeamRuntimes = new Map<string, DevTeamRuntime>();
+  const devTeamLeadAttachments = new Map<string, readonly ChatAttachment[]>();
   const socketChat = new Map<WebSocket, string>();
 
   /**
@@ -917,6 +946,124 @@ export function attachWebSocket(
     return [...channel.sockets].filter((peer) => peer.readyState === WebSocket.OPEN && socketChat.get(peer) === chatId);
   }
 
+  function broadcastDevTeamState(root: string, chatId: string, state: DevTeamSnapshot): void {
+    broadcast(new Set(watchersOf(root, chatId)), { type: 'devteam-state', chatId, state });
+  }
+
+  function broadcastDevTeamEvent(root: string, chatId: string, engineerId: string, event: ChatEvent): void {
+    broadcast(new Set(watchersOf(root, chatId)), { type: 'devteam-event', chatId, engineerId, event });
+  }
+
+  async function ensureDevTeamRuntime(
+    root: string,
+    chatId: string,
+    lead?: ChatSession | null,
+  ): Promise<DevTeamRuntime | null> {
+    const key = chatKey(root, chatId);
+    const existing = devTeamRuntimes.get(key);
+    if (existing) return existing;
+    const chat = await getChat(root, chatId);
+    if (chat?.kind !== 'devteam') return null;
+    const permissionMode = lead?.permissionMode ?? (await readPermissionMode(root));
+    const tools = await getAgentTools();
+    const runtime = new DevTeamRuntime({
+      root,
+      chatId,
+      agent: lead?.agent ?? null,
+      permissionMode,
+      tools,
+      createDriver: async (request: DevTeamEngineerRequest) =>
+        makeChatDriver(root, {
+          resumeThreadId: request.resumeContinuationId ?? null,
+          onThreadId: request.onContinuationId,
+          resumeSessionId: request.resumeContinuationId ?? null,
+          onSessionId: request.onContinuationId,
+          agent: request.agent,
+          tools: request.tools,
+          permissionMode: request.permissionMode,
+        }),
+      sendLead: async (text, agent) => {
+        const session = chatSessions.get(key);
+        if (!session?.driver) throw new Error('The lead agent is not connected.');
+        session.turnActive = true;
+        const provider = providerForTurn(session.driver);
+        if (provider) await setChatProvider(root, chatId, provider);
+        const attachments = devTeamLeadAttachments.get(key);
+        devTeamLeadAttachments.delete(key);
+        session.driver.send(text, agent ?? undefined, attachments);
+      },
+      appendLeadRecord: async (record) => {
+        if (!(await appendChatRecord(root, chatId, record))) {
+          throw new Error(DELETED_CHAT_MESSAGE);
+        }
+      },
+      appendEngineerRecord: (engineerId, record) => appendEngineerRecord(root, chatId, engineerId, record),
+      // Runtime persistence and engineer transcript append happen before these
+      // callbacks. Queue only the live notification on the conversation lane,
+      // so chat-open can send snapshot + replay without an event falling into
+      // the gap between reading and subscribing.
+      emitSnapshot: (state) => {
+        detach(
+          enqueueChatLane(key, async () => broadcastDevTeamState(root, chatId, state)),
+          `dev team ${chatId}: could not broadcast state`,
+        );
+      },
+      emitEngineerEvent: (engineerId, event) => {
+        detach(
+          enqueueChatLane(key, async () => broadcastDevTeamEvent(root, chatId, engineerId, event)),
+          `dev team ${chatId}: could not broadcast engineer event`,
+        );
+      },
+    });
+    devTeamRuntimes.set(key, runtime);
+    try {
+      await runtime.start();
+      return runtime;
+    } catch (error) {
+      if (devTeamRuntimes.get(key) === runtime) devTeamRuntimes.delete(key);
+      await runtime.dispose().catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async function replayDevTeam(root: string, chatId: string, socket: WebSocket): Promise<void> {
+    const stored = await readDevTeamState(root, chatId);
+    const runtime =
+      stored.phase === 'idle' || stored.phase === 'done'
+        ? null
+        : await ensureDevTeamRuntime(root, chatId, chatSessions.get(chatKey(root, chatId)));
+    const state = runtime?.snapshot() ?? publicDevTeamSnapshot(stored);
+    send(socket, { type: 'devteam-state', chatId, state });
+    const engineerIds = [...new Set(state.tasks.map((task) => task.engineerId).filter(Boolean))];
+    for (const engineerId of engineerIds) {
+      const records = runtime
+        ? await runtime.engineerReplay(engineerId)
+        : await readEngineerRecords(root, chatId, engineerId);
+      for (const record of records) {
+        if (record.role === 'agent') {
+          send(socket, { type: 'devteam-event', chatId, engineerId, event: record.event });
+        }
+      }
+    }
+  }
+
+  function publicDevTeamSnapshot(state: Awaited<ReturnType<typeof readDevTeamState>>): DevTeamSnapshot {
+    return structuredClone({
+      version: state.version,
+      runId: state.runId,
+      phase: state.phase,
+      plan: state.plan,
+      tasks: state.tasks,
+      approvals: state.approvals,
+      currentMilestone: state.currentMilestone,
+      spec: state.spec,
+      specVersion: state.specVersion,
+      summary: state.summary,
+      wrap: state.wrap,
+      error: state.error,
+    });
+  }
+
   /**
    * The conversation's backend is finished: take the session out of the live
    * map, stop the driver, and do not leave a window waiting on a turn nobody is
@@ -1031,6 +1178,7 @@ export function attachWebSocket(
         live.sockets.add(socket);
       }
       send(socket, { type: 'chat-opened', chat, records });
+      if (chat.kind === 'devteam') await replayDevTeam(root, id, socket);
       if (live?.driver) send(socket, { type: 'chat-ready', driver: live.driver.kind });
     });
   }
@@ -1108,6 +1256,7 @@ export function attachWebSocket(
       if (existing.lingerTimer) clearTimeout(existing.lingerTimer);
       existing.lingerTimer = undefined;
       existing.sockets.add(socket);
+      if (agent) existing.agent = { ...(existing.agent ?? {}), ...agent };
       return existing;
     }
     // Past here the conversation is BOUND, or REBOUND for one of four reasons.
@@ -1134,6 +1283,8 @@ export function attachWebSocket(
     // to announce: the turn waiting on this call is about to be answered by the
     // driver built below, so reporting the old one's end would put an error on
     // a conversation that is fine.
+    const selectedAgent = agent ? { ...(existing?.agent ?? {}), ...agent } : (existing?.agent ?? null);
+    const selectedAgentKey = wantedAgentKey ?? existing?.agentKey ?? null;
     if (existing) retireChatSession(existing, null);
     // Settled in the `finally` below, on every path out of the bind, because a
     // send waiting on it is holding a person's message.
@@ -1144,7 +1295,8 @@ export function attachWebSocket(
       chatId,
       driver: null,
       permissionMode,
-      agentKey: wantedAgentKey,
+      agentKey: selectedAgentKey,
+      agent: selectedAgent,
       // Every window that was watching comes along, so a rebind does not leave
       // the other one staring at an agent nothing is feeding any more. Taken
       // from `socketChat` as well as from the old session, because a session
@@ -1162,7 +1314,7 @@ export function attachWebSocket(
     chatSessions.set(key, session);
 
     try {
-      return await bindChatSession(session, socket, agent, permissionMode);
+      return await bindChatSession(session, socket, selectedAgent, permissionMode);
     } finally {
       bound();
     }
@@ -1269,7 +1421,13 @@ export function attachWebSocket(
               ts: new Date().toISOString(),
               event,
             });
-            if (appended) broadcastChatEvent(session, event);
+            if (appended) {
+              // The lead stream has exactly one reader: this pump. Dev-team
+              // orchestration observes the normalized event only after it is
+              // durable; it never starts a second iterator over the driver.
+              await devTeamRuntimes.get(session.key)?.handleLeadEvent(event);
+              broadcastChatEvent(session, event);
+            }
             return appended;
           };
           // A teardown reserves this lane with endChatTurn, which waits for
@@ -1499,10 +1657,11 @@ export function attachWebSocket(
             break;
           case 'chat-new':
             {
-              // Validated rather than trusted: anything that is not the one
-              // other kind is a chat, so a garbled frame starts the harmless
-              // thing instead of being rejected.
-              const kind: ChatKind = frame.kind === 'terminal' ? 'terminal' : 'chat';
+              // Validated rather than trusted: a garbled kind starts the
+              // harmless ordinary chat instead of becoming a durable mode the
+              // rest of the application cannot render.
+              const kind: ChatKind =
+                frame.kind === 'terminal' || frame.kind === 'devteam' ? frame.kind : 'chat';
               const title = typeof frame.title === 'string' ? frame.title : undefined;
               enqueueChatOp(ws, async () => {
                 // Before minting another one. A chat that was never typed into
@@ -1616,14 +1775,32 @@ export function attachWebSocket(
                     await announceChats(root); // the first turn names the chat
                     if (session?.driver) {
                       const provider = providerForTurn(session.driver);
-                      const summary = provider ? await getChat(root, target) : null;
+                      const summary = await getChat(root, target);
                       const delivered =
                         provider && summary?.lastProvider && summary.lastProvider !== provider
                           ? providerHandoff(target, text)
                           : text;
                       if (provider) await setChatProvider(root, target, provider);
-                      session.turnActive = true;
-                      session.driver.send(delivered, agent ?? undefined, attachments);
+                      if (summary?.kind === 'devteam' && !(session.driver instanceof StubDriver)) {
+                        const runtime = await ensureDevTeamRuntime(root, target, session);
+                        if (attachments.length > 0) devTeamLeadAttachments.set(key, attachments);
+                        let handled: boolean | undefined;
+                        try {
+                          handled = await runtime?.handleUserMessage(text);
+                        } finally {
+                          devTeamLeadAttachments.delete(key);
+                        }
+                        if (!handled) {
+                          session.turnActive = true;
+                          session.driver.send(delivered, agent ?? undefined, attachments);
+                        }
+                      } else {
+                        // A real StubDriver is the connect-an-agent refusal for
+                        // this mode. Test doubles that merely report kind=stub
+                        // remain valid scripted drivers.
+                        session.turnActive = true;
+                        session.driver.send(delivered, agent ?? undefined, attachments);
+                      }
                     }
                   }),
                   `chat ${target}: could not deliver the message`,
@@ -1665,6 +1842,66 @@ export function attachWebSocket(
                 action,
                 answers,
               });
+            }
+            break;
+          case 'devteam-approve-spec':
+          case 'devteam-pause':
+          case 'devteam-resume':
+          case 'devteam-stop':
+            {
+              const chatId = socketChat.get(ws);
+              if (!chatId) break;
+              const key = chatKey(root, chatId);
+              detach(
+                enqueueChatLane(key, async () => {
+                  let lead = chatSessions.get(key) ?? null;
+                  if (
+                    (frame.type === 'devteam-approve-spec' || frame.type === 'devteam-resume') &&
+                    !lead?.driver
+                  ) {
+                    lead = await ensureChat(root, ws, chatId, null);
+                    if (!lead?.driver) return;
+                  }
+                  const runtime = await ensureDevTeamRuntime(root, chatId, lead);
+                  if (!runtime) return;
+                  if (frame.type === 'devteam-approve-spec') await runtime.approveSpec();
+                  else if (frame.type === 'devteam-pause') await runtime.pause();
+                  else if (frame.type === 'devteam-resume') await runtime.resume();
+                  else await runtime.stop();
+                }),
+                `dev team ${chatId}: could not apply ${frame.type}`,
+              );
+            }
+            break;
+          case 'devteam-engineer-approval':
+            {
+              const chatId = socketChat.get(ws);
+              if (!chatId || typeof frame.engineerId !== 'string' || typeof frame.approvalId !== 'string') break;
+              const runtime = devTeamRuntimes.get(chatKey(root, chatId));
+              if (!runtime) break;
+              runtime.routeEngineerApproval(
+                frame.engineerId,
+                frame.approvalId,
+                frame.decision === 'allow' ? 'allow' : 'deny',
+                typeof frame.choiceId === 'string' ? frame.choiceId : undefined,
+              );
+            }
+            break;
+          case 'devteam-engineer-input':
+            {
+              const chatId = socketChat.get(ws);
+              if (!chatId || typeof frame.engineerId !== 'string' || typeof frame.inputId !== 'string') break;
+              const runtime = devTeamRuntimes.get(chatKey(root, chatId));
+              if (!runtime) break;
+              const action = frame.action === 'submit' ? 'submit' : 'cancel';
+              const answers =
+                action === 'submit' &&
+                frame.answers &&
+                typeof frame.answers === 'object' &&
+                !Array.isArray(frame.answers)
+                  ? frame.answers
+                  : undefined;
+              runtime.routeEngineerInput(frame.engineerId, frame.inputId, { action, answers });
             }
             break;
           case 'chat-commands-list':
@@ -1854,6 +2091,10 @@ export function attachWebSocket(
     failedHandoffs.clear();
     ptySessions.clear();
     ptyManager.killAll();
+    for (const [key, runtime] of devTeamRuntimes) {
+      detach(runtime.dispose(), `dev team ${key}: could not interrupt on server close`);
+    }
+    devTeamRuntimes.clear();
     for (const session of [...chatSessions.values()]) retireChatSession(session, null);
     chatSessions.clear();
     socketChat.clear();
