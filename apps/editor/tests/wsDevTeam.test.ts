@@ -10,7 +10,7 @@ import { attachWebSocket, type WsFrame } from '../server/ws';
 import { readTranscript } from '../server/chatStore';
 import { buildInterviewPrompt } from '../server/devTeamRuntime';
 import { readDevTeamState } from '../server/devTeamStore';
-import type { PermissionMode } from '../server/permissionMode';
+import { writePermissionMode, type PermissionMode } from '../server/permissionMode';
 import type { PtyBackend, PtyHandle } from '../server/ptyManager';
 
 class NoopPtyHandle implements PtyHandle {
@@ -38,6 +38,7 @@ class FakeDriver implements ChatDriver {
   eventReaders = 0;
   stopped = false;
   interrupted = false;
+  holdStop = false;
 
   get events(): AsyncIterable<ChatEvent> {
     this.eventReaders += 1;
@@ -66,6 +67,16 @@ class FakeDriver implements ChatDriver {
 
   stop(): void {
     this.stopped = true;
+    if (this.holdStop) return;
+    this.queue.close();
+  }
+
+  releaseStop(...events: ChatEvent[]): void {
+    for (const event of events) this.queue.push(event);
+    this.queue.close();
+  }
+
+  closeStream(): void {
     this.queue.close();
   }
 
@@ -267,6 +278,76 @@ describe('dev team websocket integration', () => {
     inbox.socket.close();
   });
 
+  it('ignores a retired lead binding tail and refreshes engineer binding options after rebind', async () => {
+    const harness = await makeHarness();
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({
+      type: 'chat-send', text: 'initial brief', agent: { provider: 'anthropic', model: 'model-a' },
+    }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    harness.drivers[0].holdStop = true;
+    await writePermissionMode(harness.root, 'skip');
+    inbox.socket.send(JSON.stringify({
+      type: 'chat-send', text: 'replacement detail', agent: { provider: 'openai', model: 'model-b', effort: 'medium' },
+    }));
+    await until(() => harness.drivers.length === 2 && harness.drivers[1].sent.length === 1);
+    await fsp.mkdir(path.join(harness.root, '.hearth', 'devteam', chatId), { recursive: true });
+    await fsp.writeFile(path.join(harness.root, '.hearth', 'devteam', chatId, 'spec.md'), '# Updated spec\n');
+
+    harness.drivers[0].releaseStop({ type: 'turn-complete' });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect((await readDevTeamState(harness.root, chatId)).phase).toBe('interviewing');
+
+    harness.drivers[1].emit({ type: 'turn-complete' });
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'spec-review');
+    inbox.socket.send(JSON.stringify({ type: 'devteam-approve-spec' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'planning');
+    await fsp.writeFile(path.join(harness.root, '.hearth', 'devteam', chatId, 'plan.json'), JSON.stringify({
+      version: 1,
+      roles: [{ id: 'maker', name: 'Maker', focus: 'Build.' }],
+      milestones: [{
+        id: 'm1', title: 'Build', goal: 'Build.',
+        tasks: [{ id: 't1', title: 'Implement', roleId: 'maker', detail: 'Implement.', scope: ['src'] }],
+      }],
+    }));
+    harness.drivers[1].emit({ type: 'turn-complete' });
+    await until(() => harness.drivers.length === 3 && harness.drivers[2].sent.length === 1);
+    expect(harness.options[2]?.agent).toEqual({ provider: 'openai', model: 'model-b', effort: 'medium' });
+    expect(harness.options[2]?.permissionMode).toBe('skip');
+    inbox.socket.close();
+  });
+
+  it('interrupts the matching run when its live lead stream closes silently', async () => {
+    const harness = await makeHarness();
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'start this' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    harness.drivers[0].closeStream();
+    await until(async () => (await readDevTeamState(harness.root, chatId)).phase === 'interrupted');
+    expect((await readDevTeamState(harness.root, chatId)).error).toContain('stopped answering');
+    inbox.socket.close();
+  });
+
+  it('deduplicates a state persisted while the same conversation is reopened', async () => {
+    const harness = await makeHarness();
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'start this' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    inbox.frames.length = 0;
+    inbox.socket.send(JSON.stringify({ type: 'devteam-pause' }));
+    inbox.socket.send(JSON.stringify({ type: 'chat-open', chatId }));
+    await until(() =>
+      inbox.frames.some((frame) => frame.type === 'chat-opened') &&
+      inbox.frames.some((frame) => frame.type === 'devteam-state' && frame.state.phase === 'paused'),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(inbox.frames.filter((frame) => frame.type === 'devteam-state' && frame.state.phase === 'paused')).toHaveLength(1);
+    inbox.socket.close();
+  });
+
   it('broadcasts correlated engineer activity, routes asks, queues steering, and replays state before activity', async () => {
     const harness = await makeHarness();
     const inbox = await harness.connect();
@@ -280,6 +361,16 @@ describe('dev team websocket integration', () => {
     await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'spec-review');
     inbox.socket.send(JSON.stringify({ type: 'devteam-approve-spec' }));
     await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'planning');
+    expect((await readTranscript(harness.root, chatId)).some(
+      (record) => record.role === 'user' && record.text === 'Approve & build',
+    )).toBe(true);
+    const approvalReplay = await harness.connect();
+    approvalReplay.socket.send(JSON.stringify({ type: 'chat-open', chatId }));
+    const approvalOpened = await approvalReplay.next((frame) => frame.type === 'chat-opened');
+    expect(approvalOpened.type === 'chat-opened' && approvalOpened.records.some(
+      (record) => record.role === 'user' && record.text === 'Approve & build',
+    )).toBe(true);
+    approvalReplay.socket.close();
     const plan = {
       version: 1,
       roles: [{ id: 'builder', name: 'Builder', focus: 'Implement the project.' }],

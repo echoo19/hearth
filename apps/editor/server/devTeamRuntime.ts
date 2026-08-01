@@ -52,6 +52,8 @@ export interface DevTeamRuntimeOptions {
   agent?: AgentTurnOptions | null;
   permissionMode: PermissionMode;
   tools?: AgentToolAccess | null;
+  /** Identifies the replaceable lead driver that receives the next prompt. */
+  leadBindingId?: () => string | null;
   createDriver: (request: DevTeamEngineerRequest) => Promise<ChatDriver>;
   sendLead: (text: string, agent: AgentTurnOptions | null) => void | Promise<void>;
   appendLeadRecord: (record: ChatRecord) => Promise<void>;
@@ -203,6 +205,7 @@ interface LeadOperation {
   accepted: boolean;
   currentProse: string;
   finalProse: string;
+  bindingId?: string | null;
 }
 
 const ACTIVE_PHASES = new Set<DevTeamPhase>([
@@ -332,11 +335,15 @@ export class DevTeamRuntime {
     return false;
   }
 
-  async handleLeadEvent(rawEvent: ChatEvent): Promise<void> {
+  async handleLeadEvent(rawEvent: ChatEvent, bindingId?: string): Promise<void> {
     await this.load();
     const event = normalizeChatEvent(rawEvent);
     const operation = this.leadQueue[0];
     if (!operation) return;
+    if (
+      (operation.bindingId !== undefined || bindingId !== undefined) &&
+      operation.bindingId !== bindingId
+    ) return;
     if (event.type === 'message-delta') {
       if (!operation.stale) operation.currentProse += event.text;
       return;
@@ -422,6 +429,29 @@ export class DevTeamRuntime {
     } finally {
       if (this.processingLead === operation) this.processingLead = null;
     }
+  }
+
+  /** Retires only work owned by a replaced lead driver; the durable run remains. */
+  handleLeadBindingClosed(bindingId: string): void {
+    const operations = [this.pendingLead, this.processingLead, ...this.leadQueue];
+    for (const operation of new Set(operations)) {
+      if (operation?.bindingId === bindingId) this.removeLead(operation);
+    }
+  }
+
+  /** Refreshes the provider-neutral run binding without replacing durable state. */
+  async updateBinding(options: {
+    agent: AgentTurnOptions | null;
+    permissionMode: PermissionMode;
+    tools: AgentToolAccess | null;
+  }): Promise<void> {
+    await this.load();
+    this.options.agent = options.agent;
+    this.options.permissionMode = options.permissionMode;
+    this.options.tools = options.tools;
+    if (JSON.stringify(this.state.agent) === JSON.stringify(options.agent)) return;
+    this.state.agent = options.agent ? structuredClone(options.agent) : null;
+    await writeDevTeamState(this.options.root, this.options.chatId, structuredClone(this.state));
   }
 
   async approveSpec(): Promise<void> {
@@ -622,6 +652,7 @@ export class DevTeamRuntime {
       accepted: false,
       currentProse: '',
       finalProse: '',
+      bindingId: this.options.leadBindingId?.(),
     };
     this.pendingLead = operation;
     return operation;

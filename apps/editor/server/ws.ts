@@ -265,6 +265,8 @@ interface ChatSession {
   key: string;
   root: string;
   chatId: string;
+  /** Correlates runtime lead operations to this replaceable driver binding. */
+  bindingId: string;
   driver: ChatDriver | null;
   /**
    * The permission mode this driver was BUILT with. Both backends fix the
@@ -438,6 +440,7 @@ export function attachWebSocket(
   const cliOwnedChats = new Map<string, PtySession>();
   const failedHandoffs = new Map<string, Extract<WsFrame, { type: 'chat-handoff-error' }>>();
   let nextPtyKey = 0;
+  let nextChatBinding = 0;
   const makeChatDriver = opts?.createChatDriver ?? createChatDriver;
   // Live conversations, keyed by `${root}\0${chatId}`. Bound lazily on the
   // first chat-send so a window that never talks never resolves an agent
@@ -445,6 +448,9 @@ export function attachWebSocket(
   const chatSessions = new Map<string, ChatSession>();
   const devTeamRuntimes = new Map<string, DevTeamRuntime>();
   const devTeamLeadAttachments = new Map<string, readonly ChatAttachment[]>();
+  /** A replay in flight supersedes live frames; disk will contain them. */
+  const socketOpeningChat = new Map<WebSocket, string>();
+  const socketOpeningSnapshot = new Map<WebSocket, { chatId: string; signature: string }>();
   const socketChat = new Map<WebSocket, string>();
 
   /**
@@ -947,11 +953,20 @@ export function attachWebSocket(
   }
 
   function broadcastDevTeamState(root: string, chatId: string, state: DevTeamSnapshot): void {
-    broadcast(new Set(watchersOf(root, chatId)), { type: 'devteam-state', chatId, state });
+    const frame = { type: 'devteam-state', chatId, state } satisfies WsFrame;
+    const signature = JSON.stringify(state);
+    for (const socket of watchersOf(root, chatId)) {
+      if (socketOpeningChat.get(socket) === chatId) {
+        const replay = socketOpeningSnapshot.get(socket);
+        if (!replay || (replay.chatId === chatId && replay.signature === signature)) continue;
+      }
+      send(socket, frame);
+    }
   }
 
   function broadcastDevTeamEvent(root: string, chatId: string, engineerId: string, event: ChatEvent): void {
-    broadcast(new Set(watchersOf(root, chatId)), { type: 'devteam-event', chatId, engineerId, event });
+    const sockets = watchersOf(root, chatId).filter((socket) => socketOpeningChat.get(socket) !== chatId);
+    broadcast(new Set(sockets), { type: 'devteam-event', chatId, engineerId, event });
   }
 
   async function ensureDevTeamRuntime(
@@ -961,7 +976,16 @@ export function attachWebSocket(
   ): Promise<DevTeamRuntime | null> {
     const key = chatKey(root, chatId);
     const existing = devTeamRuntimes.get(key);
-    if (existing) return existing;
+    if (existing) {
+      if (lead) {
+        await existing.updateBinding({
+          agent: lead.agent,
+          permissionMode: lead.permissionMode,
+          tools: await getAgentTools(),
+        });
+      }
+      return existing;
+    }
     const chat = await getChat(root, chatId);
     if (chat?.kind !== 'devteam') return null;
     const permissionMode = lead?.permissionMode ?? (await readPermissionMode(root));
@@ -972,6 +996,7 @@ export function attachWebSocket(
       agent: lead?.agent ?? null,
       permissionMode,
       tools,
+      leadBindingId: () => chatSessions.get(key)?.bindingId ?? null,
       createDriver: async (request: DevTeamEngineerRequest) =>
         makeChatDriver(root, {
           resumeThreadId: request.resumeContinuationId ?? null,
@@ -1033,6 +1058,9 @@ export function attachWebSocket(
         ? null
         : await ensureDevTeamRuntime(root, chatId, chatSessions.get(chatKey(root, chatId)));
     const state = runtime?.snapshot() ?? publicDevTeamSnapshot(stored);
+    if (socketOpeningChat.get(socket) === chatId) {
+      socketOpeningSnapshot.set(socket, { chatId, signature: JSON.stringify(state) });
+    }
     send(socket, { type: 'devteam-state', chatId, state });
     const engineerIds = [...new Set(state.tasks.map((task) => task.engineerId).filter(Boolean))];
     for (const engineerId of engineerIds) {
@@ -1095,6 +1123,7 @@ export function attachWebSocket(
     session.lingerTimer = undefined;
     session.unsubscribeCommands?.();
     session.unsubscribeCommands = undefined;
+    if (!endWith) devTeamRuntimes.get(session.key)?.handleLeadBindingClosed(session.bindingId);
     if (chatSessions.get(session.key) === session) chatSessions.delete(session.key);
     session.driver?.stop();
     if (!endWith) return;
@@ -1145,6 +1174,7 @@ export function attachWebSocket(
       ts: new Date().toISOString(),
       event: endWith,
     });
+    await devTeamRuntimes.get(session.key)?.handleLeadEvent(endWith, session.bindingId);
     broadcastChatEvent(session, endWith);
   }
 
@@ -1293,6 +1323,7 @@ export function attachWebSocket(
       key,
       root,
       chatId,
+      bindingId: `lead-${++nextChatBinding}`,
       driver: null,
       permissionMode,
       agentKey: selectedAgentKey,
@@ -1425,7 +1456,7 @@ export function attachWebSocket(
               // The lead stream has exactly one reader: this pump. Dev-team
               // orchestration observes the normalized event only after it is
               // durable; it never starts a second iterator over the driver.
-              await devTeamRuntimes.get(session.key)?.handleLeadEvent(event);
+              await devTeamRuntimes.get(session.key)?.handleLeadEvent(event, session.bindingId);
               broadcastChatEvent(session, event);
             }
             return appended;
@@ -1533,6 +1564,8 @@ export function attachWebSocket(
     detachPty(socket);
     detachChat(socket);
     socketChat.delete(socket);
+    socketOpeningChat.delete(socket);
+    socketOpeningSnapshot.delete(socket);
     const channel = channels.get(root);
     if (!channel) return;
     channel.sockets.delete(socket);
@@ -1678,7 +1711,22 @@ export function attachWebSocket(
             }
             break;
           case 'chat-open':
-            enqueueChatOp(ws, () => openChatForSocket(root, ws, typeof frame.chatId === 'string' ? frame.chatId : ''));
+            {
+              const chatId = typeof frame.chatId === 'string' ? frame.chatId : '';
+              socketOpeningChat.set(ws, chatId);
+              enqueueChatOp(ws, async () => {
+                try {
+                  await openChatForSocket(root, ws, chatId);
+                  const id = safeChatId(chatId);
+                  if (id) await enqueueChatLane(chatKey(root, id), async () => undefined);
+                } finally {
+                  if (socketOpeningChat.get(ws) === chatId) {
+                    socketOpeningChat.delete(ws);
+                    socketOpeningSnapshot.delete(ws);
+                  }
+                }
+              });
+            }
             break;
           case 'chat-send':
             {
@@ -1864,8 +1912,16 @@ export function attachWebSocket(
                   }
                   const runtime = await ensureDevTeamRuntime(root, chatId, lead);
                   if (!runtime) return;
-                  if (frame.type === 'devteam-approve-spec') await runtime.approveSpec();
-                  else if (frame.type === 'devteam-pause') await runtime.pause();
+                  if (frame.type === 'devteam-approve-spec') {
+                    if (runtime.snapshot().phase !== 'spec-review') return;
+                    const recorded = await appendChatRecord(root, chatId, {
+                      role: 'user',
+                      ts: new Date().toISOString(),
+                      text: 'Approve & build',
+                    });
+                    if (!recorded) return;
+                    await runtime.approveSpec();
+                  } else if (frame.type === 'devteam-pause') await runtime.pause();
                   else if (frame.type === 'devteam-resume') await runtime.resume();
                   else await runtime.stop();
                 }),
