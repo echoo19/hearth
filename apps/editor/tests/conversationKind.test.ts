@@ -26,10 +26,12 @@ import path from 'node:path';
 import {
   UNTITLED,
   UNTITLED_TERMINAL,
+  UNTITLED_DEVTEAM,
   appendChatRecord,
   chatIndexPath,
   createChat,
   defaultChatTitle,
+  getChat,
   listChats,
   markChatUsed,
   parseChatIndex,
@@ -137,6 +139,25 @@ describe('a terminal record', () => {
   });
 });
 
+describe('a dev team record', () => {
+  it('parses only the exact persisted kind and defaults unknown values to chat', () => {
+    expect(parseChatIndex([{ id: 'team', kind: 'devteam' }])[0].kind).toBe('devteam');
+    expect(parseChatIndex([{ id: 'wrong-case', kind: 'DevTeam' }])[0].kind).toBe('chat');
+    expect(parseChatIndex([{ id: 'missing' }])[0].kind).toBe('chat');
+  });
+
+  it('starts titled Dev team and is named by its first real user record', async () => {
+    const chat = await createChat(root, { kind: 'devteam' });
+    expect(chat).toMatchObject({ kind: 'devteam', title: UNTITLED_DEVTEAM });
+    expect(defaultChatTitle('devteam')).toBe('Dev team');
+
+    await appendChatRecord(root, chat.id, { role: 'user', ts: 't1', text: 'lead instructions', orchestration: true });
+    expect((await getChat(root, chat.id))?.title).toBe('Dev team');
+    await appendChatRecord(root, chat.id, { role: 'user', ts: 't2', text: 'Build a garden game' });
+    expect((await listChats(root))[0]).toMatchObject({ kind: 'devteam', title: 'Build a garden game' });
+  });
+});
+
 describe('the kind cannot be changed once the record exists', () => {
   it('survives a rename', async () => {
     const chat = await createChat(root, { kind: 'terminal' });
@@ -195,9 +216,11 @@ describe('groupChats — the project screen’s two lists', () => {
       summary({ id: 'a', kind: 'chat' }),
       summary({ id: 'b', kind: 'terminal' }),
       summary({ id: 'c', kind: 'terminal' }),
+      summary({ id: 'd', kind: 'devteam' }),
     ]);
     expect(groups.chat.map((row) => row.id)).toEqual(['a']);
     expect(groups.terminal.map((row) => row.id)).toEqual(['b', 'c']);
+    expect(groups.devteam.map((row) => row.id)).toEqual(['d']);
   });
 
   it('puts a record with no kind in Chats rather than losing it', () => {
@@ -207,6 +230,7 @@ describe('groupChats — the project screen’s two lists', () => {
     const groups = groupChats([{ ...summary({ id: 'legacy' }), kind: undefined } as unknown as ChatSummary]);
     expect(groups.chat.map((row) => row.id)).toEqual(['legacy']);
     expect(groups.terminal).toEqual([]);
+    expect(groups.devteam).toEqual([]);
   });
 
   it('keeps the order it was given inside each group', () => {
@@ -253,5 +277,6 @@ describe('how a kind is drawn', () => {
   it('gives each glyph a name, so the kind is never icon-only', () => {
     expect(CONVERSATION_KIND_LABEL.chat.trim()).not.toBe('');
     expect(CONVERSATION_KIND_LABEL.terminal.trim()).not.toBe('');
+    expect(CONVERSATION_KIND_LABEL.devteam).toBe('Dev team');
   });
 });

@@ -11,6 +11,13 @@ export type { SlashCommandInfo } from '../server/chat';
 // Imported as well as re-exported, for the same reason ProjectIdentity is.
 import type { ChatKind } from '../server/chatStore';
 export type { ChatKind };
+export type {
+  DevTeamPhase,
+  DevTeamPlan,
+  DevTeamSnapshot,
+  DevTeamState,
+  DevTeamTaskRecord,
+} from '../server/devTeamStore';
 // Imported as well as re-exported: this file uses it below, and a bare
 // `export type … from` does not bring the name into local scope.
 import type { ProjectIdentity } from '../server/projectIdentity';

@@ -42,8 +42,13 @@ import type { ChatSummary, RecentWorkspace } from '../../types';
 export function groupChats(chats: readonly ChatSummary[]): {
   chat: ChatSummary[];
   terminal: ChatSummary[];
+  devteam: ChatSummary[];
 } {
-  const groups: { chat: ChatSummary[]; terminal: ChatSummary[] } = { chat: [], terminal: [] };
+  const groups: { chat: ChatSummary[]; terminal: ChatSummary[]; devteam: ChatSummary[] } = {
+    chat: [],
+    terminal: [],
+    devteam: [],
+  };
   for (const chat of chats) groups[conversationKind(chat)].push(chat);
   return groups;
 }
@@ -299,6 +304,14 @@ export function ProjectHome() {
                     <>
                       <h2 className="proj-list-title">Terminal</h2>
                       {groups.terminal.map((chat) => (
+                        <ChatLine key={chat.id} chat={chat} onOpen={() => openChat(chat.id)} />
+                      ))}
+                    </>
+                  )}
+                  {groups.devteam.length > 0 && (
+                    <>
+                      <h2 className="proj-list-title">Dev team</h2>
+                      {groups.devteam.map((chat) => (
                         <ChatLine key={chat.id} chat={chat} onOpen={() => openChat(chat.id)} />
                       ))}
                     </>

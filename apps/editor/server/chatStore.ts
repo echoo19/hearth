@@ -61,6 +61,9 @@ export const UNTITLED = 'New chat';
  */
 export const UNTITLED_TERMINAL = 'Terminal';
 
+/** The default name of a conversation orchestrated as a dev team. */
+export const UNTITLED_DEVTEAM = 'Dev team';
+
 /**
  * Which kind of conversation a record is.
  *
@@ -69,11 +72,12 @@ export const UNTITLED_TERMINAL = 'Terminal';
  * other way you start another conversation, which is why nothing in this
  * module takes a kind for a record that already exists.
  */
-export type ChatKind = 'chat' | 'terminal';
+export type ChatKind = 'chat' | 'terminal' | 'devteam';
 
 /** The name a conversation of this kind starts with. */
 export function defaultChatTitle(kind: ChatKind): string {
-  return kind === 'terminal' ? UNTITLED_TERMINAL : UNTITLED;
+  if (kind === 'terminal') return UNTITLED_TERMINAL;
+  return kind === 'devteam' ? UNTITLED_DEVTEAM : UNTITLED;
 }
 
 /** One conversation, as the sidebar lists it. */
@@ -138,7 +142,7 @@ export interface ChatIndexRow extends ChatSummary {
 
 /** One line of a transcript. */
 export type ChatRecord =
-  | { role: 'user'; ts: string; text: string; attachments?: StoredAttachment[] }
+  | { role: 'user'; ts: string; text: string; attachments?: StoredAttachment[]; orchestration?: true }
   | { role: 'agent'; ts: string; event: ChatEvent };
 
 export function chatsDir(root: string): string {
@@ -212,6 +216,7 @@ export function parseTranscript(text: string): ChatRecord[] {
         ts,
         text: (record as { text: string }).text,
         ...(attachments.length > 0 ? { attachments } : {}),
+        ...((record as { orchestration?: unknown }).orchestration === true ? { orchestration: true as const } : {}),
       });
     } else if (record.role === 'agent') {
       const event = (record as { event?: unknown }).event;
@@ -243,7 +248,7 @@ function parseChatRows(raw: unknown): ChatIndexRow[] {
     // chats, so a missing (or unrecognised) value reads as 'chat'. The row is
     // never dropped for it and the file is never rewritten to add it — the
     // next write does that on its own.
-    const kind: ChatKind = row.kind === 'terminal' ? 'terminal' : 'chat';
+    const kind: ChatKind = row.kind === 'terminal' || row.kind === 'devteam' ? row.kind : 'chat';
     const summary: ChatIndexRow = {
       id,
       title: typeof row.title === 'string' && row.title.trim() !== '' ? row.title : defaultChatTitle(kind),
@@ -534,7 +539,7 @@ function objectEnd(raw: string, from: number): number {
  */
 function mergeRecoveredRow(row: ChatIndexRow, records: readonly ChatRecord[]): ChatIndexRow {
   if (records.length === 0) return row;
-  const first = records.find((record) => record.role === 'user');
+  const first = records.find((record) => record.role === 'user' && record.orchestration !== true);
   const last = records[records.length - 1];
   const merged: ChatIndexRow = {
     ...row,
@@ -730,7 +735,7 @@ export function listChats(root: string): Promise<ChatSummary[]> {
  * here hides somebody's work.
  */
 async function neverSpokenInto(root: string, row: { id: string; title: string; kind: ChatKind }): Promise<boolean> {
-  if (row.kind !== 'chat' || row.title !== defaultChatTitle(row.kind)) return false;
+  if (row.kind === 'terminal' || row.title !== defaultChatTitle(row.kind)) return false;
   const stat = await fsp.stat(chatFilePath(root, row.id)).catch(() => null);
   return stat !== null && stat.size === 0;
 }
@@ -763,7 +768,7 @@ export function createChat(
   root: string,
   options: { title?: string; kind?: ChatKind } = {},
 ): Promise<ChatSummary> {
-  const kind: ChatKind = options.kind === 'terminal' ? 'terminal' : 'chat';
+  const kind: ChatKind = options.kind === 'terminal' || options.kind === 'devteam' ? options.kind : 'chat';
   const named = options.title?.replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX) ?? '';
   return serialize(root, async () => {
     const now = new Date().toISOString();
@@ -973,14 +978,16 @@ export function appendChatRecord(root: string, chatId: string, record: ChatRecor
     // survives every append: activity changes when a conversation last moved,
     // never what kind of conversation it is.
     const next: ChatIndexRow = { ...chats[index], updatedAt: record.ts };
-    if (record.role === 'user') {
+    if (record.role === 'user' && record.orchestration !== true) {
       // A message is what turns a chat into a conversation, so this is the
       // moment it joins the lists, under the name that message gives it. An
       // agent record deliberately does NOT do this: a driver can emit before
       // the user's own line has landed, and a chat appearing in the sidebar
       // with nothing anyone typed in it is what the flag exists to prevent.
       delete next.pending;
-      if (next.kind === 'chat' && next.title === UNTITLED) next.title = userRecordTitle(record);
+      if ((next.kind === 'chat' || next.kind === 'devteam') && next.title === defaultChatTitle(next.kind)) {
+        next.title = userRecordTitle(record);
+      }
     }
     // The line is on disk either way; only the listing is skipped.
     if (!read.whole || !indexMoved(chats[index], record)) return withoutPending(chats[index]);

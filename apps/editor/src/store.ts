@@ -827,7 +827,7 @@ export function globalPlace(state: {
  * index says so too (server/chatStore.ts, parseChatIndex).
  */
 export function conversationKind(chat: { kind?: ChatKind }): ChatKind {
-  return chat.kind === 'terminal' ? 'terminal' : 'chat';
+  return chat.kind === 'terminal' || chat.kind === 'devteam' ? chat.kind : 'chat';
 }
 
 /**

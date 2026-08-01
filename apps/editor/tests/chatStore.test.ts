@@ -109,6 +109,40 @@ describe('parseTranscript', () => {
       { role: 'agent', ts: 't2', event: { type: 'text-delta', text: 'yo' } },
     ]);
   });
+
+  it('preserves only a literal orchestration marker on user records', () => {
+    const records = parseTranscript(
+      [
+        JSON.stringify({ role: 'user', ts: 't1', text: 'runtime prompt', orchestration: true }),
+        JSON.stringify({ role: 'user', ts: 't2', text: 'ordinary', orchestration: false }),
+        JSON.stringify({ role: 'user', ts: 't3', text: 'ordinary too', orchestration: 'true' }),
+      ].join('\n'),
+    );
+    expect(records).toEqual([
+      { role: 'user', ts: 't1', text: 'runtime prompt', orchestration: true },
+      { role: 'user', ts: 't2', text: 'ordinary' },
+      { role: 'user', ts: 't3', text: 'ordinary too' },
+    ]);
+  });
+});
+
+describe('orchestration transcript records', () => {
+  it('round-trips the marker without treating the runtime as the user', async () => {
+    const chat = await createChat(root, { kind: 'devteam' });
+    await appendChatRecord(root, chat.id, {
+      role: 'user',
+      ts: 't1',
+      text: 'Interview the user and write spec.md.',
+      orchestration: true,
+    });
+    expect(await readTranscript(root, chat.id)).toEqual([
+      { role: 'user', ts: 't1', text: 'Interview the user and write spec.md.', orchestration: true },
+    ]);
+    expect(await listChats(root)).toEqual([]);
+
+    await appendChatRecord(root, chat.id, { role: 'user', ts: 't2', text: 'Make a puzzle game' });
+    expect((await listChats(root))[0].title).toBe('Make a puzzle game');
+  });
 });
 
 describe('parseChatIndex / sortChats', () => {

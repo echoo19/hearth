@@ -104,11 +104,13 @@ const MAX_RECENT_CHATS = 20;
 export const CONVERSATION_KIND_ICON: Record<ChatKind, string> = {
   chat: 'compose',
   terminal: 'script',
+  devteam: 'sparkle',
 };
 
 export const CONVERSATION_KIND_LABEL: Record<ChatKind, string> = {
   chat: 'Chat',
   terminal: 'Terminal session',
+  devteam: 'Dev team',
 };
 
 /**
