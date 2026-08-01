@@ -196,6 +196,15 @@ interface ActiveEngineer {
 
 type LeadTurn = 'interview' | 'revision' | 'planning' | 'review' | 'wrap';
 
+interface LeadOperation {
+  epoch: number;
+  turn: LeadTurn;
+  stale: boolean;
+  accepted: boolean;
+  currentProse: string;
+  finalProse: string;
+}
+
 const ACTIVE_PHASES = new Set<DevTeamPhase>([
   'interviewing',
   'drafting-spec',
@@ -248,10 +257,10 @@ export class DevTeamRuntime {
   private loaded = false;
   private loading: Promise<void> | null = null;
   private disposed = false;
-  private leadCurrentProse = '';
-  private leadFinalProse = '';
-  private leadTurn: LeadTurn | null = null;
   private leadGeneration = 0;
+  private pendingLead: LeadOperation | null = null;
+  private processingLead: LeadOperation | null = null;
+  private leadQueue: LeadOperation[] = [];
   private active = new Map<string, ActiveEngineer>();
   private dispatches = new Map<string, symbol>();
   private scheduling: Promise<void> | null = null;
@@ -281,6 +290,7 @@ export class DevTeamRuntime {
     await this.load();
     if (initialRequest === undefined) return;
     if (this.state.phase !== 'idle' && this.state.phase !== 'done') return;
+    const operation = this.beginLead('interview');
     const approvalHistory = this.state.approvals;
     const specVersion = this.state.specVersion;
     this.state = {
@@ -292,7 +302,7 @@ export class DevTeamRuntime {
       specVersion,
     };
     await this.persist();
-    await this.sendLead(buildInterviewPrompt(this.options.chatId, initialRequest), 'interview');
+    await this.sendLead(buildInterviewPrompt(this.options.chatId, initialRequest), operation);
   }
 
   async handleUserMessage(text: string): Promise<boolean> {
@@ -304,13 +314,14 @@ export class DevTeamRuntime {
       return true;
     }
     if (this.state.phase === 'spec-review') {
+      const operation = this.beginLead('revision');
       this.state.phase = 'drafting-spec';
       await this.persist();
-      await this.sendLead(buildRevisionPrompt(this.options.chatId, message), 'revision');
+      await this.sendLead(buildRevisionPrompt(this.options.chatId, message), operation);
       return true;
     }
     if (this.state.phase === 'interviewing') {
-      this.leadTurn = 'interview';
+      this.acceptLead(this.beginLead('interview'));
       return false;
     }
     if (this.state.phase === 'building' || this.state.phase === 'paused' || this.state.phase === 'reviewing') {
@@ -324,87 +335,103 @@ export class DevTeamRuntime {
   async handleLeadEvent(rawEvent: ChatEvent): Promise<void> {
     await this.load();
     const event = normalizeChatEvent(rawEvent);
+    const operation = this.leadQueue[0];
+    if (!operation) return;
     if (event.type === 'message-delta') {
-      this.leadCurrentProse += event.text;
+      if (!operation.stale) operation.currentProse += event.text;
       return;
     }
     if (event.type === 'message-end') {
-      if (this.leadCurrentProse.trim()) this.leadFinalProse = this.leadCurrentProse.trim();
-      this.leadCurrentProse = '';
+      if (!operation.stale && operation.currentProse.trim()) {
+        operation.finalProse = operation.currentProse.trim();
+      }
+      operation.currentProse = '';
       return;
     }
     if (event.type === 'error') {
-      this.leadTurn = null;
-      await this.interruptState(event.message);
+      this.leadQueue.shift();
+      if (operation.stale) return;
+      this.processingLead = operation;
+      try {
+        await this.interruptState(event.message);
+      } finally {
+        if (this.processingLead === operation) this.processingLead = null;
+      }
       return;
     }
     if (event.type !== 'turn-complete') return;
 
-    const finalProse = this.leadCurrentProse.trim() || this.leadFinalProse;
-    this.leadCurrentProse = '';
-    this.leadFinalProse = '';
-    const turn = this.leadTurn;
-    const generation = this.leadGeneration;
-    this.leadTurn = null;
-    if (!turn) return;
+    this.leadQueue.shift();
+    if (operation.stale) return;
+    this.processingLead = operation;
+    const finalProse = operation.currentProse.trim() || operation.finalProse;
+    operation.currentProse = '';
+    operation.finalProse = '';
+    const turn = operation.turn;
     const paused = this.state.phase === 'paused';
     const phase = paused ? this.state.resumePhase : this.state.phase;
-    if (
-      (turn === 'interview' && (phase === 'interviewing' || phase === 'drafting-spec')) ||
-      (turn === 'revision' && (phase === 'drafting-spec' || phase === 'spec-review'))
-    ) {
-      const spec = await readDevTeamSpec(this.options.root, this.options.chatId);
-      if (!this.leadCompletionCurrent(generation, paused, phase)) return;
-      if (spec !== null) {
-        if (paused) this.state.resumePhase = 'spec-review';
-        else this.state.phase = 'spec-review';
-        this.state.spec = spec;
-        this.state.error = null;
-        await this.persist();
+    try {
+      if (
+        (turn === 'interview' && (phase === 'interviewing' || phase === 'drafting-spec')) ||
+        (turn === 'revision' && (phase === 'drafting-spec' || phase === 'spec-review'))
+      ) {
+        const spec = await readDevTeamSpec(this.options.root, this.options.chatId);
+        if (!this.leadCompletionCurrent(operation, paused, phase)) return;
+        if (spec !== null) {
+          if (paused) this.state.resumePhase = 'spec-review';
+          else this.state.phase = 'spec-review';
+          this.state.spec = spec;
+          this.state.error = null;
+          await this.persist();
+        }
+        return;
       }
-      return;
-    }
-    if (turn === 'planning' && phase === 'planning') {
-      await this.finishPlanning(paused, generation, phase);
-      return;
-    }
-    if (turn === 'review' && phase === 'reviewing') {
-      if (!(await this.applyReviewPlan(paused, generation, phase))) return;
-      if (!this.leadCompletionCurrent(generation, paused, phase)) return;
-      this.state.summary = finalProse || null;
-      if (this.state.plan && this.state.currentMilestone + 1 < this.state.plan.milestones.length) {
-        this.state.currentMilestone += 1;
-        if (paused) this.state.resumePhase = 'building';
-        else this.state.phase = 'building';
-        await this.persist();
-        if (!paused && this.leadGeneration === generation && this.state.phase === 'building') await this.schedule();
-      } else if (this.state.plan) {
-        if (paused) {
-          this.state.resumePhase = 'wrapping';
+      if (turn === 'planning' && phase === 'planning') {
+        await this.finishPlanning(paused, operation, phase);
+        return;
+      }
+      if (turn === 'review' && phase === 'reviewing') {
+        if (!(await this.applyReviewPlan(paused, operation, phase))) return;
+        if (!this.leadCompletionCurrent(operation, paused, phase)) return;
+        this.state.summary = finalProse || null;
+        if (this.state.plan && this.state.currentMilestone + 1 < this.state.plan.milestones.length) {
+          this.state.currentMilestone += 1;
+          if (paused) this.state.resumePhase = 'building';
+          else this.state.phase = 'building';
           await this.persist();
-        } else {
-          this.state.phase = 'wrapping';
-          await this.persist();
-          if (this.leadGeneration === generation && this.state.phase === 'wrapping') {
-            await this.sendLeadWithSteering((steering) => buildWrapPrompt(this.state.plan!, steering), 'wrap');
+          if (!paused && this.leadCompletionCurrent(operation, false, 'building')) await this.schedule();
+        } else if (this.state.plan) {
+          if (paused) {
+            this.state.resumePhase = 'wrapping';
+            await this.persist();
+          } else {
+            const next = this.beginLead('wrap');
+            this.state.phase = 'wrapping';
+            await this.persist();
+            await this.sendLeadWithSteering((steering) => buildWrapPrompt(this.state.plan!, steering), next);
           }
         }
+        return;
       }
-      return;
-    }
-    if (turn === 'wrap' && phase === 'wrapping') {
-      this.state.wrap = finalProse || null;
-      this.state.phase = 'done';
-      this.state.resumePhase = null;
-      await this.persist();
+      if (turn === 'wrap' && phase === 'wrapping') {
+        this.state.wrap = finalProse || null;
+        this.state.phase = 'done';
+        this.state.resumePhase = null;
+        await this.persist();
+      }
+    } finally {
+      if (this.processingLead === operation) this.processingLead = null;
     }
   }
 
   async approveSpec(): Promise<void> {
     await this.load();
     if (this.state.phase !== 'spec-review') return;
+    const operation = this.beginLead('planning');
     const approved = await approveDevTeamSpec(this.options.root, this.options.chatId);
+    if (!this.operationCurrent(operation) || this.state.phase !== 'spec-review') return;
     if (approved.error || approved.spec === null) {
+      this.removeLead(operation);
       this.state.error = approved.error ?? 'The specification is missing.';
       await this.persist();
       return;
@@ -420,7 +447,7 @@ export class DevTeamRuntime {
       agent: this.state.agent,
     };
     await this.persist();
-    await this.sendLead(buildPlanPrompt(this.options.chatId, approved.spec), 'planning');
+    await this.sendLead(buildPlanPrompt(this.options.chatId, approved.spec), operation);
   }
 
   async pause(): Promise<void> {
@@ -438,6 +465,16 @@ export class DevTeamRuntime {
     const retryError = this.state.error;
     const needsRepair =
       this.state.retryCount > 0 && retryError !== null && (phase === 'planning' || phase === 'reviewing');
+    const operation =
+      phase === 'interviewing' || phase === 'drafting-spec'
+        ? this.beginLead('interview')
+        : phase === 'planning'
+          ? this.beginLead('planning')
+          : phase === 'reviewing'
+            ? this.beginLead('review')
+            : phase === 'wrapping'
+              ? this.beginLead('wrap')
+              : null;
     for (const record of this.state.tasks) {
       if (record.status === 'interrupted') {
         record.status = 'pending';
@@ -451,19 +488,20 @@ export class DevTeamRuntime {
     this.state.resumePhase = null;
     this.state.error = needsRepair ? retryError : null;
     await this.persist();
+    if (operation && !this.operationCurrent(operation)) return;
     if (phase === 'building') await this.schedule();
     else if (phase === 'interviewing' || phase === 'drafting-spec') {
-      await this.sendLead(buildInterviewResumePrompt(this.options.chatId), 'interview');
+      await this.sendLead(buildInterviewResumePrompt(this.options.chatId), operation!);
     } else if (phase === 'planning' && this.state.spec) {
       if (needsRepair && this.state.error) {
-        await this.sendLead(buildPlanRepairPrompt(this.options.chatId, this.state.error), 'planning');
-      } else await this.sendLead(buildPlanPrompt(this.options.chatId, this.state.spec), 'planning');
+        await this.sendLead(buildPlanRepairPrompt(this.options.chatId, this.state.error), operation!);
+      } else await this.sendLead(buildPlanPrompt(this.options.chatId, this.state.spec), operation!);
     } else if (phase === 'reviewing' && this.state.plan) {
       if (needsRepair && this.state.error) {
-        await this.sendLead(buildPlanRepairPrompt(this.options.chatId, this.state.error), 'review');
-      } else await this.beginReview();
+        await this.sendLead(buildPlanRepairPrompt(this.options.chatId, this.state.error), operation!);
+      } else await this.beginReview(operation!);
     } else if (phase === 'wrapping' && this.state.plan) {
-      await this.sendLeadWithSteering((steering) => buildWrapPrompt(this.state.plan!, steering), 'wrap');
+      await this.sendLeadWithSteering((steering) => buildWrapPrompt(this.state.plan!, steering), operation!);
     }
   }
 
@@ -575,9 +613,51 @@ export class DevTeamRuntime {
     });
   }
 
-  private async sendLead(prompt: string, turn: LeadTurn): Promise<void> {
-    const generation = ++this.leadGeneration;
-    this.leadTurn = turn;
+  private beginLead(turn: LeadTurn): LeadOperation {
+    if (this.pendingLead) this.pendingLead.stale = true;
+    const operation: LeadOperation = {
+      epoch: ++this.leadGeneration,
+      turn,
+      stale: false,
+      accepted: false,
+      currentProse: '',
+      finalProse: '',
+    };
+    this.pendingLead = operation;
+    return operation;
+  }
+
+  private operationCurrent(operation: LeadOperation): boolean {
+    return !operation.stale &&
+      (this.pendingLead === operation || this.processingLead === operation || this.leadQueue.includes(operation));
+  }
+
+  private acceptLead(operation: LeadOperation): boolean {
+    if (operation.stale || this.pendingLead !== operation) return false;
+    operation.accepted = true;
+    this.pendingLead = null;
+    this.leadQueue.push(operation);
+    return true;
+  }
+
+  private removeLead(operation: LeadOperation): void {
+    operation.stale = true;
+    if (this.pendingLead === operation) this.pendingLead = null;
+    const index = this.leadQueue.indexOf(operation);
+    if (index >= 0) this.leadQueue.splice(index, 1);
+    if (this.processingLead === operation) this.processingLead = null;
+  }
+
+  private invalidateLead(): void {
+    this.leadGeneration += 1;
+    if (this.pendingLead) this.pendingLead.stale = true;
+    this.pendingLead = null;
+    if (this.processingLead) this.processingLead.stale = true;
+    for (const operation of this.leadQueue) operation.stale = true;
+  }
+
+  private async sendLead(prompt: string, operation: LeadOperation): Promise<void> {
+    if (!this.operationCurrent(operation) || this.pendingLead !== operation) return;
     try {
       await this.options.appendLeadRecord({
         role: 'user',
@@ -585,32 +665,34 @@ export class DevTeamRuntime {
         text: prompt,
         orchestration: true,
       });
+      if (!this.operationCurrent(operation) || !this.acceptLead(operation)) return;
       await this.options.sendLead(prompt, this.state.agent);
     } catch (error) {
-      if (this.leadGeneration === generation) {
-        this.leadTurn = null;
+      const owned = this.operationCurrent(operation);
+      this.removeLead(operation);
+      if (owned) {
         const phase = this.state.phase === 'paused' ? this.state.resumePhase : this.state.phase;
-        this.state.phase = 'interrupted';
-        this.state.resumePhase = phase;
-        this.state.error = `Lead turn failed: ${(error as Error).message}`;
-        await this.persist();
+        await this.interruptState(`Lead turn failed: ${(error as Error).message}`, phase);
       }
       throw error;
     }
   }
 
-  private leadCompletionCurrent(generation: number, paused: boolean, phase: DevTeamPhase | null): boolean {
-    if (this.leadGeneration !== generation || phase === null) return false;
+  private leadCompletionCurrent(operation: LeadOperation, paused: boolean, phase: DevTeamPhase | null): boolean {
+    if (!this.operationCurrent(operation) || this.processingLead !== operation || phase === null) return false;
     return paused
       ? this.state.phase === 'paused' && this.state.resumePhase === phase
       : this.state.phase === phase;
   }
 
-  private async sendLeadWithSteering(build: (steering: string) => string, turn: LeadTurn): Promise<void> {
+  private async sendLeadWithSteering(
+    build: (steering: string) => string,
+    operation: LeadOperation,
+  ): Promise<void> {
     const count = this.state.steering.length;
     const steering = this.state.steering.slice(0, count).map((record) => record.text).join('\n');
-    await this.sendLead(build(steering), turn);
-    if (count === 0) return;
+    await this.sendLead(build(steering), operation);
+    if (count === 0 || operation.stale || !operation.accepted) return;
     this.state.steering.splice(0, count);
     await this.persist();
   }
@@ -626,9 +708,9 @@ export class DevTeamRuntime {
     }
   }
 
-  private async finishPlanning(paused: boolean, generation: number, phase: DevTeamPhase): Promise<void> {
+  private async finishPlanning(paused: boolean, operation: LeadOperation, phase: DevTeamPhase): Promise<void> {
     const result = await this.readPlanResult();
-    if (!this.leadCompletionCurrent(generation, paused, phase)) return;
+    if (!this.leadCompletionCurrent(operation, paused, phase)) return;
     if (!result.plan) {
       this.state.retryCount += 1;
       this.state.error = `Plan validation failed: ${result.error ?? 'unknown error'}`;
@@ -642,9 +724,10 @@ export class DevTeamRuntime {
         this.state.phase = 'paused';
         this.state.resumePhase = 'planning';
       }
+      const next = paused ? null : this.beginLead('planning');
       await this.persist();
-      if (!paused && this.leadCompletionCurrent(generation, false, 'planning')) {
-        await this.sendLead(buildPlanRepairPrompt(this.options.chatId, result.error ?? 'unknown error'), 'planning');
+      if (next) {
+        await this.sendLead(buildPlanRepairPrompt(this.options.chatId, result.error ?? 'unknown error'), next);
       }
       return;
     }
@@ -659,13 +742,17 @@ export class DevTeamRuntime {
     this.state.phase = paused ? 'paused' : 'building';
     this.state.resumePhase = paused ? 'building' : null;
     await this.persist();
-    if (!paused && this.leadGeneration === generation && this.state.phase === 'building') await this.schedule();
+    if (!paused && this.leadCompletionCurrent(operation, false, 'building')) await this.schedule();
   }
 
-  private async applyReviewPlan(paused: boolean, generation: number, phase: DevTeamPhase): Promise<boolean> {
+  private async applyReviewPlan(
+    paused: boolean,
+    operation: LeadOperation,
+    phase: DevTeamPhase,
+  ): Promise<boolean> {
     const result = await this.readPlanResult();
-    if (!this.leadCompletionCurrent(generation, paused, phase)) return false;
-    if (!result.plan) return this.rejectReviewPlan(result.error ?? 'unknown error', paused, generation);
+    if (!this.leadCompletionCurrent(operation, paused, phase)) return false;
+    if (!result.plan) return this.rejectReviewPlan(result.error ?? 'unknown error', paused);
     const candidate = result.plan;
     if (!this.state.plan || digest(candidate) === this.state.planDigest) {
       this.state.retryCount = 0;
@@ -680,7 +767,7 @@ export class DevTeamRuntime {
     };
     const validated = devTeamPlanSchema.safeParse(merged);
     if (!validated.success) {
-      return this.rejectReviewPlan(validated.error.issues.map((issue) => issue.message).join(' '), paused, generation);
+      return this.rejectReviewPlan(validated.error.issues.map((issue) => issue.message).join(' '), paused);
     }
     const existing = new Map(this.state.tasks.map((record) => [record.taskId, record]));
     const wanted = new Set(merged.milestones.flatMap((milestone) => milestone.tasks.map((task) => task.id)));
@@ -698,7 +785,7 @@ export class DevTeamRuntime {
     return true;
   }
 
-  private async rejectReviewPlan(error: string, paused: boolean, generation: number): Promise<false> {
+  private async rejectReviewPlan(error: string, paused: boolean): Promise<false> {
     this.state.retryCount += 1;
     this.state.error = `Plan amendment validation failed: ${error}`;
     if (this.state.retryCount >= MAX_DEV_TEAM_PLAN_RETRIES) {
@@ -711,9 +798,10 @@ export class DevTeamRuntime {
       this.state.phase = 'paused';
       this.state.resumePhase = 'reviewing';
     } else this.state.phase = 'reviewing';
+    const next = paused ? null : this.beginLead('review');
     await this.persist();
-    if (!paused && this.leadGeneration === generation && this.state.phase === 'reviewing') {
-      await this.sendLead(buildPlanRepairPrompt(this.options.chatId, this.state.error), 'review');
+    if (next) {
+      await this.sendLead(buildPlanRepairPrompt(this.options.chatId, this.state.error), next);
     }
     return false;
   }
@@ -740,9 +828,10 @@ export class DevTeamRuntime {
     if (this.state.phase !== 'building' || !this.state.plan || this.disposed) return;
     const milestone = this.state.plan.milestones[this.state.currentMilestone];
     if (!milestone) {
+      const operation = this.beginLead('wrap');
       this.state.phase = 'wrapping';
       await this.persist();
-      await this.sendLeadWithSteering((steering) => buildWrapPrompt(this.state.plan!, steering), 'wrap');
+      await this.sendLeadWithSteering((steering) => buildWrapPrompt(this.state.plan!, steering), operation);
       return;
     }
 
@@ -956,20 +1045,19 @@ export class DevTeamRuntime {
     await this.schedule();
   }
 
-  private async beginReview(): Promise<void> {
+  private async beginReview(operation = this.beginLead('review')): Promise<void> {
     if (!this.state.plan) return;
     this.state.phase = 'reviewing';
     await this.persist();
     await this.sendLeadWithSteering(
       (steering) => buildReviewPrompt(this.state.plan!, this.state.currentMilestone, this.state.tasks, steering),
-      'review',
+      operation,
     );
   }
 
-  private async interruptState(error: string): Promise<void> {
-    this.leadGeneration += 1;
-    this.leadTurn = null;
-    const phase = this.state.phase;
+  private async interruptState(error: string, resumePhase?: DevTeamPhase | null): Promise<void> {
+    this.invalidateLead();
+    const phase = resumePhase ?? this.state.phase;
     this.state.resumePhase = phase === 'paused' ? this.state.resumePhase : phase;
     this.state.phase = 'interrupted';
     this.state.error = error;
@@ -977,10 +1065,7 @@ export class DevTeamRuntime {
   }
 
   private async stopActive(error: string | null): Promise<void> {
-    this.leadGeneration += 1;
-    this.leadTurn = null;
-    this.leadCurrentProse = '';
-    this.leadFinalProse = '';
+    this.invalidateLead();
     this.dispatches.clear();
     const phase = this.state.phase;
     const resumePhase = phase === 'paused' ? this.state.resumePhase : phase;

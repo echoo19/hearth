@@ -171,6 +171,24 @@ function blockNextFileRead(fileName: string): { reached: Promise<void>; release:
   return { reached, release };
 }
 
+function blockNextRename(): { reached: Promise<void>; release: () => void } {
+  const rename = fsp.rename.bind(fsp);
+  let release!: () => void;
+  let markReached!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const reached = new Promise<void>((resolve) => {
+    markReached = resolve;
+  });
+  vi.spyOn(fsp, 'rename').mockImplementationOnce(async (from, to) => {
+    markReached();
+    await gate;
+    await rename(from, to);
+  });
+  return { reached, release };
+}
+
 async function settleLead(run: DevTeamRuntime, text = 'Lead response'): Promise<void> {
   await run.handleLeadEvent({ type: 'message-delta', text });
   await run.handleLeadEvent({ type: 'turn-complete' });
@@ -355,6 +373,76 @@ describe('dev team lead state machine', () => {
 
     expect(run.snapshot().phase).toBe('interrupted');
     expect(leadPrompts.at(-1)).toMatch(/Review milestone/);
+  });
+
+  it('does not let approval overwrite Stop after the spec-version store await', async () => {
+    const run = runtime();
+    await run.start('A brief.');
+    await putSpec('# Spec\n');
+    await settleLead(run, 'Spec ready.');
+    const promptCount = leadPrompts.length;
+    const blocked = blockNextFileRead('spec.md');
+
+    const approving = run.approveSpec();
+    await blocked.reached;
+    const stopping = run.stop();
+    blocked.release();
+    await Promise.all([approving, stopping]);
+
+    expect(run.snapshot().phase).toBe('interrupted');
+    expect(leadPrompts).toHaveLength(promptCount);
+  });
+
+  it('does not let approval overwrite a concurrent revision after its store await', async () => {
+    const run = runtime();
+    await run.start('A brief.');
+    await putSpec('# Old spec\n');
+    await settleLead(run, 'Spec ready.');
+    const promptCount = leadPrompts.length;
+    const blocked = blockNextFileRead('spec.md');
+
+    const approving = run.approveSpec();
+    await blocked.reached;
+    const revising = run.handleUserMessage('Revise it first.');
+    blocked.release();
+    await Promise.all([approving, revising]);
+
+    expect(run.snapshot().phase).toBe('drafting-spec');
+    expect(run.snapshot().specVersion).toBe(0);
+    expect(leadPrompts).toHaveLength(promptCount + 1);
+    expect(leadPrompts.at(-1)).toContain('Revise it first.');
+  });
+
+  it('does not send a resumed lead turn after Stop invalidates its pending state write', async () => {
+    const first = runtime();
+    await first.start('An unfinished brief.');
+    const reopened = runtime();
+    await reopened.start();
+    const promptCount = leadPrompts.length;
+    const blocked = blockNextRename();
+
+    const resuming = reopened.resume();
+    await blocked.reached;
+    const stopping = reopened.stop();
+    blocked.release();
+    await Promise.all([resuming, stopping]);
+
+    expect(reopened.snapshot().phase).toBe('interrupted');
+    expect(leadPrompts).toHaveLength(promptCount);
+  });
+
+  it('does not let a delayed pre-Stop completion satisfy the resumed lead turn', async () => {
+    const run = runtime();
+    await run.start('An unfinished brief.');
+    await run.stop();
+    await run.resume();
+    await putSpec('# Resumed spec\n');
+
+    await settleLead(run, 'Delayed old completion.');
+    expect(run.snapshot()).toMatchObject({ phase: 'interviewing', spec: null });
+
+    await settleLead(run, 'Resumed completion.');
+    expect(run.snapshot()).toMatchObject({ phase: 'spec-review', spec: '# Resumed spec\n' });
   });
 
   it('runs plan, build, review, and wrap turns through done', async () => {
