@@ -27,7 +27,8 @@ and the mode will not start until a supported agent is connected.
 
 Messages sent while planning or building are durable steering notes. Hearth
 folds them into the lead's next planning, review, or wrap turn instead of
-interrupting an engineer mid-edit.
+interrupting an engineer mid-edit. Steering is text-only: attachment controls
+return when the run is done and the composer becomes an ordinary lead chat.
 
 ## Scheduling and controls
 

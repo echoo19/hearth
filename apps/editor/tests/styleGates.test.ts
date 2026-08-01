@@ -218,6 +218,8 @@ describe('style gates', () => {
     const narrow = css.slice(start, end);
     expect(narrow).toMatch(/\.devteam-phase\s*\{[^}]*flex-wrap:\s*wrap/);
     expect(narrow).toMatch(/\.devteam-controls\s*\{[^}]*width:\s*100%/);
+    expect(narrow).toMatch(/\.devteam-milestones\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(narrow).not.toMatch(/\.devteam-milestones\s*\{[^}]*overflow-x:\s*auto/);
   });
 
   it('Gate A: every font-size under styles/ (and the styles.css manifest) uses a --text-* token', () => {

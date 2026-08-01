@@ -178,6 +178,7 @@ export function ConversationHead() {
   const chatBusy = useApp((s) => s.chatBusy);
   const canContinueInCli = useApp((s) => {
     const chat = s.chats.find((entry) => entry.id === s.activeChatId);
+    if (chat?.kind === 'devteam' && s.devTeam?.phase !== 'done') return false;
     return Boolean(chat?.claudeSessionId || chat?.codexThreadId);
   });
   const continueInCli = useApp((s) => s.continueChatInCli);

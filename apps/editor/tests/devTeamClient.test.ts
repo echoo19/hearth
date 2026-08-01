@@ -164,6 +164,33 @@ describe('dev team frame folding', () => {
 });
 
 describe('dev team actions', () => {
+  it('rejects a direct CLI handoff while the dev team lead still owns an active run', () => {
+    receive({
+      type: 'chat-opened',
+      chat: {
+        id: 'team-chat',
+        title: 'Dev team',
+        kind: 'devteam',
+        codexThreadId: 'thread-1',
+        createdAt: '2026-07-31T00:00:00.000Z',
+        updatedAt: '2026-07-31T00:00:00.000Z',
+      },
+      records: [],
+    });
+    receive({ type: 'devteam-state', chatId: 'team-chat', state: { ...SNAPSHOT, phase: 'wrapping' } });
+    const sendFrame = vi.fn(() => true);
+    const log = vi.fn();
+    useApp.setState({ wsStatus: 'connected', chatBusy: false, sendFrame, log });
+
+    expect(useApp.getState().continueChatInCli()).toBe(false);
+    expect(sendFrame).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(
+      'error',
+      'app',
+      'Finish the dev team run before continuing its lead in the CLI.',
+    );
+  });
+
   it('sends run controls on the current conversation socket', () => {
     const sendFrame = useApp.getState().sendFrame as ReturnType<typeof vi.fn>;
     useApp.getState().approveDevTeamSpec();

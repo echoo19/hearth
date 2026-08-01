@@ -3218,6 +3218,10 @@ export const useApp = create<AppState>((set, get) => {
         state.log('error', 'app', 'This chat has no provider session to continue yet.');
         return false;
       }
+      if (chat.kind === 'devteam' && state.devTeam?.phase !== 'done') {
+        state.log('error', 'app', 'Finish the dev team run before continuing its lead in the CLI.');
+        return false;
+      }
       if (state.chatBusy) {
         state.log('error', 'app', 'Stop the current turn before continuing this chat in its CLI.');
         return false;

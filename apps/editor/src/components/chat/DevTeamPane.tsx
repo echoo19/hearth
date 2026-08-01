@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   devTeamActivity,
   devTeamPhaseLabel,
@@ -116,10 +116,15 @@ function Lane({
   const answer = useApp((s) => s.answerEngineerInput);
   const asks = pendingLaneAsk(messages);
   const activity = engineerId ? devTeamActivity(messages, record?.status) : (messages.some((message) => message.streaming) ? 'Working' : 'Available');
+  const tail = laneTail(messages, record);
   const waiting = asks.count > 0
     ? `, ${asks.count} waiting ${asks.count === 1 ? 'question' : 'questions'}`
     : '';
   const id = `devteam-lane-${engineerId ?? 'lead'}`;
+
+  useEffect(() => {
+    setOpen(initiallyOpen);
+  }, [initiallyOpen]);
 
   return (
     <section className="devteam-lane" data-status={record?.status ?? 'lead'}>
@@ -128,7 +133,7 @@ function Lane({
         className="devteam-lane-head"
         aria-expanded={open}
         aria-controls={id}
-        aria-label={`${name} lane, ${activity}${waiting}`}
+        aria-label={`${name} lane${focus ? `, ${focus}` : ''}, ${activity}, ${tail}${waiting}`}
         onClick={() => setOpen((value) => !value)}
       >
         <span className="devteam-lane-dot" aria-hidden="true" />
@@ -137,7 +142,7 @@ function Lane({
           {focus && <span>{focus}</span>}
         </span>
         <span className="devteam-lane-activity">{activity}</span>
-        <span className="devteam-lane-tail">{laneTail(messages, record)}</span>
+        <span className="devteam-lane-tail">{tail}</span>
         {asks.count > 0 && <span className="devteam-ask-badge" aria-label={`${asks.count} waiting ${asks.count === 1 ? 'question' : 'questions'}`}>{asks.count}</span>}
         <span className="devteam-lane-chevron" aria-hidden="true">›</span>
       </button>
@@ -232,6 +237,7 @@ function RunRecord(props: RunRecordProps) {
   return (
     <details className="devteam-run-record">
       <summary>
+        <span className="devteam-run-chevron" aria-hidden="true">›</span>
         <span>Run complete</span>
         <span>{finished} of {state.tasks.length} tasks finished</span>
       </summary>
@@ -294,7 +300,11 @@ export function DevTeamPane() {
           <MessageList />
         )}
       </div>
-      <Composer label={copy.label} placeholder={copy.placeholder} />
+      <Composer
+        label={copy.label}
+        placeholder={copy.placeholder}
+        attachmentDisabledReason={done ? undefined : 'Dev team steering is text-only. Files are available when the run is done.'}
+      />
     </div>
   );
 }

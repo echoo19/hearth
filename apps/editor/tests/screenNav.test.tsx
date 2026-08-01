@@ -22,7 +22,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 vi.mock('../src/components/agent/Terminal', () => ({
   Terminal: () => <div data-testid="xterm" />,
@@ -33,10 +33,27 @@ import { ConversationHead } from '../src/components/chat/ConversationHead';
 import { ProjectHome } from '../src/components/project/ProjectHome';
 import { screenBackLabel } from '../src/components/ui/ScreenHeader';
 import { useApp } from '../src/store';
+import type { DevTeamSnapshot } from '../src/types';
 
 type State = ReturnType<typeof useApp.getState>;
 
 const PROJECT = '/work/ember';
+
+const DEV_TEAM: DevTeamSnapshot = {
+  version: 1,
+  runId: 'run-1',
+  phase: 'wrapping',
+  plan: null,
+  tasks: [],
+  approvals: [],
+  history: [],
+  currentMilestone: 0,
+  spec: '# Ember',
+  specVersion: 1,
+  summary: null,
+  wrap: null,
+  error: null,
+};
 
 /** The action a back control must land on: the project's own screen. */
 const showProject = vi.fn();
@@ -142,6 +159,28 @@ describe('a conversation’s way back', () => {
     // One back affordance in the app, not two that nearly match.
     render(<ConversationHead />);
     expect(screen.getByRole('button', { name: 'Back to Ember' }).classList.contains('screen-back')).toBe(true);
+  });
+
+  it('withholds CLI handoff until a dev team run is done', () => {
+    patchStore({
+      conversationMode: 'devteam',
+      activeChatId: 'team-chat',
+      chats: [{
+        id: 'team-chat',
+        title: 'Dev team',
+        kind: 'devteam',
+        claudeSessionId: 'claude-session-1',
+        createdAt: '2026-07-31T00:00:00.000Z',
+        updatedAt: '2026-07-31T00:00:00.000Z',
+      }],
+      devTeam: DEV_TEAM,
+    });
+    render(<ConversationHead />);
+
+    expect(screen.queryByRole('button', { name: 'Continue in CLI' })).toBeNull();
+
+    act(() => useApp.setState({ devTeam: { ...DEV_TEAM, phase: 'done' } }));
+    expect(screen.getByRole('button', { name: 'Continue in CLI' })).toBeTruthy();
   });
 });
 

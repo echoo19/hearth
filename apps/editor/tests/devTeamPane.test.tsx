@@ -145,7 +145,9 @@ describe('DevTeamPane', () => {
     expect(screen.getAllByText('Build controls').length).toBeGreaterThan(0);
     const engineer = screen.getByRole('button', { name: /Gameplay builder lane/i });
     expect(engineer.getAttribute('aria-expanded')).toBe('false');
-    expect(engineer.getAttribute('aria-label')).toBe('Gameplay builder lane, Waiting for you, 1 waiting question');
+    expect(engineer.getAttribute('aria-label')).toBe(
+      'Gameplay builder lane, Build controls, Waiting for you, Wiring movement now., 1 waiting question',
+    );
     expect(screen.getByText('Waiting for you')).toBeTruthy();
     expect(screen.getByText(/Ask mode pauses engineers/)).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'Tell the team' }).getAttribute('placeholder')).toBe('Tell the team…');
@@ -241,6 +243,26 @@ describe('DevTeamPane', () => {
     expect(useApp.getState().resumeDevTeam).toHaveBeenCalledOnce();
   });
 
+  it('opens the lead lane when review begins without moving keyboard focus', () => {
+    render(<DevTeamPane />);
+    const lead = screen.getByRole('button', { name: /Lead lane/i });
+    const composer = screen.getByRole('textbox', { name: 'Tell the team' });
+    composer.focus();
+    expect(lead.getAttribute('aria-expanded')).toBe('false');
+
+    act(() => useApp.setState({ devTeam: snapshot({ phase: 'reviewing' }) }));
+
+    expect(lead.getAttribute('aria-expanded')).toBe('true');
+    expect(document.activeElement).toBe(composer);
+  });
+
+  it('explains that active team steering is text-only', () => {
+    render(<DevTeamPane />);
+    expect(screen.getByText('Dev team steering is text-only. Files are available when the run is done.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Add context' }));
+    expect(screen.getByRole('menuitem', { name: 'Add photos & files…' }).getAttribute('aria-disabled')).toBe('true');
+  });
+
   it('shows the spec as the one primary decision and keeps revision messaging live', () => {
     act(() => useApp.setState({ devTeam: snapshot({ phase: 'spec-review', plan: null, tasks: [], approvals: [] }) }));
     render(<DevTeamPane />);
@@ -294,6 +316,8 @@ describe('DevTeamPane', () => {
     expect(screen.getAllByText('I am reviewing the first pass.').length).toBeGreaterThan(0);
     const record = screen.getByText(/Run complete/).closest('details');
     expect(record?.hasAttribute('open')).toBe(false);
+    expect(record?.querySelector('.devteam-run-chevron')?.textContent).toBe('›');
+    expect(screen.queryByText('Dev team steering is text-only. Files are available when the run is done.')).toBeNull();
     expect(screen.getByRole('textbox', { name: 'Message the lead' })).toBeTruthy();
   });
 

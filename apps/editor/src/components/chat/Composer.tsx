@@ -103,11 +103,14 @@ export function Composer({
   variant = 'chat',
   label = 'Message the agent',
   placeholder,
+  attachmentDisabledReason,
 }: {
   variant?: ComposerVariant;
   /** Allows a conversation mode to name who receives the message without replacing the composer. */
   label?: string;
   placeholder?: string;
+  /** Keeps text-only orchestration from accepting files it cannot deliver. */
+  attachmentDisabledReason?: string;
 } = {}) {
   const sendChat = useApp((s) => s.sendChat);
   // Stop interrupts the TURN and keeps the conversation's agent alive, so the
@@ -164,6 +167,7 @@ export function Composer({
   // true synchronously, and the whole batch is judged before any of it is read.
   const addFiles = useCallback(
     async (files: readonly File[]): Promise<void> => {
+      if (attachmentDisabledReason) return;
       const tray = (): readonly PendingAttachment[] =>
         (useApp.getState().composerDrafts[variant] ?? EMPTY_DRAFT).attachments;
       const accepted: File[] = [];
@@ -188,7 +192,7 @@ export function Composer({
         }
       }
     },
-    [variant, write],
+    [attachmentDisabledReason, variant, write],
   );
 
   // Taken out of the draft AND let go of: the picture is leaving the screen, so
@@ -221,15 +225,16 @@ export function Composer({
   // Home talks to the workspace endpoint over HTTP, not the chat socket, so a
   // disconnected socket is not a reason to stop someone starting a project.
   const busy = isHome ? starting : chatBusy;
-  // An attachment is content: a picture with no words is a message, so the
-  // empty box stops being a reason not to send once something is in the tray.
-  const empty = text.trim() === '' && attachments.length === 0;
+  // An attachment is content in ordinary chat. A text-only orchestration box
+  // cannot count one as sendable content because its receiver cannot track it.
+  const empty = text.trim() === '' && (attachments.length === 0 || Boolean(attachmentDisabledReason));
   const blocked = isHome ? null : composerBlockReason({ connected });
+  const attachmentBlocked = Boolean(attachmentDisabledReason && attachments.length > 0);
   // A running turn no longer blocks the box. What you type goes into the queue
   // and leaves the moment the turn is over (see store.drainQueue), which is
   // what every chat app people already use does — the alternative loses the
   // thought at exactly the moment someone has it.
-  const canSend = (isHome || connected) && !empty && (isHome ? !busy : true);
+  const canSend = (isHome || connected) && !empty && !attachmentBlocked && (isHome ? !busy : true);
   /** A turn is running, so the next Enter queues rather than sends. */
   const queueing = busy && !isHome;
   const slashQuery = !isHome && text.startsWith('/') && !text.includes('\n')
@@ -290,6 +295,7 @@ export function Composer({
         onDragOver={(e) => {
           if (!pasteCarriesFiles(e.dataTransfer)) return;
           e.preventDefault();
+          if (attachmentDisabledReason) return;
           setDropping(true);
         }}
         onDragLeave={(e) => {
@@ -303,6 +309,7 @@ export function Composer({
           setDropping(false);
           if (files.length === 0) return;
           e.preventDefault();
+          if (attachmentDisabledReason) return;
           void addFiles(files);
         }}
       >
@@ -312,6 +319,7 @@ export function Composer({
           ref={fileRef}
           type="file"
           multiple
+          disabled={Boolean(attachmentDisabledReason)}
           className="composer-file-input"
           aria-hidden="true"
           tabIndex={-1}
@@ -337,6 +345,7 @@ export function Composer({
             const files = filesFromTransfer(e.clipboardData);
             if (files.length === 0) return; // plain text: let it type itself
             e.preventDefault();
+            if (attachmentDisabledReason) return;
             void addFiles(files);
           }}
           onKeyDown={(e) => {
@@ -386,6 +395,8 @@ export function Composer({
               {
                 label: 'Add photos & files…',
                 icon: 'image',
+                disabled: Boolean(attachmentDisabledReason),
+                disabledReason: attachmentDisabledReason,
                 onSelect: () => fileRef.current?.click(),
               },
               {
@@ -419,7 +430,9 @@ export function Composer({
               Dev team
             </Button>
           )}
-          {blocked ? <span className="composer-note">{blocked}</span> : <span className="composer-row-gap" />}
+          {blocked || attachmentDisabledReason
+            ? <span className="composer-note">{blocked ?? attachmentDisabledReason}</span>
+            : <span className="composer-row-gap" />}
           {/* What the agent may do without asking, and who answers. In that
               order, left to right: the model pill keeps the place beside Send
               it has always had, and the new one arrives beside it rather than

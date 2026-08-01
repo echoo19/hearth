@@ -415,8 +415,19 @@
 }
 
 .devteam-run-record > summary span:last-child {
+  margin-left: auto;
   color: var(--ink-faint);
   font-size: var(--text-xs);
+}
+
+.devteam-run-chevron {
+  flex: none;
+  color: var(--ink-faint);
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.devteam-run-record[open] .devteam-run-chevron {
+  transform: rotate(90deg);
 }
 
 .devteam-run-body {
@@ -489,12 +500,12 @@
 
   .devteam-milestones {
     display: flex;
+    flex-wrap: wrap;
     gap: 16px;
-    overflow-x: auto;
   }
 
   .devteam-milestone {
-    min-width: 12rem;
+    flex: 1 1 12rem;
   }
 
   .devteam-milestone + .devteam-milestone {
@@ -510,7 +521,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .devteam-lane-head,
-  .devteam-lane-chevron {
+  .devteam-lane-chevron,
+  .devteam-run-chevron {
     transition: none;
   }
 }

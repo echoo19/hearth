@@ -243,6 +243,38 @@ describe('the attachment tray', () => {
     expect(names.some((title) => title.includes('huge.png'))).toBe(false);
     expect(names.some((title) => title.includes('small.png'))).toBe(true);
   });
+
+  it('keeps text-only orchestration from accepting or silently sending files', () => {
+    const reason = 'Dev team steering is text-only. Files are available when the run is done.';
+    render(<Composer attachmentDisabledReason={reason} />);
+    const file = png('steering.png');
+    const transfer = {
+      items: [{ kind: 'file', getAsFile: () => file }],
+      files: [file],
+      types: ['Files'],
+    };
+
+    fireEvent.drop(document.querySelector('.composer-card')!, { dataTransfer: transfer });
+    fireEvent.paste(box(), { clipboardData: transfer });
+    expect(useApp.getState().composerDrafts.chat?.attachments ?? []).toEqual([]);
+
+    act(() => useApp.getState().setDraft('chat', {
+      text: '',
+      attachments: [{
+        id: 'kept-file',
+        name: 'kept.png',
+        mimeType: 'image/png',
+        bytes: 4,
+        data: 'data:image/png;base64,aGVhcnRo',
+        previewUrl: null,
+      }],
+    }));
+    fireEvent.keyDown(box(), { key: 'Enter' });
+
+    expect(sendChat).not.toHaveBeenCalled();
+    expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(useApp.getState().composerDrafts.chat?.attachments).toHaveLength(1);
+  });
 });
 
 describe('the + menu', () => {
