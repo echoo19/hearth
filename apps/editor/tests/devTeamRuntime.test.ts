@@ -26,14 +26,20 @@ class ScriptedDriver implements ChatDriver {
   failStart = false;
   failSend = false;
   holdClose = false;
-  readonly closed: Promise<void>;
+  closedBeforeStartNever = false;
   private stopped = false;
+  private started = false;
+  private readonly actualClosed: Promise<void>;
   private resolveClosed!: () => void;
 
   constructor() {
-    this.closed = new Promise<void>((resolve) => {
+    this.actualClosed = new Promise<void>((resolve) => {
       this.resolveClosed = resolve;
     });
+  }
+
+  get closed(): Promise<void> {
+    return this.closedBeforeStartNever && !this.started ? new Promise<void>(() => undefined) : this.actualClosed;
   }
 
   get events(): AsyncIterable<ChatEvent> {
@@ -49,6 +55,7 @@ class ScriptedDriver implements ChatDriver {
   async start(sessionId: string, root: string): Promise<void> {
     this.starts.push({ sessionId, root });
     if (this.failStart) throw new Error('start failed');
+    this.started = true;
   }
 
   send(text: string, agent?: AgentTurnOptions): void {
@@ -106,6 +113,7 @@ let failLeadSend: boolean;
 let failLeadAppend: boolean;
 let failAgentAppend: boolean;
 let persistentlyFailAgentAppend: boolean;
+let closedBeforeStartNever: boolean;
 let idCounter: number;
 const chatId = 'team-chat';
 const runDir = (): string => path.join(root, '.hearth', 'devteam', chatId);
@@ -122,6 +130,7 @@ function runtime(maxConcurrency = 2): DevTeamRuntime {
       requests.push(request);
       await beforeCreate?.(request);
       const driver = new ScriptedDriver();
+      driver.closedBeforeStartNever = closedBeforeStartNever;
       driver.failStart = driverFailureStage === 'start';
       driver.failSend = driverFailureStage === 'send';
       drivers.push(driver);
@@ -250,7 +259,8 @@ beforeEach(async () => {
   failLeadSend = false;
   failLeadAppend = false;
   failAgentAppend = false;
-  persistentlyFailAgentAppend = false;
+    persistentlyFailAgentAppend = false;
+    closedBeforeStartNever = false;
   idCounter = 0;
 });
 
@@ -885,6 +895,7 @@ describe('engineer durability and controls', () => {
       creationReached();
       await blocked;
     };
+    closedBeforeStartNever = true;
 
     const planning = settleLead(run, 'Plan ready.');
     await reached;

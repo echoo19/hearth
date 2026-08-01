@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import http from 'node:http';
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
@@ -39,13 +39,15 @@ class FakeDriver implements ChatDriver {
   stopped = false;
   interrupted = false;
   holdStop = false;
-  readonly closed: Promise<void>;
+  closedBeforeStartNever = false;
   private readonly startGate: Promise<void> | null;
+  private startCompleted = false;
+  private readonly actualClosed: Promise<void>;
   private releaseStartGate: (() => void) | null = null;
   private resolveClosed!: () => void;
 
   constructor(holdStart = false) {
-    this.closed = new Promise<void>((resolve) => {
+    this.actualClosed = new Promise<void>((resolve) => {
       this.resolveClosed = resolve;
     });
     this.startGate = holdStart
@@ -53,6 +55,12 @@ class FakeDriver implements ChatDriver {
           this.releaseStartGate = resolve;
         })
       : null;
+  }
+
+  get closed(): Promise<void> {
+    return this.closedBeforeStartNever && !this.startCompleted
+      ? new Promise<void>(() => undefined)
+      : this.actualClosed;
   }
 
   get events(): AsyncIterable<ChatEvent> {
@@ -63,6 +71,7 @@ class FakeDriver implements ChatDriver {
   async start(id: string, root: string): Promise<void> {
     this.starts.push({ id, root });
     if (this.startGate) await this.startGate;
+    this.startCompleted = true;
   }
 
   releaseStart(): void {
@@ -151,6 +160,7 @@ async function makeHarness(
     beforeDevTeamReplaySend?: () => Promise<void>;
     onDevTeamControlQueued?: (type: string) => void;
     onChatSendQueued?: () => void;
+    beforeChatSendPersist?: () => Promise<void>;
     teardownFlushMs?: number;
   },
 ): Promise<Harness> {
@@ -736,6 +746,84 @@ describe('dev team websocket integration', () => {
     expect((await readDevTeamState(harness.root, chatId)).phase).toBe('interrupted');
   });
 
+  it('does not persist or deliver a prepared send after shutdown starts', async () => {
+    let gateArmed = false;
+    let sendReached!: () => void;
+    let releaseSend!: () => void;
+    const reached = new Promise<void>((resolve) => { sendReached = resolve; });
+    const released = new Promise<void>((resolve) => { releaseSend = resolve; });
+    const harness = await makeHarness(undefined, {
+      beforeChatSendPersist: async () => {
+        if (!gateArmed) return;
+        sendReached();
+        await released;
+      },
+    });
+    const inbox = await harness.connect();
+    inbox.socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await inbox.next((frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('expected chat-opened');
+    gateArmed = true;
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'must not land' }));
+    await reached;
+
+    inbox.socket.terminate();
+    await new Promise<void>((resolve) => harness.server.close(() => resolve()));
+    releaseSend();
+    await harness.wsClosed;
+
+    expect((await readTranscript(harness.root, opened.chat.id)).some(
+      (record) => record.role === 'user' && record.text === 'must not land',
+    )).toBe(false);
+    expect(harness.drivers[0].sent).toEqual([]);
+  });
+
+  it('bounds shutdown when a provider ignores stop', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const harness = await makeHarness(undefined, { teardownFlushMs: 30 });
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'start it' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    harness.drivers[0].holdStop = true;
+
+    inbox.socket.terminate();
+    await new Promise<void>((resolve) => harness.server.close(() => resolve()));
+    await harness.wsClosed;
+
+    expect((await readDevTeamState(harness.root, chatId)).phase).toBe('interrupted');
+    expect(errors).toHaveBeenCalledWith(expect.stringContaining('did not close'));
+    harness.drivers[0].releaseStop();
+    await harness.drivers[0].closed;
+  });
+
+  it('does not await closed on a driver shutdown catches before start', async () => {
+    let factoryReached!: () => void;
+    let releaseFactory!: () => void;
+    const reached = new Promise<void>((resolve) => { factoryReached = resolve; });
+    const released = new Promise<void>((resolve) => { releaseFactory = resolve; });
+    const driver = new FakeDriver();
+    driver.closedBeforeStartNever = true;
+    const harness = await makeHarness(async () => {
+      factoryReached();
+      await released;
+      return driver;
+    }, { teardownFlushMs: 30 });
+    const inbox = await harness.connect();
+    inbox.socket.send(JSON.stringify({ type: 'chat-new' }));
+    await inbox.next((frame) => frame.type === 'chat-opened');
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'start binding' }));
+    await reached;
+
+    inbox.socket.terminate();
+    await new Promise<void>((resolve) => harness.server.close(() => resolve()));
+    releaseFactory();
+    await harness.wsClosed;
+
+    expect(driver.starts).toEqual([]);
+    expect(driver.stopped).toBe(true);
+  });
+
   it('disposes active engineer work before deleting a dev team conversation', async () => {
     const harness = await makeHarness(undefined, { teardownFlushMs: 30 });
     const inbox = await harness.connect();
@@ -780,6 +868,12 @@ describe('dev team websocket integration', () => {
     });
     expect(await getChat(harness.root, chatId)).not.toBeNull();
     expect(await fsp.stat(runDir).catch(() => null)).not.toBeNull();
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'must wait for the old provider' }));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(harness.drivers).toHaveLength(2);
+    expect((await readTranscript(harness.root, chatId)).some(
+      (record) => record.role === 'user' && record.text === 'must wait for the old provider',
+    )).toBe(false);
     engineer.releaseStop();
     await engineer.closed;
 

@@ -1105,14 +1105,15 @@ export class DevTeamRuntime {
       },
     };
     let active: ActiveEngineer | null = null;
+    let started = false;
     try {
       driver = await this.options.createDriver(request);
       if (!this.dispatchOwned(task.id, token, record)) {
         driver.stop();
-        this.trackEngineerClosure(driver);
         return;
       }
       await driver.start(request.sessionId, this.options.root);
+      started = true;
       this.trackEngineerClosure(driver);
       if (!this.dispatchOwned(task.id, token, record)) {
         driver.stop();
@@ -1161,7 +1162,7 @@ export class DevTeamRuntime {
       if (active && this.active.get(engineerId) === active) this.active.delete(engineerId);
       try {
         driver?.stop();
-        if (driver) this.trackEngineerClosure(driver);
+        if (driver && started) this.trackEngineerClosure(driver);
       } catch {
         // The original setup failure is the useful task error.
       }

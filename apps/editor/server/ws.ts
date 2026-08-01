@@ -438,6 +438,8 @@ export function attachWebSocket(
     onDevTeamControlQueued?: (type: string) => void;
     /** Test-only notification after a non-empty chat send is queued. */
     onChatSendQueued?: () => void;
+    /** Test-only gate immediately before a prepared chat send is persisted. */
+    beforeChatSendPersist?: () => Promise<void>;
   },
 ): WebSocketHandle {
   // An explicit ceiling rather than ws's silent 100 MiB default: attachments
@@ -465,6 +467,7 @@ export function attachWebSocket(
   const failedHandoffs = new Map<string, Extract<WsFrame, { type: 'chat-handoff-error' }>>();
   const closingSessions = new Map<string, Promise<unknown>>();
   let closing = false;
+  let shutdownFinalized = false;
   let nextPtyKey = 0;
   let nextChatBinding = 0;
   const makeChatDriver = opts?.createChatDriver ?? createChatDriver;
@@ -961,21 +964,21 @@ export function attachWebSocket(
       const runtime = devTeamRuntimes.get(key);
       const session = chatSessions.get(key);
       const closures: Promise<unknown>[] = [];
+      const priorClosing = closingSessions.get(key);
+      if (priorClosing) closures.push(priorClosing);
       if (runtime) closures.push(runtime.dispose());
       if (session) {
         retireChatSession(session, null);
-        const sessionClosing = driverCloseWork(session);
-        closingSessions.set(key, sessionClosing);
-        closures.push(sessionClosing);
-      } else {
-        const sessionClosing = closingSessions.get(key);
-        if (sessionClosing) closures.push(sessionClosing);
+        closures.push(driverCloseWork(session));
       }
       const closed = Promise.all(closures);
+      closingSessions.set(key, closed);
       const cleanUp = (): void => {
         if (runtime && devTeamRuntimes.get(key) === runtime) devTeamRuntimes.delete(key);
-        closingSessions.delete(key);
-        devTeamLeadAttachments.delete(key);
+        if (closingSessions.get(key) === closed) {
+          closingSessions.delete(key);
+          devTeamLeadAttachments.delete(key);
+        }
       };
       if (!(await settlesWithin(closed))) {
         void closed.then(cleanUp, () => undefined);
@@ -1144,10 +1147,12 @@ export function attachWebSocket(
       },
       appendEngineerRecord: (engineerId, record) =>
         enqueueDevTeamLane(key, async () => {
+          if (shutdownFinalized) return;
           await appendEngineerRecord(root, chatId, engineerId, record);
         }),
       persistState: (state) =>
         enqueueDevTeamLane(key, async () => {
+          if (shutdownFinalized) return;
           await writeDevTeamState(root, chatId, state);
           broadcastDevTeamState(root, chatId, publicDevTeamSnapshot(state));
         }),
@@ -1508,6 +1513,7 @@ export function attachWebSocket(
     // The same driver, held from the moment it exists rather than from the
     // moment it is bound, so the catch below can stop one that failed to start.
     let built: ChatDriver | null = null;
+    let started = false;
     try {
       // A conversation a backend has answered before carries that backend's
       // own continuation handle — the codex thread, the Claude session — so
@@ -1540,11 +1546,12 @@ export function attachWebSocket(
         permissionMode,
       });
       if (closing) {
-        session.driver = driver;
         driver.stop();
+        chatSessions.delete(key);
         return null;
       }
       await driver.start(session.chatId, root);
+      started = true;
       if (closing) {
         session.driver = driver;
         driver.stop();
@@ -1556,7 +1563,7 @@ export function attachWebSocket(
       // 60s timeout that does not stop the driver orphans that child forever,
       // one per attempt. Same shape the tester path uses (projectServer.ts).
       built?.stop();
-      if (closing && built) {
+      if (closing && built && started) {
         session.driver = built;
         return null;
       }
@@ -1920,6 +1927,7 @@ export function attachWebSocket(
                 detach(
                   enqueueChatLane(chatKey(root, target), async () => {
                     const key = chatKey(root, target);
+                    if (closing || closingSessions.has(key)) return;
                     if (cliOwnedChats.has(key)) {
                       send(ws, {
                         type: 'chat-event',
@@ -1932,6 +1940,7 @@ export function attachWebSocket(
                       return;
                     }
                     const session = await ensureChat(root, ws, target, agent);
+                    if (closing) return;
                     // Written down even when NOTHING BOUND. A bind that failed
                     // has already put its reason on this socket, and dropping
                     // what the person typed on top of that means retyping it
@@ -1944,6 +1953,7 @@ export function attachWebSocket(
                       ...(await ctx.chatAttachments.consume(root, target, stagedFiles)),
                       ...(await saveAttachments(root, target, files, Date.now() + 1)),
                     ];
+                    if (closing) return;
                     if (text.trim() === '' && attachments.length === 0) {
                       send(ws, {
                         type: 'chat-event',
@@ -1955,12 +1965,15 @@ export function attachWebSocket(
                       });
                       return;
                     }
+                    await opts?.beforeChatSendPersist?.();
+                    if (closing) return;
                     const stored = await appendChatRecord(root, target, {
                       role: 'user',
                       ts: new Date().toISOString(),
                       text,
                       ...(attachments.length > 0 ? { attachments: attachments.map(storedAttachment) } : {}),
                     });
+                    if (closing) return;
                     if (!stored) {
                       // No index row, so the append wrote nothing at all: this
                       // conversation was deleted while this window still had it
@@ -1977,16 +1990,22 @@ export function attachWebSocket(
                       return;
                     }
                     await announceChats(root); // the first turn names the chat
+                    if (closing) return;
                     if (session?.driver) {
                       const provider = providerForTurn(session.driver);
                       const summary = await getChat(root, target);
+                      if (closing) return;
                       const delivered =
                         provider && summary?.lastProvider && summary.lastProvider !== provider
                           ? providerHandoff(target, text)
                           : text;
-                      if (provider) await setChatProvider(root, target, provider);
+                      if (provider) {
+                        await setChatProvider(root, target, provider);
+                        if (closing) return;
+                      }
                       if (summary?.kind === 'devteam' && !(session.driver instanceof StubDriver)) {
                         const runtime = await ensureDevTeamRuntime(root, target, session);
+                        if (closing) return;
                         if (attachments.length > 0) devTeamLeadAttachments.set(key, attachments);
                         let handled: boolean | undefined;
                         try {
@@ -1994,6 +2013,7 @@ export function attachWebSocket(
                         } finally {
                           devTeamLeadAttachments.delete(key);
                         }
+                        if (closing) return;
                         if (!handled) {
                           session.turnActive = true;
                           session.driver.send(delivered, agent ?? undefined, attachments);
@@ -2002,8 +2022,10 @@ export function attachWebSocket(
                         // A real StubDriver is the connect-an-agent refusal for
                         // this mode. Test doubles that merely report kind=stub
                         // remain valid scripted drivers.
-                        session.turnActive = true;
-                        session.driver.send(delivered, agent ?? undefined, attachments);
+                        if (!closing) {
+                          session.turnActive = true;
+                          session.driver.send(delivered, agent ?? undefined, attachments);
+                        }
                       }
                     }
                   }),
@@ -2315,7 +2337,9 @@ export function attachWebSocket(
       await Promise.all(
         runtimes.map(async ([key, runtime]) => {
           try {
-            await runtime.dispose();
+            if (!(await settlesWithin(runtime.dispose()))) {
+              console.error(`[hearth] dev team ${key}: provider did not close during server shutdown.`);
+            }
           } catch (err) {
             console.error(
               `[hearth] dev team ${key}: could not interrupt on server close: ${(err as Error)?.message ?? String(err)}`,
@@ -2327,7 +2351,13 @@ export function attachWebSocket(
 
       const sessions = [...chatSessions.values()];
       for (const session of sessions) retireChatSession(session, null);
-      await Promise.all(sessions.map((session) => driverCloseWork(session)));
+      await Promise.all(sessions.map(async (session) => {
+        if (!(await waitForDriverClose(session))) {
+          console.error(`[hearth] chat ${session.chatId}: provider did not close during server shutdown.`);
+        }
+      }));
+      await drainQueuedWork();
+      shutdownFinalized = true;
       await drainQueuedWork();
       chatSessions.clear();
       closingSessions.clear();
