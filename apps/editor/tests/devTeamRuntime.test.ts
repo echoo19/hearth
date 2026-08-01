@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventQueue, type AgentTurnOptions, type ChatDriver, type ChatEvent, type InputResponse } from '../server/chat';
+import type { ChatRecord } from '../server/chatStore';
 import {
   DevTeamRuntime,
   buildEngineerPrompt,
@@ -22,6 +23,8 @@ class ScriptedDriver implements ChatDriver {
   iterations = 0;
   interrupts = 0;
   stops = 0;
+  failStart = false;
+  failSend = false;
 
   get events(): AsyncIterable<ChatEvent> {
     const queue = this.queue;
@@ -35,9 +38,11 @@ class ScriptedDriver implements ChatDriver {
 
   async start(sessionId: string, root: string): Promise<void> {
     this.starts.push({ sessionId, root });
+    if (this.failStart) throw new Error('start failed');
   }
 
   send(text: string, agent?: AgentTurnOptions): void {
+    if (this.failSend) throw new Error('send failed');
     this.sent.push({ text, agent });
   }
 
@@ -78,6 +83,9 @@ let engineerRecords: { engineerId: string; record: unknown }[];
 let drivers: ScriptedDriver[];
 let requests: DevTeamEngineerRequest[];
 let beforeCreate: ((request: DevTeamEngineerRequest) => Promise<void>) | null;
+let driverFailureStage: 'start' | 'append' | 'send' | null;
+let beforeEngineerAppend: ((record: ChatRecord) => Promise<void>) | null;
+let failLeadSend: boolean;
 let idCounter: number;
 const chatId = 'team-chat';
 const runDir = (): string => path.join(root, '.hearth', 'devteam', chatId);
@@ -94,16 +102,21 @@ function runtime(maxConcurrency = 2): DevTeamRuntime {
       requests.push(request);
       await beforeCreate?.(request);
       const driver = new ScriptedDriver();
+      driver.failStart = driverFailureStage === 'start';
+      driver.failSend = driverFailureStage === 'send';
       drivers.push(driver);
       return driver;
     },
     sendLead: async (text) => {
+      if (failLeadSend) throw new Error('lead send failed');
       leadPrompts.push(text);
     },
     appendLeadRecord: async (record) => {
       leadRecords.push(record);
     },
     appendEngineerRecord: async (engineerId, record) => {
+      await beforeEngineerAppend?.(record);
+      if (driverFailureStage === 'append' && record.role === 'user') throw new Error('append failed');
       engineerRecords.push({ engineerId, record });
     },
     emitSnapshot: (snapshot) => {
@@ -166,6 +179,9 @@ beforeEach(async () => {
   drivers = [];
   requests = [];
   beforeCreate = null;
+  driverFailureStage = null;
+  beforeEngineerAppend = null;
+  failLeadSend = false;
   idCounter = 0;
 });
 
@@ -216,6 +232,27 @@ describe('dev team lead state machine', () => {
     await settleLead(run);
     expect(run.snapshot()).toMatchObject({ phase: 'interrupted', error: expect.stringMatching(/plan/i) });
     expect(await readDevTeamState(root, chatId)).toMatchObject({ retryCount: 3 });
+  });
+
+  it('correlates interview follow-ups and prevents approval while a revision is running', async () => {
+    const run = runtime();
+    await run.start('An incomplete brief.');
+    await settleLead(run, 'Which direction should this take?');
+    expect(run.snapshot().phase).toBe('interviewing');
+
+    expect(await run.handleUserMessage('Use the quieter direction.')).toBe(false);
+    await putSpec('# First spec\n');
+    await settleLead(run, 'Spec ready.');
+    expect(run.snapshot().phase).toBe('spec-review');
+
+    await run.handleUserMessage('Make the result clearer.');
+    expect(run.snapshot().phase).toBe('drafting-spec');
+    await run.approveSpec();
+    expect(run.snapshot().specVersion).toBe(0);
+    await putSpec('# Revised clear spec\n');
+    await settleLead(run, 'Revision ready.');
+    await run.approveSpec();
+    expect(run.snapshot()).toMatchObject({ phase: 'planning', spec: '# Revised clear spec\n', specVersion: 1 });
   });
 
   it('runs plan, build, review, and wrap turns through done', async () => {
@@ -510,6 +547,63 @@ describe('engineer durability and controls', () => {
     expect(drivers[0].sent).toEqual([]);
     expect(drivers[0].stops).toBe(1);
   });
+
+  it.each(['start', 'append', 'send'] as const)('stops a created driver when engineer %s fails', async (stage) => {
+    const run = runtime();
+    await reachPlanning(run);
+    driverFailureStage = stage;
+    await putPlan(plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+
+    await settleLead(run, 'Plan ready.');
+
+    expect(run.snapshot().tasks[0]).toMatchObject({ status: 'error', summary: `${stage} failed` });
+    expect(drivers[0].stops).toBe(1);
+    expect(drivers[0].iterations).toBe(stage === 'send' ? 1 : 0);
+  });
+
+  it('settles dependents and advances after engineer startup failure', async () => {
+    const run = runtime();
+    await reachPlanning(run);
+    driverFailureStage = 'start';
+    await putPlan(
+      plan([
+        { id: 'dependent', title: 'Dependent', roleId: role.id, detail: 'Dependent', dependsOn: ['root'] },
+        { id: 'root', title: 'Root', roleId: role.id, detail: 'Root' },
+      ]),
+    );
+
+    await settleLead(run, 'Plan ready.');
+    expect(run.snapshot().phase).toBe('reviewing');
+    expect(run.snapshot().tasks.map((task) => [task.taskId, task.status])).toEqual([
+      ['dependent', 'error'],
+      ['root', 'error'],
+    ]);
+  });
+
+  it('does not let an in-flight terminal event overwrite Stop', async () => {
+    const run = runtime();
+    await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    let release!: () => void;
+    let appendReached!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const reached = new Promise<void>((resolve) => {
+      appendReached = resolve;
+    });
+    beforeEngineerAppend = async (record) => {
+      if (record.role !== 'agent' || record.event.type !== 'turn-complete') return;
+      appendReached();
+      await blocked;
+    };
+
+    drivers[0].queue.push({ type: 'turn-complete' });
+    await reached;
+    await run.stop();
+    release();
+    await vi.waitFor(() => expect(engineerRecords.at(-1)).toMatchObject({ record: { role: 'agent' } }));
+    expect(run.snapshot().tasks[0].status).toBe('interrupted');
+  });
 });
 
 describe('restart, steering, and plan rewrites', () => {
@@ -533,6 +627,85 @@ describe('restart, steering, and plan rewrites', () => {
     expect(reopened.snapshot().phase).toBe('building');
   });
 
+  it('rehydrates a paused run with orphaned work still paused and redispatches it on resume', async () => {
+    const first = runtime();
+    await reachBuilding(first, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    await first.pause();
+    drivers = [];
+    requests = [];
+
+    const reopened = runtime();
+    await reopened.start();
+    expect(reopened.snapshot()).toMatchObject({ phase: 'paused', tasks: [{ taskId: 'a', status: 'interrupted' }] });
+    expect(await readDevTeamState(root, chatId)).toMatchObject({ phase: 'paused', resumePhase: 'building' });
+
+    await reopened.resume();
+    await vi.waitFor(() => expect(requests.map((request) => request.task.id)).toEqual(['a']));
+    expect(reopened.snapshot()).toMatchObject({ phase: 'building', tasks: [{ taskId: 'a', status: 'running' }] });
+  });
+
+  it('actively resumes an interrupted interview after rehydration', async () => {
+    const first = runtime();
+    await first.start('An unfinished brief.');
+    const promptCount = leadPrompts.length;
+
+    const reopened = runtime();
+    await reopened.start();
+    expect(reopened.snapshot().phase).toBe('interrupted');
+    await reopened.resume();
+    expect(reopened.snapshot().phase).toBe('interviewing');
+    expect(leadPrompts).toHaveLength(promptCount + 1);
+    expect(leadPrompts.at(-1)).toMatch(/continue.*interview/i);
+  });
+
+  it('folds paused interview and planning completions without losing files or duplicating lead turns', async () => {
+    const interview = runtime();
+    await interview.start('A complete brief.');
+    await interview.pause();
+    await putSpec('# Paused spec\n');
+    await settleLead(interview, 'Spec written.');
+    expect(interview.snapshot()).toMatchObject({ phase: 'paused', spec: '# Paused spec\n' });
+    expect(await readDevTeamState(root, chatId)).toMatchObject({ resumePhase: 'spec-review' });
+    await interview.resume();
+    expect(interview.snapshot().phase).toBe('spec-review');
+
+    await interview.approveSpec();
+    await putPlan(plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    const promptCount = leadPrompts.length;
+    await interview.pause();
+    await settleLead(interview, 'Plan written.');
+    expect(interview.snapshot()).toMatchObject({ phase: 'paused', tasks: [{ taskId: 'a', status: 'pending' }] });
+    expect(await readDevTeamState(root, chatId)).toMatchObject({ resumePhase: 'building' });
+    expect(leadPrompts).toHaveLength(promptCount);
+
+    await interview.resume();
+    await vi.waitFor(() => expect(drivers).toHaveLength(1));
+    expect(interview.snapshot().phase).toBe('building');
+    expect(leadPrompts).toHaveLength(promptCount);
+  });
+
+  it('folds paused review and wrap completions exactly once', async () => {
+    const run = runtime();
+    await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    await complete(drivers[0], 'A done.');
+    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    const reviewPromptCount = leadPrompts.length;
+
+    await run.pause();
+    await settleLead(run, 'Review complete.');
+    expect(run.snapshot()).toMatchObject({ phase: 'paused', summary: 'Review complete.' });
+    expect(await readDevTeamState(root, chatId)).toMatchObject({ resumePhase: 'wrapping' });
+    expect(leadPrompts).toHaveLength(reviewPromptCount);
+
+    await run.resume();
+    expect(run.snapshot().phase).toBe('wrapping');
+    expect(leadPrompts).toHaveLength(reviewPromptCount + 1);
+    await run.pause();
+    await settleLead(run, 'Final wrap.');
+    expect(run.snapshot()).toMatchObject({ phase: 'done', wrap: 'Final wrap.' });
+    expect(leadPrompts).toHaveLength(reviewPromptCount + 1);
+  });
+
   it('persists steering during build and folds it into the next lead turn', async () => {
     const run = runtime();
     await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
@@ -545,6 +718,21 @@ describe('restart, steering, and plan rewrites', () => {
     await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
     expect(leadPrompts.at(-1)).toContain('Please emphasize clarity.');
     expect((await readDevTeamState(root, chatId)).steering).toEqual([]);
+  });
+
+  it('keeps steering durable until the next lead prompt is appended and sent', async () => {
+    const run = runtime();
+    await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    await complete(drivers[0], 'A done.');
+    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await run.handleUserMessage('Keep this instruction.');
+    failLeadSend = true;
+
+    await expect(settleLead(run, 'Review complete.')).rejects.toThrow('lead send failed');
+
+    expect((await readDevTeamState(root, chatId)).steering).toEqual([
+      { ts: expect.any(String), text: 'Keep this instruction.' },
+    ]);
   });
 
   it('keeps completed records when a review rewrites future plan work', async () => {
@@ -573,5 +761,46 @@ describe('restart, steering, and plan rewrites', () => {
     expect(run.snapshot().tasks.find((task) => task.taskId === 'done')).toEqual(completed);
     expect(run.snapshot().tasks.some((task) => task.taskId === 'replacement')).toBe(false);
     expect(run.snapshot().tasks.some((task) => task.taskId === 'future-new')).toBe(true);
+  });
+
+  it('retries malformed or invalid merged review plans without poisoning durable state', async () => {
+    const run = runtime();
+    const future = {
+      id: 'm2',
+      title: 'Second',
+      goal: 'Second outcome',
+      tasks: [{ id: 'future', title: 'Future', roleId: role.id, detail: 'Future' }],
+    };
+    await reachBuilding(run, plan([{ id: 'done', title: 'Done', roleId: role.id, detail: 'Done' }], [future]));
+    await complete(drivers[0], 'Done.');
+    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+
+    const otherRole = { id: 'other', name: 'Other', focus: 'Future only' };
+    await putPlan({
+      version: 1,
+      roles: [otherRole],
+      milestones: [
+        {
+          id: 'replacement',
+          title: 'Replacement',
+          goal: 'Replacement',
+          tasks: [{ id: 'replacement', title: 'Replacement', roleId: otherRole.id, detail: 'Replacement' }],
+        },
+        {
+          ...future,
+          tasks: [{ id: 'future-other', title: 'Future', roleId: otherRole.id, detail: 'Future' }],
+        },
+      ],
+    });
+    await settleLead(run, 'Amended.');
+    expect(run.snapshot()).toMatchObject({ phase: 'reviewing', error: expect.stringMatching(/amendment/i) });
+    expect(await readDevTeamState(root, chatId)).toMatchObject({ retryCount: 1 });
+    expect(run.snapshot().plan?.roles).toEqual([role]);
+    expect(leadPrompts.at(-1)).toMatch(/invalid/i);
+
+    await fsp.writeFile(path.join(runDir(), 'plan.json'), '{ broken');
+    await settleLead(run, 'Corrected.');
+    expect(run.snapshot()).toMatchObject({ phase: 'reviewing', error: expect.stringMatching(/amendment/i) });
+    expect(await readDevTeamState(root, chatId)).toMatchObject({ retryCount: 2 });
   });
 });

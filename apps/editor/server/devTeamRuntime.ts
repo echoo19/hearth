@@ -15,7 +15,6 @@ import type { ChatRecord } from './chatStore.js';
 import {
   approveDevTeamSpec,
   devTeamPlanSchema,
-  readDevTeamPlan,
   readDevTeamSpec,
   readDevTeamState,
   readEngineerRecords,
@@ -94,6 +93,14 @@ export function buildRevisionPrompt(chatId: string, revision: string): string {
     '',
     'Revision request:',
     revision,
+  ].join('\n');
+}
+
+export function buildInterviewResumePrompt(chatId: string): string {
+  return [
+    'Continue the interrupted interview from the conversation context. Ask only for material decisions that are still missing.',
+    `When the brief is ready, write the complete specification to ${runPath(chatId, 'spec.md')} and end the turn.`,
+    'Remain project-appropriate and do not assume a genre, dimension, engine, role, or input method.',
   ].join('\n');
 }
 
@@ -187,6 +194,8 @@ interface ActiveEngineer {
   inputs: Set<string>;
 }
 
+type LeadTurn = 'interview' | 'revision' | 'planning' | 'review' | 'wrap';
+
 const ACTIVE_PHASES = new Set<DevTeamPhase>([
   'interviewing',
   'drafting-spec',
@@ -241,6 +250,7 @@ export class DevTeamRuntime {
   private disposed = false;
   private leadCurrentProse = '';
   private leadFinalProse = '';
+  private leadTurn: LeadTurn | null = null;
   private active = new Map<string, ActiveEngineer>();
   private scheduling: Promise<void> | null = null;
   private scheduleAgain = false;
@@ -280,7 +290,7 @@ export class DevTeamRuntime {
       specVersion,
     };
     await this.persist();
-    await this.sendLead(buildInterviewPrompt(this.options.chatId, initialRequest));
+    await this.sendLead(buildInterviewPrompt(this.options.chatId, initialRequest), 'interview');
   }
 
   async handleUserMessage(text: string): Promise<boolean> {
@@ -292,8 +302,14 @@ export class DevTeamRuntime {
       return true;
     }
     if (this.state.phase === 'spec-review') {
-      await this.sendLead(buildRevisionPrompt(this.options.chatId, message));
+      this.state.phase = 'drafting-spec';
+      await this.persist();
+      await this.sendLead(buildRevisionPrompt(this.options.chatId, message), 'revision');
       return true;
+    }
+    if (this.state.phase === 'interviewing') {
+      this.leadTurn = 'interview';
+      return false;
     }
     if (this.state.phase === 'building' || this.state.phase === 'paused' || this.state.phase === 'reviewing') {
       this.state.steering.push({ ts: this.now(), text: message });
@@ -316,6 +332,7 @@ export class DevTeamRuntime {
       return;
     }
     if (event.type === 'error') {
+      this.leadTurn = null;
       await this.interruptState(event.message);
       return;
     }
@@ -324,37 +341,51 @@ export class DevTeamRuntime {
     const finalProse = this.leadCurrentProse.trim() || this.leadFinalProse;
     this.leadCurrentProse = '';
     this.leadFinalProse = '';
-    if (this.state.phase === 'interviewing' || this.state.phase === 'drafting-spec' || this.state.phase === 'spec-review') {
+    const turn = this.leadTurn;
+    this.leadTurn = null;
+    if (!turn) return;
+    const paused = this.state.phase === 'paused';
+    const phase = paused ? this.state.resumePhase : this.state.phase;
+    if (
+      (turn === 'interview' && (phase === 'interviewing' || phase === 'drafting-spec')) ||
+      (turn === 'revision' && (phase === 'drafting-spec' || phase === 'spec-review'))
+    ) {
       const spec = await readDevTeamSpec(this.options.root, this.options.chatId);
       if (spec !== null) {
-        this.state.phase = 'spec-review';
+        if (paused) this.state.resumePhase = 'spec-review';
+        else this.state.phase = 'spec-review';
         this.state.spec = spec;
         this.state.error = null;
         await this.persist();
       }
       return;
     }
-    if (this.state.phase === 'planning') {
-      await this.finishPlanning();
+    if (turn === 'planning' && phase === 'planning') {
+      await this.finishPlanning(paused);
       return;
     }
-    if (this.state.phase === 'reviewing') {
+    if (turn === 'review' && phase === 'reviewing') {
       this.state.summary = finalProse || null;
-      await this.applyReviewPlan();
+      if (!(await this.applyReviewPlan(paused))) return;
       if (this.state.plan && this.state.currentMilestone + 1 < this.state.plan.milestones.length) {
         this.state.currentMilestone += 1;
-        this.state.phase = 'building';
+        if (paused) this.state.resumePhase = 'building';
+        else this.state.phase = 'building';
         await this.persist();
-        await this.schedule();
+        if (!paused) await this.schedule();
       } else if (this.state.plan) {
-        this.state.phase = 'wrapping';
-        const steering = this.takeSteering();
-        await this.persist();
-        await this.sendLead(buildWrapPrompt(this.state.plan, steering));
+        if (paused) {
+          this.state.resumePhase = 'wrapping';
+          await this.persist();
+        } else {
+          this.state.phase = 'wrapping';
+          await this.persist();
+          await this.sendLeadWithSteering((steering) => buildWrapPrompt(this.state.plan!, steering), 'wrap');
+        }
       }
       return;
     }
-    if (this.state.phase === 'wrapping') {
+    if (turn === 'wrap' && phase === 'wrapping') {
       this.state.wrap = finalProse || null;
       this.state.phase = 'done';
       this.state.resumePhase = null;
@@ -382,7 +413,7 @@ export class DevTeamRuntime {
       agent: this.state.agent,
     };
     await this.persist();
-    await this.sendLead(buildPlanPrompt(this.options.chatId, approved.spec));
+    await this.sendLead(buildPlanPrompt(this.options.chatId, approved.spec), 'planning');
   }
 
   async pause(): Promise<void> {
@@ -411,12 +442,18 @@ export class DevTeamRuntime {
     this.state.error = null;
     await this.persist();
     if (phase === 'building') await this.schedule();
-    else if (phase === 'planning' && this.state.spec) await this.sendLead(buildPlanPrompt(this.options.chatId, this.state.spec));
-    else if (phase === 'reviewing' && this.state.plan) await this.beginReview();
-    else if (phase === 'wrapping' && this.state.plan) {
-      const steering = this.takeSteering();
-      await this.persist();
-      await this.sendLead(buildWrapPrompt(this.state.plan, steering));
+    else if (phase === 'interviewing' || phase === 'drafting-spec') {
+      await this.sendLead(buildInterviewResumePrompt(this.options.chatId), 'interview');
+    } else if (phase === 'planning' && this.state.spec) {
+      if (this.state.retryCount > 0 && this.state.error) {
+        await this.sendLead(buildPlanRepairPrompt(this.options.chatId, this.state.error), 'planning');
+      } else await this.sendLead(buildPlanPrompt(this.options.chatId, this.state.spec), 'planning');
+    } else if (phase === 'reviewing' && this.state.plan) {
+      if (this.state.retryCount > 0 && this.state.error) {
+        await this.sendLead(buildPlanRepairPrompt(this.options.chatId, this.state.error), 'review');
+      } else await this.beginReview();
+    } else if (phase === 'wrapping' && this.state.plan) {
+      await this.sendLeadWithSteering((steering) => buildWrapPrompt(this.state.plan!, steering), 'wrap');
     }
   }
 
@@ -478,6 +515,15 @@ export class DevTeamRuntime {
         }
       }
       await this.persist();
+    } else if (this.state.phase === 'paused') {
+      let changed = false;
+      for (const record of this.state.tasks) {
+        if (record.status !== 'running') continue;
+        record.status = 'interrupted';
+        record.endedAt = this.now();
+        changed = true;
+      }
+      if (changed) await this.persist();
     }
     this.loaded = true;
   }
@@ -519,20 +565,29 @@ export class DevTeamRuntime {
     });
   }
 
-  private async sendLead(prompt: string): Promise<void> {
-    await this.options.appendLeadRecord({
-      role: 'user',
-      ts: this.now(),
-      text: prompt,
-      orchestration: true,
-    });
-    await this.options.sendLead(prompt, this.state.agent);
+  private async sendLead(prompt: string, turn: LeadTurn): Promise<void> {
+    this.leadTurn = turn;
+    try {
+      await this.options.appendLeadRecord({
+        role: 'user',
+        ts: this.now(),
+        text: prompt,
+        orchestration: true,
+      });
+      await this.options.sendLead(prompt, this.state.agent);
+    } catch (error) {
+      this.leadTurn = null;
+      throw error;
+    }
   }
 
-  private takeSteering(): string {
-    const text = this.state.steering.map((record) => record.text).join('\n');
-    this.state.steering = [];
-    return text;
+  private async sendLeadWithSteering(build: (steering: string) => string, turn: LeadTurn): Promise<void> {
+    const count = this.state.steering.length;
+    const steering = this.state.steering.slice(0, count).map((record) => record.text).join('\n');
+    await this.sendLead(build(steering), turn);
+    if (count === 0) return;
+    this.state.steering.splice(0, count);
+    await this.persist();
   }
 
   private async readPlanResult(): Promise<{ plan: DevTeamPlan | null; error: string | null }> {
@@ -546,7 +601,7 @@ export class DevTeamRuntime {
     }
   }
 
-  private async finishPlanning(): Promise<void> {
+  private async finishPlanning(paused = false): Promise<void> {
     const result = await this.readPlanResult();
     if (!result.plan) {
       this.state.retryCount += 1;
@@ -557,8 +612,12 @@ export class DevTeamRuntime {
         await this.persist();
         return;
       }
+      if (paused) {
+        this.state.phase = 'paused';
+        this.state.resumePhase = 'planning';
+      }
       await this.persist();
-      await this.sendLead(buildPlanRepairPrompt(this.options.chatId, result.error ?? 'unknown error'));
+      if (!paused) await this.sendLead(buildPlanRepairPrompt(this.options.chatId, result.error ?? 'unknown error'), 'planning');
       return;
     }
     this.state.plan = result.plan;
@@ -569,20 +628,31 @@ export class DevTeamRuntime {
     this.state.currentMilestone = 0;
     this.state.retryCount = 0;
     this.state.error = null;
-    this.state.phase = 'building';
+    this.state.phase = paused ? 'paused' : 'building';
+    this.state.resumePhase = paused ? 'building' : null;
     await this.persist();
-    await this.schedule();
+    if (!paused) await this.schedule();
   }
 
-  private async applyReviewPlan(): Promise<void> {
-    const candidate = await readDevTeamPlan(this.options.root, this.options.chatId);
-    if (!candidate || !this.state.plan || digest(candidate) === this.state.planDigest) return;
+  private async applyReviewPlan(paused: boolean): Promise<boolean> {
+    const result = await this.readPlanResult();
+    if (!result.plan) return this.rejectReviewPlan(result.error ?? 'unknown error', paused);
+    const candidate = result.plan;
+    if (!this.state.plan || digest(candidate) === this.state.planDigest) {
+      this.state.retryCount = 0;
+      this.state.error = null;
+      return true;
+    }
     const old = this.state.plan;
     const future = candidate.milestones.slice(this.state.currentMilestone + 1);
     const merged: DevTeamPlan = {
       ...candidate,
       milestones: [...old.milestones.slice(0, this.state.currentMilestone + 1), ...future],
     };
+    const validated = devTeamPlanSchema.safeParse(merged);
+    if (!validated.success) {
+      return this.rejectReviewPlan(validated.error.issues.map((issue) => issue.message).join(' '), paused);
+    }
     const existing = new Map(this.state.tasks.map((record) => [record.taskId, record]));
     const wanted = new Set(merged.milestones.flatMap((milestone) => milestone.tasks.map((task) => task.id)));
     const records = merged.milestones.flatMap((milestone) =>
@@ -591,9 +661,30 @@ export class DevTeamRuntime {
     for (const record of this.state.tasks) {
       if (!wanted.has(record.taskId) && (record.status === 'done' || record.status === 'running')) records.push(record);
     }
-    this.state.plan = merged;
+    this.state.plan = validated.data;
     this.state.planDigest = digest(candidate);
     this.state.tasks = records;
+    this.state.retryCount = 0;
+    this.state.error = null;
+    return true;
+  }
+
+  private async rejectReviewPlan(error: string, paused: boolean): Promise<false> {
+    this.state.retryCount += 1;
+    this.state.error = `Plan amendment validation failed: ${error}`;
+    if (this.state.retryCount >= MAX_DEV_TEAM_PLAN_RETRIES) {
+      this.state.phase = 'interrupted';
+      this.state.resumePhase = 'reviewing';
+      await this.persist();
+      return false;
+    }
+    if (paused) {
+      this.state.phase = 'paused';
+      this.state.resumePhase = 'reviewing';
+    } else this.state.phase = 'reviewing';
+    await this.persist();
+    if (!paused) await this.sendLead(buildPlanRepairPrompt(this.options.chatId, this.state.error), 'review');
+    return false;
   }
 
   private async schedule(): Promise<void> {
@@ -619,14 +710,32 @@ export class DevTeamRuntime {
     const milestone = this.state.plan.milestones[this.state.currentMilestone];
     if (!milestone) {
       this.state.phase = 'wrapping';
-      const steering = this.takeSteering();
       await this.persist();
-      await this.sendLead(buildWrapPrompt(this.state.plan, steering));
+      await this.sendLeadWithSteering((steering) => buildWrapPrompt(this.state.plan!, steering), 'wrap');
       return;
     }
 
-    let changed = false;
     const records = new Map(this.state.tasks.map((record) => [record.taskId, record]));
+    if (this.failBlockedTasks(milestone, records)) await this.persist();
+
+    while (this.active.size < this.maxConcurrency && this.state.phase === 'building') {
+      const ready = milestone.tasks.find((task) => this.ready(task, records) && this.scopeAvailable(task));
+      if (!ready) break;
+      await this.dispatch(ready, records.get(ready.id)!);
+    }
+
+    if (this.failBlockedTasks(milestone, records)) await this.persist();
+
+    if (milestone.tasks.every((task) => terminal(records.get(task.id)?.status ?? 'pending')) && this.active.size === 0) {
+      await this.beginReview();
+    }
+  }
+
+  private failBlockedTasks(
+    milestone: DevTeamPlan['milestones'][number],
+    records: Map<string, DevTeamTaskRecord>,
+  ): boolean {
+    let changed = false;
     let propagated: boolean;
     do {
       propagated = false;
@@ -643,17 +752,7 @@ export class DevTeamRuntime {
         }
       }
     } while (propagated);
-    if (changed) await this.persist();
-
-    while (this.active.size < this.maxConcurrency && this.state.phase === 'building') {
-      const ready = milestone.tasks.find((task) => this.ready(task, records) && this.scopeAvailable(task));
-      if (!ready) break;
-      await this.dispatch(ready, records.get(ready.id)!);
-    }
-
-    if (milestone.tasks.every((task) => terminal(records.get(task.id)?.status ?? 'pending')) && this.active.size === 0) {
-      await this.beginReview();
-    }
+    return changed;
   }
 
   private ready(task: DevTeamTask, records: Map<string, DevTeamTaskRecord>): boolean {
@@ -697,8 +796,9 @@ export class DevTeamRuntime {
         void this.persist();
       },
     };
+    let driver: ChatDriver | null = null;
     try {
-      const driver = await this.options.createDriver(request);
+      driver = await this.options.createDriver(request);
       await driver.start(request.sessionId, this.options.root);
       if (record.status !== 'running' || this.disposed || this.state.phase === 'interrupted') {
         driver.stop();
@@ -728,6 +828,12 @@ export class DevTeamRuntime {
       if (task.effort) agent.effort = task.effort;
       driver.send(prompt, Object.keys(agent).length ? agent : undefined);
     } catch (error) {
+      this.active.delete(engineerId);
+      try {
+        driver?.stop();
+      } catch {
+        // The original setup failure is the useful task error.
+      }
       if (record.status !== 'running') return;
       record.status = 'error';
       record.endedAt = this.now();
@@ -742,6 +848,7 @@ export class DevTeamRuntime {
       if (this.active.get(engineerId) !== active) break;
       const event = normalizeChatEvent(rawEvent);
       await this.options.appendEngineerRecord(engineerId, { role: 'agent', ts: this.now(), event });
+      if (this.active.get(engineerId) !== active) return;
       this.options.emitEngineerEvent(engineerId, event);
       if (event.type === 'message-delta') active.currentProse += event.text;
       else if (event.type === 'message-end') {
@@ -773,6 +880,7 @@ export class DevTeamRuntime {
     active: ActiveEngineer,
     status: 'done' | 'error',
   ): Promise<void> {
+    if (this.active.get(engineerId) !== active) return;
     const record = this.taskRecord(active.task.id);
     if (!record) return;
     record.status = status;
@@ -788,9 +896,11 @@ export class DevTeamRuntime {
   private async beginReview(): Promise<void> {
     if (!this.state.plan) return;
     this.state.phase = 'reviewing';
-    const steering = this.takeSteering();
     await this.persist();
-    await this.sendLead(buildReviewPrompt(this.state.plan, this.state.currentMilestone, this.state.tasks, steering));
+    await this.sendLeadWithSteering(
+      (steering) => buildReviewPrompt(this.state.plan!, this.state.currentMilestone, this.state.tasks, steering),
+      'review',
+    );
   }
 
   private async interruptState(error: string): Promise<void> {
@@ -802,6 +912,9 @@ export class DevTeamRuntime {
   }
 
   private async stopActive(error: string | null): Promise<void> {
+    this.leadTurn = null;
+    this.leadCurrentProse = '';
+    this.leadFinalProse = '';
     const phase = this.state.phase;
     const resumePhase = phase === 'paused' ? this.state.resumePhase : phase;
     for (const [engineerId, active] of [...this.active]) {
