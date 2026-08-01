@@ -884,6 +884,23 @@ export function attachWebSocket(
     }
   }
 
+  const unsubscribeBeforeChatDelete = ctx.onBeforeChatDelete(async (root, chatId) => {
+    const key = chatKey(root, chatId);
+    await enqueueChatLane(key, async () => {
+      const runtime = devTeamRuntimes.get(key);
+      if (runtime) {
+        await runtime.dispose();
+        if (devTeamRuntimes.get(key) === runtime) devTeamRuntimes.delete(key);
+      }
+      const session = chatSessions.get(key);
+      if (session) {
+        retireChatSession(session, null);
+        await waitForDriverClose(session);
+      }
+      devTeamLeadAttachments.delete(key);
+    });
+  });
+
   function providerHandoff(chatId: string, text: string): string {
     return [
       '<hearth-provider-handoff>',
@@ -2160,6 +2177,7 @@ export function attachWebSocket(
   });
 
   httpServer.on('close', () => {
+    unsubscribeBeforeChatDelete();
     ctx.exportBus.off('frame', onExportFrame);
     ctx.testerBus.off('frame', onTesterFrame);
     providerBus.off('changed', onProviderChange);

@@ -556,6 +556,7 @@ describe('engineer scheduling', () => {
     await complete(drivers[2], 'B done.');
     await complete(drivers[3], 'D done.');
     await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await vi.waitFor(() => expect(leadPrompts.at(-1)).toContain('Review milestone 1'));
     expect(requests.some((request) => request.task.id === 'later')).toBe(false);
 
     await settleLead(run, 'First milestone accepted.');
