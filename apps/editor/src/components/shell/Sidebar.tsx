@@ -3,7 +3,7 @@
  * and who this Hearth is signed in as.
  *
  * Top to bottom: a drag strip (which on macOS is also where the traffic lights
- * live), two general acts — New chat, Skills — then the two lists the app is
+ * live), conversation starts and global tools, then the two lists the app is
  * actually about, Projects and Chats, then what this machine can reach, and
  * pinned at the bottom an update waiting to install and the account.
  *
@@ -12,7 +12,7 @@
  * derived from its path until someone picks otherwise — because a list of six
  * games is otherwise six near-identical strings. Starting another one is
  * offered on that list's own heading rather than as a third general act: it
- * belongs to Projects, and the two acts above stay two.
+ * belongs to Projects rather than the global action strip.
  *
  * Chats is GLOBAL, which is why each row wears its project's mark: a
  * conversation is the unit of work and which game it belongs to is the first
@@ -104,7 +104,7 @@ const MAX_RECENT_CHATS = 20;
 export const CONVERSATION_KIND_ICON: Record<ChatKind, string> = {
   chat: 'compose',
   terminal: 'script',
-  devteam: 'sparkle',
+  devteam: 'team',
 };
 
 export const CONVERSATION_KIND_LABEL: Record<ChatKind, string> = {
@@ -645,6 +645,7 @@ export function Sidebar() {
   const recentChatsLoaded = useApp((s) => s.recentChatsLoaded);
   const activeChatId = useApp((s) => s.activeChatId);
   const newChat = useApp((s) => s.newChat);
+  const newDevTeam = useApp((s) => s.newDevTeam);
   const openTerminal = useApp((s) => s.openTerminal);
   const openRecentChat = useApp((s) => s.openRecentChat);
   const renameChat = useApp((s) => s.renameChat);
@@ -864,8 +865,8 @@ export function Sidebar() {
         </div>
       )}
 
-      {/* Two general acts, the way every chat app opens: start something, and
-          the one library that is about you rather than about a project. What
+      {/* Conversation starts and the tools that are about you rather than one
+          project. What
           the app can reach lives further down; what it is doing lives in the
           column to the right. */}
       <div className="sidebar-nav">
@@ -875,6 +876,13 @@ export function Sidebar() {
           collapsed={collapsed}
           active={place === 'new-chat'}
           onClick={newChat}
+        />
+        <NavRow
+          icon="team"
+          label="New dev team"
+          collapsed={collapsed}
+          disabledReason={projectPath === null ? 'Open a project first. The dev team works in the project folder.' : undefined}
+          onClick={newDevTeam}
         />
         {/* The second door, beside the first rather than buried in a menu
             inside a conversation. A conversation is a chat or a terminal

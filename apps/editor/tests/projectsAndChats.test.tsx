@@ -71,6 +71,7 @@ describe('the general acts', () => {
   it('are the only ones the rail offers', () => {
     render(<Sidebar />);
     expect(screen.getByRole('button', { name: 'New chat' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'New dev team' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Skills' })).toBeTruthy();
     // Offered with nothing open. The history of playtests spans every game,
     // so gating the row on an open folder meant reaching yesterday's run
@@ -90,11 +91,12 @@ describe('the general acts', () => {
     const nav = container.querySelector('.sidebar-nav');
     expect(nav).toBeTruthy();
     expect(within(nav as HTMLElement).queryByRole('button', { name: /New project/ })).toBeNull();
-    expect(within(nav as HTMLElement).getAllByRole('button')).toHaveLength(4);
+    expect(within(nav as HTMLElement).getAllByRole('button')).toHaveLength(5);
     // Both kinds of conversation are started HERE, side by side. A terminal
     // used to be reached through the composer's model menu, which meant
     // picking one silently replaced the chat you were reading with a shell.
     expect(within(nav as HTMLElement).getByRole('button', { name: 'New chat' })).toBeTruthy();
+    expect(within(nav as HTMLElement).getByRole('button', { name: 'New dev team' })).toBeTruthy();
     expect(within(nav as HTMLElement).getByRole('button', { name: 'New terminal' })).toBeTruthy();
 
     const head = container.querySelector('.sidebar-section-head');
@@ -217,6 +219,24 @@ describe('New terminal', () => {
   });
 });
 
+describe('New dev team', () => {
+  it('starts a dev team from the rail when a project is open', () => {
+    const newDevTeam = vi.fn();
+    resetStore({ projectPath: PROJECT, projectName: 'lighthouse', newDevTeam });
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole('button', { name: 'New dev team' }));
+    expect(newDevTeam).toHaveBeenCalledTimes(1);
+  });
+
+  it('is offered on the project screen beside the other conversation kinds', async () => {
+    const newDevTeam = vi.fn();
+    resetStore({ projectPath: PROJECT, projectName: 'lighthouse', chatsLoaded: true, newDevTeam });
+    render(<ProjectHome />);
+    fireEvent.click(await screen.findByRole('button', { name: 'New dev team' }));
+    expect(newDevTeam).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('what a project looks like', () => {
   it('is never blank — a mark and a colour exist before anyone picks one', () => {
     const derived = resolveIdentity(PROJECT);
@@ -323,10 +343,11 @@ describe('the project screen', () => {
    * read as a footnote to the other. They are the same decision asked once, so
    * they are two buttons of equal weight and neither is a composer.
    */
-  it('offers both kinds of conversation, and no composer of its own', async () => {
+  it('offers every conversation kind, and no composer of its own', async () => {
     resetStore({ projectPath: PLACE, projectName: 'Café Adventure', chatsLoaded: true });
     const { container } = render(<ProjectHome />);
     expect(await screen.findByRole('button', { name: 'New chat' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'New dev team' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'New terminal' })).toBeTruthy();
     // The composer belongs to the blank surface New chat hands off to. Two
     // composers that start the same thing was the duplication this removed.

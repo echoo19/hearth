@@ -15,6 +15,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { EMPTY_DRAFT, useApp, type ComposerDraft } from '../../store';
 import { Tooltip } from '../ui/Tooltip';
 import { Icon } from '../ui';
+import { Button } from '../ui/Button';
 import { MenuButton } from '../ui/Menu';
 import { EffortSelector, ModelSelector } from './ModelSelector';
 import { PermissionSelector } from './PermissionSelector';
@@ -135,6 +136,7 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
   // Home's submit is a round trip (create the folder, open it, then send), and
   // it must not be startable twice from one impatient double-press.
   const [starting, setStarting] = useState(false);
+  const [homeKind, setHomeKind] = useState<'chat' | 'devteam'>('chat');
   const [dropping, setDropping] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -259,9 +261,12 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
     setStarting(true);
     // The prompt stays in the box until it is known to have gone somewhere: if
     // creating the folder fails, losing what was typed is the worst outcome.
-    void Promise.resolve(useApp.getState().startFromHome(value, files))
+    void Promise.resolve(useApp.getState().startFromHome(value, files, homeKind))
       .then((result) => {
-        if (result?.ok) clear(files);
+        if (result?.ok) {
+          clear(files);
+          setHomeKind('chat');
+        }
       })
       .finally(() => setStarting(false));
   }
@@ -394,6 +399,17 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
               the turn, before it goes. Only on the blank surface — inside a
               conversation the answer is already settled. */}
           {picksProject && <ProjectSelector />}
+          {picksProject && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon="team"
+              aria-pressed={homeKind === 'devteam'}
+              onClick={() => setHomeKind((kind) => (kind === 'chat' ? 'devteam' : 'chat'))}
+            >
+              Dev team
+            </Button>
+          )}
           {blocked ? <span className="composer-note">{blocked}</span> : <span className="composer-row-gap" />}
           {/* What the agent may do without asking, and who answers. In that
               order, left to right: the model pill keeps the place beside Send

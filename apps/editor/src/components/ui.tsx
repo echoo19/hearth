@@ -344,6 +344,15 @@ const ICON_PATHS: Record<string, ReactNode> = {
       <path d="M9.2 7.2l.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5z" />
     </>
   ),
+  // Three collaborators: a team conversation, distinct from one agent or a skill.
+  team: (
+    <>
+      <circle cx="6" cy="3.5" r="1.5" />
+      <circle cx="2.7" cy="5" r="1.1" />
+      <circle cx="9.3" cy="5" r="1.1" />
+      <path d="M3.3 9.7c.2-1.8 1.2-2.8 2.7-2.8s2.5 1 2.7 2.8M1 9.3c.1-1.3.8-2.1 1.9-2.1.5 0 .9.1 1.2.4M11 9.3c-.1-1.3-.8-2.1-1.9-2.1-.5 0-.9.1-1.2.4" />
+    </>
+  ),
   cross: <path d="M3 3l6 6M9 3l-6 6" />,
   chevron: <path d="M4.5 2.5L8 6l-3.5 3.5" />,
   entity: <rect x="2.5" y="2.5" width="7" height="7" rx="1" />,

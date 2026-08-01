@@ -56,6 +56,7 @@ import type {
   ChatProviderStatus,
   ChatRecord,
   ChatSummary,
+  DevTeamSnapshot,
   ConsoleEntry,
   ConsoleLevel,
   ConsoleSource,
@@ -220,6 +221,10 @@ export interface AppState {
 
   // --- Conversation ---------------------------------------------------------
   messages: ChatMessage[];
+  /** The latest authoritative runtime snapshot for the open dev-team chat. */
+  devTeam: DevTeamSnapshot | null;
+  /** Existing chat folds, one per Hearth-run engineer. */
+  devTeamLanes: Record<string, ChatMessage[]>;
   /** True from send until the turn's `done`/`error` — gates the composer. */
   chatBusy: boolean;
   /**
@@ -462,6 +467,7 @@ export interface AppState {
     path: string,
     prompt?: string,
     conversation?: 'latest' | 'new',
+    newKind?: 'chat' | 'devteam',
   ): Promise<{ ok: boolean; error?: string }>;
   closeWorkspace(): void;
   /** Send a turn. `attachments` are files the composer's tray was holding. */
@@ -533,6 +539,8 @@ export interface AppState {
    * is required — see `newProject` for the other half of that rule.
    */
   newChat(): void;
+  /** Start a new Hearth-orchestrated team conversation in the open project. */
+  newDevTeam(): void;
   /**
    * Begin a new game. There is no name field: Hearth's projects are made by
    * describing one, so this returns to the surface where the first message
@@ -554,7 +562,27 @@ export interface AppState {
    * it, start a conversation, and send. The whole point of Home — a project
    * is a consequence of talking, not a prerequisite for it.
    */
-  startFromHome(text: string, attachments?: readonly PendingAttachment[]): Promise<{ ok: boolean; error?: string }>;
+  startFromHome(
+    text: string,
+    attachments?: readonly PendingAttachment[],
+    kind?: 'chat' | 'devteam',
+  ): Promise<{ ok: boolean; error?: string }>;
+  approveDevTeamSpec(): void;
+  pauseDevTeam(): void;
+  resumeDevTeam(): void;
+  stopDevTeam(): void;
+  approveEngineer(
+    engineerId: string,
+    approvalId: string,
+    decision: ApprovalDecision,
+    choiceId?: string,
+  ): void;
+  answerEngineerInput(
+    engineerId: string,
+    inputId: string,
+    action: InputAction,
+    answers?: Record<string, InputAnswer>,
+  ): boolean;
   /** Subscribe to the main process's update-ready signal. Returns unsubscribe. */
   watchUpdates(): () => void;
   /** Quit and install the downloaded update (the rail's banner button). */
@@ -859,7 +887,7 @@ export function readConversationMode(projectPath: string): ConversationMode | nu
   } catch {
     return null; // private mode: fall back to the derived default
   }
-  return raw === 'chat' || raw === 'terminal' ? raw : null;
+  return raw === 'chat' || raw === 'terminal' || raw === 'devteam' ? raw : null;
 }
 
 function writeConversationMode(projectPath: string, mode: ConversationMode): void {
@@ -934,7 +962,11 @@ function writeGameMuted(muted: boolean): void {
 // without a socket or a React tree.
 // ---------------------------------------------------------------------------
 
-export function makeUserMessage(text: string, attachments?: readonly ChatAttachmentView[]): ChatMessage {
+export function makeUserMessage(
+  text: string,
+  attachments?: readonly ChatAttachmentView[],
+  orchestration = false,
+): ChatMessage {
   return {
     id: `m${++messageId}`,
     role: 'user',
@@ -943,6 +975,7 @@ export function makeUserMessage(text: string, attachments?: readonly ChatAttachm
     parts: text === '' ? [] : [{ kind: 'text', text }],
     streaming: false,
     ...(attachments && attachments.length > 0 ? { attachments: [...attachments] } : {}),
+    ...(orchestration ? { orchestration: true } : {}),
   };
 }
 
@@ -1450,7 +1483,10 @@ export function replayTranscript(records: readonly ChatRecord[], project = ''): 
   let messages: ChatMessage[] = [];
   for (const record of records) {
     if (record.role === 'user') {
-      messages = [...messages, makeUserMessage(record.text, replayAttachments(record.attachments, project))];
+      messages = [
+        ...messages,
+        makeUserMessage(record.text, replayAttachments(record.attachments, project), record.orchestration === true),
+      ];
       continue;
     }
     const last = messages[messages.length - 1];
@@ -1623,11 +1659,13 @@ export const useApp = create<AppState>((set, get) => {
       chatBusy: false,
       chatError: null,
       queued: [],
+      devTeam: null,
+      devTeamLanes: {},
     });
-    applyConversationMode('terminal');
+    applyConversationMode(kind);
     requestChat({
       type: 'chat-new',
-      kind: 'terminal',
+      kind,
       ...(title === undefined ? {} : { title }),
     });
   }
@@ -1781,6 +1819,8 @@ export const useApp = create<AppState>((set, get) => {
         set({
           activeChatId: frame.chat.id,
           messages: replayTranscript(frame.records, get().projectPath ?? ''),
+          devTeam: null,
+          devTeamLanes: {},
           chatBusy: false,
           chatDriver: null,
           slashCommands: [],
@@ -1800,6 +1840,30 @@ export const useApp = create<AppState>((set, get) => {
         // here survived a dropped socket rather than belonging to somewhere
         // else. The connection is back; send it.
         drainQueue();
+        return;
+      case 'devteam-state':
+        if (
+          frame.chatId !== get().activeChatId ||
+          chatIntent?.type !== 'chat-open' ||
+          chatIntent.chatId !== frame.chatId
+        ) return;
+        set({ devTeam: frame.state });
+        return;
+      case 'devteam-event':
+        if (
+          frame.chatId !== get().activeChatId ||
+          chatIntent?.type !== 'chat-open' ||
+          chatIntent.chatId !== frame.chatId
+        ) return;
+        set((state) => {
+          const lane = state.devTeamLanes[frame.engineerId] ?? [makeAgentMessage()];
+          return {
+            devTeamLanes: {
+              ...state.devTeamLanes,
+              [frame.engineerId]: applyChatEvent(lane, normalizeChatEvent(frame.event)),
+            },
+          };
+        });
         return;
       case 'chat-event': {
         // An event belongs to the conversation it came from, and only recently
@@ -2004,6 +2068,8 @@ export const useApp = create<AppState>((set, get) => {
     wsStatus: 'disconnected',
 
     messages: [],
+    devTeam: null,
+    devTeamLanes: {},
     chatBusy: false,
     queued: [],
     chatDriver: null,
@@ -2078,7 +2144,7 @@ export const useApp = create<AppState>((set, get) => {
       }
     },
 
-    async openWorkspace(path, prompt, conversation = 'latest') {
+    async openWorkspace(path, prompt, conversation = 'latest', newKind = 'chat') {
       const res = await apiOpenWorkspace(path);
       if (!res.ok || !res.info) return { ok: false, error: res.error ?? 'Could not open that folder.' };
       const info: WorkspaceInfo = res.info;
@@ -2130,6 +2196,8 @@ export const useApp = create<AppState>((set, get) => {
         chats: [],
         chatsLoaded: false,
         activeChatId: null,
+        devTeam: null,
+        devTeamLanes: {},
         queued: [],
         journalFeed: [],
         game: EMPTY_GAME,
@@ -2193,7 +2261,9 @@ export const useApp = create<AppState>((set, get) => {
         // NEW-CHAT SURFACE, which is a different thing from asking the server
         // for an empty conversation. Opening a project has to land on a real
         // one, or the socket has nothing to send into.
-        if (conversation === 'new' || chats.length === 0) requestChat({ type: 'chat-new' });
+        if (conversation === 'new' || chats.length === 0) {
+          requestChat({ type: 'chat-new', ...(newKind === 'devteam' ? { kind: newKind } : {}) });
+        }
         else get().openChat(chats[0].id);
       }
       return { ok: true };
@@ -2233,6 +2303,8 @@ export const useApp = create<AppState>((set, get) => {
         chats: [],
         chatsLoaded: false,
         activeChatId: null,
+        devTeam: null,
+        devTeamLanes: {},
         queued: [],
         journalFeed: [],
         game: EMPTY_GAME,
@@ -2613,10 +2685,16 @@ export const useApp = create<AppState>((set, get) => {
         // game rather than on whatever was asked for.
         narrowTab: 'chat',
         queued: [],
+        devTeam: null,
+        devTeamLanes: {},
       });
       // A new chat is a chat. Leaving the column in the terminal would show a
       // shell to someone who just asked for a blank page to write on.
       applyConversationMode('chat');
+    },
+
+    newDevTeam() {
+      startConversationOfKind('devteam');
     },
 
     setComposeTarget(path) {
@@ -2702,7 +2780,7 @@ export const useApp = create<AppState>((set, get) => {
       set({ projectView: false, screen: null, narrowTab: 'chat' });
       if (get().activeChatId === chatId) return;
       // Anything still queued was meant for the conversation being left.
-      set({ chatBusy: false, chatError: null, queued: [] });
+      set({ chatBusy: false, chatError: null, queued: [], devTeam: null, devTeamLanes: {} });
       requestChat({ type: 'chat-open', chatId });
     },
 
@@ -2783,7 +2861,7 @@ export const useApp = create<AppState>((set, get) => {
       get().openChat(entry.id);
     },
 
-    async startFromHome(text, attachments) {
+    async startFromHome(text, attachments, kind = 'chat') {
       const trimmed = text.trim();
       const files = attachments ?? [];
       if ((trimmed === '' && files.length === 0) || get().homeBusy) return { ok: false };
@@ -2818,7 +2896,7 @@ export const useApp = create<AppState>((set, get) => {
         // `activeChatId`, and the chat it lands in is the new folder's.
         let leaving: string | null = null;
         if (get().projectPath !== root) {
-          const opened = await get().openWorkspace(root, undefined, 'new');
+          const opened = await get().openWorkspace(root, undefined, 'new', kind);
           if (!opened.ok) {
             return fail(opened.error ?? 'Could not open that project.');
           }
@@ -2829,15 +2907,12 @@ export const useApp = create<AppState>((set, get) => {
           // open underneath the blank surface, so it is named here rather than
           // inferred from the state.
           leaving = get().activeChatId;
-          requestChat({ type: 'chat-new' });
+          requestChat({ type: 'chat-new', kind });
         }
-        // The first thing this folder ever did was receive a chat message, so
-        // that is the mode it opens in — the settle heuristic must not park a
-        // key-less folder in the terminal over the top of the words just sent.
-        // The conversation asked for above is a chat, so this only has to move
-        // the column; asking through setConversationMode would try to start a
-        // second one.
-        applyConversationMode('chat');
+        // The first thing this folder did was receive this kind of message, so
+        // that is the mode it opens in. This only moves the column: asking
+        // through setConversationMode would try to start a second conversation.
+        applyConversationMode(kind);
         // The send needs the conversation the open just started, not merely
         // the socket. Wait for it; if it never comes, hand the words to the
         // composer instead of dropping them on the floor.
@@ -2862,6 +2937,73 @@ export const useApp = create<AppState>((set, get) => {
       } finally {
         set({ homeBusy: false });
       }
+    },
+
+    approveDevTeamSpec() {
+      get().sendFrame({ type: 'devteam-approve-spec' });
+    },
+
+    pauseDevTeam() {
+      get().sendFrame({ type: 'devteam-pause' });
+    },
+
+    resumeDevTeam() {
+      get().sendFrame({ type: 'devteam-resume' });
+    },
+
+    stopDevTeam() {
+      get().sendFrame({ type: 'devteam-stop' });
+    },
+
+    approveEngineer(engineerId, approvalId, decision, choiceId) {
+      get().sendFrame({
+        type: 'devteam-engineer-approval',
+        engineerId,
+        approvalId,
+        decision,
+        ...(choiceId ? { choiceId } : {}),
+      });
+      set((state) => ({
+        devTeamLanes: {
+          ...state.devTeamLanes,
+          [engineerId]: (state.devTeamLanes[engineerId] ?? []).map((message) =>
+            message.parts.some((part) => part.kind === 'approval' && part.id === approvalId && part.decision === null)
+              ? {
+                  ...message,
+                  parts: message.parts.map((part) =>
+                    part.kind === 'approval' && part.id === approvalId ? { ...part, decision } : part,
+                  ),
+                }
+              : message,
+          ),
+        },
+      }));
+    },
+
+    answerEngineerInput(engineerId, inputId, action, answers) {
+      if (!get().sendFrame({
+        type: 'devteam-engineer-input',
+        engineerId,
+        inputId,
+        action,
+        ...(action === 'submit' && answers ? { answers } : {}),
+      })) return false;
+      set((state) => ({
+        devTeamLanes: {
+          ...state.devTeamLanes,
+          [engineerId]: (state.devTeamLanes[engineerId] ?? []).map((message) =>
+            message.parts.some((part) => part.kind === 'input' && part.id === inputId && part.resolution === null)
+              ? {
+                  ...message,
+                  parts: message.parts.map((part) =>
+                    part.kind === 'input' && part.id === inputId ? { ...part, resolution: action } : part,
+                  ),
+                }
+              : message,
+          ),
+        },
+      }));
+      return true;
     },
 
     watchUpdates() {
@@ -2984,7 +3126,7 @@ export const useApp = create<AppState>((set, get) => {
       // by disabling its Terminal tab without one; the refusal has to live
       // here now, or aiming the column at Home lands on a terminal that cannot
       // start and cannot explain itself.
-      if (mode === 'terminal' && get().projectPath === null) return;
+      if (mode !== 'chat' && get().projectPath === null) return;
       const active = activeConversation();
       // Nothing open to contradict (Home, a window that has not landed in a
       // conversation yet), or the open one is already the kind being asked

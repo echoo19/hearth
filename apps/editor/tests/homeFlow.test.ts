@@ -87,7 +87,13 @@ class FakeSocket {
       const ts = new Date().toISOString();
       const reply = JSON.stringify({
         type: 'chat-opened',
-        chat: { id: `chat-${FakeSocket.nextChatId++}`, title: 'New chat', createdAt: ts, updatedAt: ts },
+        chat: {
+          id: `chat-${FakeSocket.nextChatId++}`,
+          title: frame.kind === 'devteam' ? 'Dev team' : 'New chat',
+          kind: frame.kind ?? 'chat',
+          createdAt: ts,
+          updatedAt: ts,
+        },
         records: [],
       });
       setTimeout(() => this.onmessage?.({ data: reply }), 0);
@@ -198,6 +204,15 @@ describe('startFromHome', () => {
     const types = frames().map((frame) => frame.type);
     expect(types.indexOf('chat-new')).toBeGreaterThanOrEqual(0);
     expect(types.indexOf('chat-new')).toBeLessThan(types.indexOf('chat-send'));
+  });
+
+  it('creates the requested dev team conversation before the first send', async () => {
+    standInForTheDialog();
+    const result = await useApp.getState().startFromHome('make a platformer', [], 'devteam');
+
+    expect(result.ok).toBe(true);
+    expect(frames().find((frame) => frame.type === 'chat-new')).toMatchObject({ kind: 'devteam' });
+    expect(useApp.getState().conversationMode).toBe('devteam');
   });
 
   it('carries the standing model choice on the turn', async () => {

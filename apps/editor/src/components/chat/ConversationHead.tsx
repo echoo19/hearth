@@ -7,7 +7,7 @@
  * the column belongs to what is being said in it.
  *
  * There used to be a Chat / Terminal switch here, and it was a lie: a
- * conversation is one or the other for its whole life (server/chatStore.ts
+ * conversation keeps its kind for its whole life (server/chatStore.ts
  * writes `kind` once, at creation), so flipping the column moved you to a
  * different surface without moving you to a different conversation. The choice
  * is made where it belongs now — when a conversation is STARTED: New chat and
@@ -161,8 +161,14 @@ function BackToProject() {
  * is a fact about the conversation rather than a setting on it. To have the
  * other kind, start one.
  */
+const CONVERSATION_HEADER_LABEL: Record<ConversationMode, string> = {
+  chat: 'Chat',
+  terminal: 'Terminal',
+  devteam: 'Dev team',
+};
+
 export function conversationKindLabel(mode: ConversationMode): string {
-  return mode === 'terminal' ? 'Terminal' : 'Chat';
+  return CONVERSATION_HEADER_LABEL[mode];
 }
 
 export function ConversationHead() {

@@ -182,6 +182,7 @@ export function ProjectHome() {
   const closeWorkspace = useApp((s) => s.closeWorkspace);
   const openTerminal = useApp((s) => s.openTerminal);
   const newChat = useApp((s) => s.newChat);
+  const newDevTeam = useApp((s) => s.newDevTeam);
   const setComposeTarget = useApp((s) => s.setComposeTarget);
   const sessions = useApp((s) => s.tester.sessions);
   // "Never played" and "not asked yet" are different sentences. See below.
@@ -252,7 +253,7 @@ export function ProjectHome() {
               </span>
             </header>
 
-            {/* The two ways to start something here, as one row of equals.
+            {/* The conversation kinds start here as one row of equals.
 
                 This used to be a composer with a lone New terminal button
                 floating under it, which read as one real control and one
@@ -269,6 +270,9 @@ export function ProjectHome() {
             <div className="proj-start">
               <Button className="proj-start-act" icon="compose" onClick={newChat}>
                 New chat
+              </Button>
+              <Button className="proj-start-act" icon="team" onClick={newDevTeam}>
+                New dev team
               </Button>
               <Button className="proj-start-act" icon="script" onClick={openTerminal}>
                 New terminal

@@ -69,7 +69,7 @@ describe('the home variant — sending is what creates the project', () => {
     type('a top-down space shooter');
     fireEvent.keyDown(box(), { key: 'Enter' });
 
-    expect(startFromHome).toHaveBeenCalledWith('a top-down space shooter', []);
+    expect(startFromHome).toHaveBeenCalledWith('a top-down space shooter', [], 'chat');
     expect(sendChat).not.toHaveBeenCalled();
   });
 
@@ -77,7 +77,7 @@ describe('the home variant — sending is what creates the project', () => {
     render(<Composer variant="home" />);
     type('snake, but the walls wrap');
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-    expect(startFromHome).toHaveBeenCalledWith('snake, but the walls wrap', []);
+    expect(startFromHome).toHaveBeenCalledWith('snake, but the walls wrap', [], 'chat');
   });
 
   it('does not send an empty or whitespace-only box', () => {
@@ -119,6 +119,31 @@ describe('the home variant — sending is what creates the project', () => {
     type('a racing game');
     fireEvent.keyDown(box(), { key: 'Enter' });
     expect(startFromHome).toHaveBeenCalledTimes(1);
+  });
+
+  it('selects dev team without losing the draft and resets only after a successful send', async () => {
+    startFromHome.mockResolvedValueOnce({ ok: false }).mockResolvedValueOnce({ ok: true });
+    render(<Composer variant="home" />);
+    type('a puzzle game about tides');
+
+    const toggle = screen.getByRole('button', { name: 'Dev team' });
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(box().value).toBe('a puzzle game about tides');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(startFromHome).toHaveBeenLastCalledWith('a puzzle game about tides', [], 'devteam'));
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(box().value).toBe('a puzzle game about tides');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(toggle.getAttribute('aria-pressed')).toBe('false'));
+    expect(box().value).toBe('');
+  });
+
+  it('does not offer the new-conversation toggle inside an existing chat', () => {
+    render(<Composer />);
+    expect(screen.queryByRole('button', { name: 'Dev team' })).toBeNull();
   });
 });
 

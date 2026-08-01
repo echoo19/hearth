@@ -19,7 +19,7 @@
  * jsdom because groupChats lives in the project screen's module, which reaches
  * the store on import; the assertions themselves are DOM-free.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -42,6 +42,13 @@ import {
 import { conversationKind } from '../src/store';
 import { groupChats } from '../src/components/project/ProjectHome';
 import { CONVERSATION_KIND_ICON, CONVERSATION_KIND_LABEL, mergeRecentChats } from '../src/components/shell/Sidebar';
+
+vi.mock('../src/components/agent/Terminal', () => ({
+  Terminal: () => null,
+  resendTerminalSizeThenFocus: () => {},
+}));
+
+import { conversationKindLabel } from '../src/components/chat/ConversationHead';
 
 let root: string;
 
@@ -202,6 +209,7 @@ describe('the kind cannot be changed once the record exists', () => {
 describe('conversationKind', () => {
   it('answers with what the record says', () => {
     expect(conversationKind({ kind: 'terminal' })).toBe('terminal');
+    expect(conversationKind({ kind: 'devteam' })).toBe('devteam');
     expect(conversationKind({ kind: 'chat' })).toBe('chat');
   });
 
@@ -271,12 +279,18 @@ describe('the rail’s conversation list', () => {
 
 describe('how a kind is drawn', () => {
   it('gives each kind its own glyph, or the mark says nothing', () => {
-    expect(CONVERSATION_KIND_ICON.chat).not.toBe(CONVERSATION_KIND_ICON.terminal);
+    expect(new Set(Object.values(CONVERSATION_KIND_ICON))).toHaveLength(3);
+    expect(CONVERSATION_KIND_ICON.devteam).toBe('team');
   });
 
   it('gives each glyph a name, so the kind is never icon-only', () => {
     expect(CONVERSATION_KIND_LABEL.chat.trim()).not.toBe('');
     expect(CONVERSATION_KIND_LABEL.terminal.trim()).not.toBe('');
     expect(CONVERSATION_KIND_LABEL.devteam).toBe('Dev team');
+  });
+
+  it('names every conversation mode in the conversation header', () => {
+    expect(['chat', 'terminal', 'devteam'].map((kind) => conversationKindLabel(kind as 'chat' | 'terminal' | 'devteam')))
+      .toEqual(['Chat', 'Terminal', 'Dev team']);
   });
 });

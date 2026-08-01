@@ -498,6 +498,8 @@ export interface ChatMessage {
   startedAt?: number;
   /** What was attached to this turn. User turns only. */
   attachments?: ChatAttachmentView[];
+  /** Hearth authored this lead prompt for a dev-team run, not the person. */
+  orchestration?: boolean;
 }
 
 /**
