@@ -83,7 +83,13 @@ import {
   type ChatRecord,
   type ChatSummary,
 } from './chatStore.js';
-import { appendEngineerRecord, readDevTeamState, readEngineerRecords, type DevTeamSnapshot } from './devTeamStore.js';
+import {
+  appendEngineerRecord,
+  readDevTeamState,
+  readEngineerRecords,
+  writeDevTeamState,
+  type DevTeamSnapshot,
+} from './devTeamStore.js';
 import { DevTeamRuntime, type DevTeamEngineerRequest } from './devTeamRuntime.js';
 import { type ProjectServerContext, resolveToolPaths } from './projectServer.js';
 import { PtyManager, ScrollbackBuffer, type PtyBackend, type PtyHandle } from './ptyManager.js';
@@ -419,6 +425,8 @@ export function attachWebSocket(
         permissionMode?: PermissionMode | null;
       },
     ) => Promise<ChatDriver>;
+    /** Test-only gate after durable replay capture and before frames are sent. */
+    beforeDevTeamReplaySend?: () => Promise<void>;
   },
 ): void {
   // An explicit ceiling rather than ws's silent 100 MiB default: attachments
@@ -450,7 +458,6 @@ export function attachWebSocket(
   const devTeamLeadAttachments = new Map<string, readonly ChatAttachment[]>();
   /** A replay in flight supersedes live frames; disk will contain them. */
   const socketOpeningChat = new Map<WebSocket, string>();
-  const socketOpeningSnapshot = new Map<WebSocket, { chatId: string; signature: string }>();
   const socketChat = new Map<WebSocket, string>();
 
   /**
@@ -487,6 +494,19 @@ export function attachWebSocket(
     chatLanes.set(key, tail);
     void tail.then(() => {
       if (chatLanes.get(key) === tail) chatLanes.delete(key);
+    });
+    return run;
+  }
+
+  /** Serializes durable dev-team artifacts with their replay and publication. */
+  const devTeamLanes = new Map<string, Promise<unknown>>();
+  function enqueueDevTeamLane<T>(key: string, op: () => Promise<T>): Promise<T> {
+    const prev = devTeamLanes.get(key) ?? Promise.resolve();
+    const run = prev.then(op, op);
+    const tail = run.catch(() => undefined);
+    devTeamLanes.set(key, tail);
+    void tail.then(() => {
+      if (devTeamLanes.get(key) === tail) devTeamLanes.delete(key);
     });
     return run;
   }
@@ -953,15 +973,8 @@ export function attachWebSocket(
   }
 
   function broadcastDevTeamState(root: string, chatId: string, state: DevTeamSnapshot): void {
-    const frame = { type: 'devteam-state', chatId, state } satisfies WsFrame;
-    const signature = JSON.stringify(state);
-    for (const socket of watchersOf(root, chatId)) {
-      if (socketOpeningChat.get(socket) === chatId) {
-        const replay = socketOpeningSnapshot.get(socket);
-        if (!replay || (replay.chatId === chatId && replay.signature === signature)) continue;
-      }
-      send(socket, frame);
-    }
+    const sockets = watchersOf(root, chatId).filter((socket) => socketOpeningChat.get(socket) !== chatId);
+    broadcast(new Set(sockets), { type: 'devteam-state', chatId, state });
   }
 
   function broadcastDevTeamEvent(root: string, chatId: string, engineerId: string, event: ChatEvent): void {
@@ -1022,20 +1035,21 @@ export function attachWebSocket(
           throw new Error(DELETED_CHAT_MESSAGE);
         }
       },
-      appendEngineerRecord: (engineerId, record) => appendEngineerRecord(root, chatId, engineerId, record),
-      // Runtime persistence and engineer transcript append happen before these
-      // callbacks. Queue only the live notification on the conversation lane,
-      // so chat-open can send snapshot + replay without an event falling into
-      // the gap between reading and subscribing.
-      emitSnapshot: (state) => {
-        detach(
-          enqueueChatLane(key, async () => broadcastDevTeamState(root, chatId, state)),
-          `dev team ${chatId}: could not broadcast state`,
-        );
-      },
+      appendEngineerRecord: (engineerId, record) =>
+        enqueueDevTeamLane(key, async () => {
+          await appendEngineerRecord(root, chatId, engineerId, record);
+        }),
+      persistState: (state) =>
+        enqueueDevTeamLane(key, async () => {
+          await writeDevTeamState(root, chatId, state);
+          broadcastDevTeamState(root, chatId, publicDevTeamSnapshot(state));
+        }),
+      // State publishes in its persistence operation; engineer publication is
+      // the next operation on the same lane, after runtime attribution updates.
+      emitSnapshot: () => undefined,
       emitEngineerEvent: (engineerId, event) => {
         detach(
-          enqueueChatLane(key, async () => broadcastDevTeamEvent(root, chatId, engineerId, event)),
+          enqueueDevTeamLane(key, async () => broadcastDevTeamEvent(root, chatId, engineerId, event)),
           `dev team ${chatId}: could not broadcast engineer event`,
         );
       },
@@ -1052,27 +1066,35 @@ export function attachWebSocket(
   }
 
   async function replayDevTeam(root: string, chatId: string, socket: WebSocket): Promise<void> {
-    const stored = await readDevTeamState(root, chatId);
+    const key = chatKey(root, chatId);
+    const stored = await enqueueDevTeamLane(key, () => readDevTeamState(root, chatId));
     const runtime =
       stored.phase === 'idle' || stored.phase === 'done'
         ? null
-        : await ensureDevTeamRuntime(root, chatId, chatSessions.get(chatKey(root, chatId)));
-    const state = runtime?.snapshot() ?? publicDevTeamSnapshot(stored);
-    if (socketOpeningChat.get(socket) === chatId) {
-      socketOpeningSnapshot.set(socket, { chatId, signature: JSON.stringify(state) });
-    }
-    send(socket, { type: 'devteam-state', chatId, state });
-    const engineerIds = [...new Set(state.tasks.map((task) => task.engineerId).filter(Boolean))];
-    for (const engineerId of engineerIds) {
-      const records = runtime
-        ? await runtime.engineerReplay(engineerId)
-        : await readEngineerRecords(root, chatId, engineerId);
-      for (const record of records) {
-        if (record.role === 'agent') {
-          send(socket, { type: 'devteam-event', chatId, engineerId, event: record.event });
+        : await ensureDevTeamRuntime(root, chatId, chatSessions.get(key));
+    await enqueueDevTeamLane(key, async () => {
+      // Disk is the boundary: every persist before this lane operation is in
+      // the replay, and every persist after it publishes live after opening is
+      // cleared below. Runtime memory may already contain a queued future
+      // revision, so replay deliberately reads state.json again.
+      const state = publicDevTeamSnapshot(await readDevTeamState(root, chatId));
+      const replay: Array<{ engineerId: string; event: ChatEvent }> = [];
+      const engineerIds = [...new Set(state.tasks.map((task) => task.engineerId).filter(Boolean))];
+      for (const engineerId of engineerIds) {
+        const records = runtime
+          ? await runtime.engineerReplay(engineerId)
+          : await readEngineerRecords(root, chatId, engineerId);
+        for (const record of records) {
+          if (record.role === 'agent') replay.push({ engineerId, event: record.event });
         }
       }
-    }
+      await opts?.beforeDevTeamReplaySend?.();
+      send(socket, { type: 'devteam-state', chatId, state });
+      for (const item of replay) {
+        send(socket, { type: 'devteam-event', chatId, engineerId: item.engineerId, event: item.event });
+      }
+      if (socketOpeningChat.get(socket) === chatId) socketOpeningChat.delete(socket);
+    });
   }
 
   function publicDevTeamSnapshot(state: Awaited<ReturnType<typeof readDevTeamState>>): DevTeamSnapshot {
@@ -1123,7 +1145,15 @@ export function attachWebSocket(
     session.lingerTimer = undefined;
     session.unsubscribeCommands?.();
     session.unsubscribeCommands = undefined;
-    if (!endWith) devTeamRuntimes.get(session.key)?.handleLeadBindingClosed(session.bindingId);
+    if (!endWith) {
+      const runtime = devTeamRuntimes.get(session.key);
+      if (runtime) {
+        detach(
+          runtime.handleLeadBindingClosed(session.bindingId),
+          `dev team ${session.chatId}: could not settle the retired lead binding`,
+        );
+      }
+    }
     if (chatSessions.get(session.key) === session) chatSessions.delete(session.key);
     session.driver?.stop();
     if (!endWith) return;
@@ -1565,7 +1595,6 @@ export function attachWebSocket(
     detachChat(socket);
     socketChat.delete(socket);
     socketOpeningChat.delete(socket);
-    socketOpeningSnapshot.delete(socket);
     const channel = channels.get(root);
     if (!channel) return;
     channel.sockets.delete(socket);
@@ -1717,12 +1746,9 @@ export function attachWebSocket(
               enqueueChatOp(ws, async () => {
                 try {
                   await openChatForSocket(root, ws, chatId);
-                  const id = safeChatId(chatId);
-                  if (id) await enqueueChatLane(chatKey(root, id), async () => undefined);
                 } finally {
                   if (socketOpeningChat.get(ws) === chatId) {
                     socketOpeningChat.delete(ws);
-                    socketOpeningSnapshot.delete(ws);
                   }
                 }
               });

@@ -121,6 +121,7 @@ async function until(ready: () => boolean | Promise<boolean>, timeoutMs = 4000):
 
 async function makeHarness(
   factory?: (options: Harness['options'][number] | undefined) => Promise<ChatDriver>,
+  hooks?: { beforeDevTeamReplaySend?: () => Promise<void> },
 ): Promise<Harness> {
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-wsdevteam-'));
   const root = path.join(tmp, 'game');
@@ -142,6 +143,7 @@ async function makeHarness(
       drivers.push(driver);
       return driver;
     },
+    ...hooks,
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as { port: number }).port;
@@ -330,6 +332,51 @@ describe('dev team websocket integration', () => {
     inbox.socket.close();
   });
 
+  it('interrupts planning on lead rebind and resumes the handshake exactly once on the replacement', async () => {
+    const harness = await makeHarness();
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({
+      type: 'chat-send', text: 'brief', agent: { provider: 'anthropic', model: 'model-a' },
+    }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    await fsp.mkdir(path.join(harness.root, '.hearth', 'devteam', chatId), { recursive: true });
+    await fsp.writeFile(path.join(harness.root, '.hearth', 'devteam', chatId, 'spec.md'), '# Spec\n');
+    harness.drivers[0].emit({ type: 'turn-complete' });
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'spec-review');
+    inbox.socket.send(JSON.stringify({ type: 'devteam-approve-spec' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'planning');
+    harness.drivers[0].holdStop = true;
+
+    inbox.socket.send(JSON.stringify({
+      type: 'chat-send', text: 'new provider detail', agent: { provider: 'openai', model: 'model-b' },
+    }));
+    await until(() => harness.drivers.length === 2 && harness.drivers[1].sent.length === 1);
+    await until(async () => (await readDevTeamState(harness.root, chatId)).phase === 'interrupted');
+    const interrupted = await readDevTeamState(harness.root, chatId);
+    expect(interrupted.resumePhase).toBe('planning');
+
+    await fsp.writeFile(path.join(harness.root, '.hearth', 'devteam', chatId, 'plan.json'), JSON.stringify({
+      version: 1,
+      roles: [{ id: 'maker', name: 'Maker', focus: 'Build.' }],
+      milestones: [{
+        id: 'm1', title: 'Build', goal: 'Build.',
+        tasks: [{ id: 't1', title: 'Implement', roleId: 'maker', detail: 'Implement.', scope: ['src'] }],
+      }],
+    }));
+    harness.drivers[0].releaseStop({ type: 'turn-complete' });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect((await readDevTeamState(harness.root, chatId)).phase).toBe('interrupted');
+
+    const beforeResume = harness.drivers[1].sent.length;
+    inbox.socket.send(JSON.stringify({ type: 'devteam-resume' }));
+    await until(() => harness.drivers[1].sent.length === beforeResume + 1);
+    expect(harness.drivers[1].sent).toHaveLength(beforeResume + 1);
+    harness.drivers[1].emit({ type: 'turn-complete' });
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'building');
+    inbox.socket.close();
+  });
+
   it('deduplicates a state persisted while the same conversation is reopened', async () => {
     const harness = await makeHarness();
     const inbox = await harness.connect();
@@ -349,7 +396,18 @@ describe('dev team websocket integration', () => {
   });
 
   it('broadcasts correlated engineer activity, routes asks, queues steering, and replays state before activity', async () => {
-    const harness = await makeHarness();
+    let replayArmed = false;
+    let replayReached!: () => void;
+    let releaseReplay!: () => void;
+    const reachedReplay = new Promise<void>((resolve) => { replayReached = resolve; });
+    const replayRelease = new Promise<void>((resolve) => { releaseReplay = resolve; });
+    const harness = await makeHarness(undefined, {
+      beforeDevTeamReplaySend: async () => {
+        if (!replayArmed) return;
+        replayReached();
+        await replayRelease;
+      },
+    });
     const inbox = await harness.connect();
     const chatId = await newDevTeam(inbox);
     const agent = { provider: 'openai' as const, model: 'codex-test', effort: 'medium' as const };
@@ -388,11 +446,40 @@ describe('dev team websocket integration', () => {
     harness.options[1]?.onThreadId?.('thread-task1');
     await until(async () => (await readDevTeamState(harness.root, chatId)).tasks[0]?.continuationId === 'thread-task1');
 
+    const stateRace = await harness.connect();
+    harness.options[1]?.onThreadId?.('thread-a');
+    stateRace.socket.send(JSON.stringify({ type: 'chat-open', chatId }));
+    harness.options[1]?.onThreadId?.('thread-b');
+    await until(() => stateRace.frames.filter((frame) => frame.type === 'devteam-state').length >= 1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const racedStates = stateRace.frames.filter((frame) => frame.type === 'devteam-state');
+    const lastRacedState = racedStates.at(-1);
+    expect(lastRacedState?.type === 'devteam-state' && lastRacedState.state.tasks[0]?.continuationId).toBe('thread-b');
+    expect(racedStates.findIndex((frame) =>
+      frame.type === 'devteam-state' && frame.state.tasks[0]?.continuationId === 'thread-b',
+    )).toBe(racedStates.length - 1);
+    stateRace.socket.close();
+
+    const eventRace = await harness.connect();
+    replayArmed = true;
+    eventRace.socket.send(JSON.stringify({ type: 'chat-open', chatId }));
+    await reachedReplay;
+    harness.drivers[1].emit({ type: 'message-delta', text: 'race-marker' });
+    releaseReplay();
+    await until(() => eventRace.frames.some((frame) => frame.type === 'chat-opened'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(eventRace.frames.filter((frame) =>
+      frame.type === 'devteam-event' && frame.event.type === 'message-delta' && frame.event.text === 'race-marker',
+    )).toHaveLength(1);
+    eventRace.socket.close();
+
     const engineerId = `devteam-${chatId}-task1`;
     harness.drivers[1].emit({
       type: 'approval-request', approvalId: 'approval-1', kind: 'command', title: 'Run check', detail: 'npm test',
     });
-    const approval = await inbox.next((frame) => frame.type === 'devteam-event' && frame.engineerId === engineerId);
+    const approval = await inbox.next(
+      (frame) => frame.type === 'devteam-event' && frame.engineerId === engineerId && frame.event.type === 'approval-request',
+    );
     expect(approval.type === 'devteam-event' && approval.chatId).toBe(chatId);
     inbox.socket.send(JSON.stringify({
       type: 'devteam-engineer-approval', engineerId, approvalId: 'approval-1', decision: 'allow', choiceId: 'once',

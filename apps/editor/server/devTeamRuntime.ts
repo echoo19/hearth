@@ -58,6 +58,8 @@ export interface DevTeamRuntimeOptions {
   sendLead: (text: string, agent: AgentTurnOptions | null) => void | Promise<void>;
   appendLeadRecord: (record: ChatRecord) => Promise<void>;
   appendEngineerRecord: (engineerId: string, record: ChatRecord) => Promise<void>;
+  /** Optional owner seam for atomic state persistence and publication. */
+  persistState?: (state: DevTeamState) => Promise<void>;
   emitSnapshot: (snapshot: DevTeamSnapshot) => void;
   emitEngineerEvent: (engineerId: string, event: ChatEvent) => void;
   now?: () => string;
@@ -431,12 +433,25 @@ export class DevTeamRuntime {
     }
   }
 
-  /** Retires only work owned by a replaced lead driver; the durable run remains. */
-  handleLeadBindingClosed(bindingId: string): void {
+  /** Retires work owned by a replaced lead driver without accepting its tail. */
+  handleLeadBindingClosed(bindingId: string): Promise<void> {
     const operations = [this.pendingLead, this.processingLead, ...this.leadQueue];
+    let interrupted = false;
     for (const operation of new Set(operations)) {
-      if (operation?.bindingId === bindingId) this.removeLead(operation);
+      if (operation?.bindingId !== bindingId) continue;
+      this.removeLead(operation);
+      const phase = this.state.phase === 'paused' ? this.state.resumePhase : this.state.phase;
+      // An interview follow-up immediately establishes a replacement
+      // operation on the new binding. File-handshake turns have no such user
+      // turn, so freezing them is the only honest alternative to stalling.
+      if (phase && phase !== 'interviewing' && phase !== 'spec-review') {
+        this.state.phase = 'interrupted';
+        this.state.resumePhase = phase;
+        this.state.error = 'The lead agent changed while a dev team handshake was running. Resume to continue.';
+        interrupted = true;
+      }
     }
+    return interrupted ? this.persist() : Promise.resolve();
   }
 
   /** Refreshes the provider-neutral run binding without replacing durable state. */
@@ -451,7 +466,9 @@ export class DevTeamRuntime {
     this.options.tools = options.tools;
     if (JSON.stringify(this.state.agent) === JSON.stringify(options.agent)) return;
     this.state.agent = options.agent ? structuredClone(options.agent) : null;
-    await writeDevTeamState(this.options.root, this.options.chatId, structuredClone(this.state));
+    const revision = structuredClone(this.state);
+    if (this.options.persistState) await this.options.persistState(revision);
+    else await writeDevTeamState(this.options.root, this.options.chatId, revision);
   }
 
   async approveSpec(): Promise<void> {
@@ -608,8 +625,11 @@ export class DevTeamRuntime {
 
   private async persist(): Promise<void> {
     const revision = structuredClone(this.state);
-    await writeDevTeamState(this.options.root, this.options.chatId, revision);
-    this.options.emitSnapshot(this.publicSnapshot(revision));
+    if (this.options.persistState) await this.options.persistState(revision);
+    else {
+      await writeDevTeamState(this.options.root, this.options.chatId, revision);
+      this.options.emitSnapshot(this.publicSnapshot(revision));
+    }
   }
 
   private publicSnapshot(state: DevTeamState): DevTeamSnapshot {
@@ -1027,7 +1047,6 @@ export class DevTeamRuntime {
         const event = normalizeChatEvent(rawEvent);
         await this.options.appendEngineerRecord(engineerId, { role: 'agent', ts: this.now(), event });
         if (this.active.get(engineerId) !== active) return;
-        this.options.emitEngineerEvent(engineerId, event);
         if (event.type === 'message-delta') active.currentProse += event.text;
         else if (event.type === 'message-end') {
           if (active.currentProse.trim()) active.finalProse = active.currentProse.trim();
@@ -1038,11 +1057,13 @@ export class DevTeamRuntime {
         else if (event.type === 'approval-resolved') active.approvals.delete(event.approvalId);
         else if (event.type === 'input-request') active.inputs.add(event.inputId);
         else if (event.type === 'input-resolved') active.inputs.delete(event.inputId);
-        else if (event.type === 'turn-complete') {
+        else if (event.type === 'error') active.finalProse = event.message;
+        // Attribution must be routable before a watcher can answer the frame.
+        this.options.emitEngineerEvent(engineerId, event);
+        if (event.type === 'turn-complete') {
           await this.finishEngineer(engineerId, active, 'done');
           return;
         } else if (event.type === 'error') {
-          active.finalProse = event.message;
           await this.finishEngineer(engineerId, active, 'error');
           return;
         }
