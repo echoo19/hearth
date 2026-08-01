@@ -94,6 +94,9 @@ session without letting the native adapter run beside it. Setup, attachments,
 skills, and approvals are in
 [docs/agents.md](docs/agents.md).
 
+**Dev Team mode** lets a lead plan and review while Hearth runs a small team of
+Claude or Codex engineers in parallel. See [docs/devteam.md](docs/devteam.md).
+
 ## Your files, your folder, no lock-in
 
 Every project is an ordinary folder under `~/Hearth`. Move it, back it up, open

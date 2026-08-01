@@ -459,6 +459,13 @@
   white-space: nowrap;
 }
 
+/* Narrow mode still includes the project rail, so the conversation region can
+   be much smaller than the viewport-wide media query below suggests. Let the
+   board follow the app's measured mode instead of forcing two cramped tracks. */
+.app-shell.is-narrow .devteam-board {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 @media (max-width: 680px) {
   .devteam-phase {
     flex-wrap: wrap;

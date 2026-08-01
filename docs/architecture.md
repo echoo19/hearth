@@ -116,6 +116,23 @@ and only then acknowledges the renderer. A lease keyed by the chat and exact
 PTY blocks native sends until that terminal exits, including while its socket
 is detached. See [agents.md](./agents.md).
 
+## Dev Team orchestration
+
+A Dev Team conversation keeps its lead on the ordinary chat driver and adds a
+server-owned state machine beside it. The lead writes and reviews the spec and
+plan; each build task receives a separate headless `ChatDriver` using the same
+provider binding. Hearth therefore schedules Claude and Codex identically
+without depending on either provider's native multi-agent feature.
+
+The runtime persists state before broadcasting it. Engineer events use the
+normal chat event vocabulary, but carry an engineer id and are appended to a
+per-engineer transcript. Opening the conversation replays the durable snapshot
+and those transcripts on the same serialized lane as live updates, so the
+client reconstructs the same board without inventing a second event reducer.
+Dependencies and declared path scopes gate dispatch; the default concurrency
+is two and the hard maximum is four. See [devteam.md](./devteam.md) for the
+user-facing lifecycle, files, and v1 limits.
+
 ## Skills
 
 Skills are folders under `~/.hearth/skills/`, each with a `SKILL.md` (the

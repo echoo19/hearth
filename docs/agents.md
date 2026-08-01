@@ -100,6 +100,20 @@ means, and it only knows that for the harnesses it integrates. Running your
 agent in the terminal gives it the same folder, the same shell and the same
 game reloading beside it; what you give up is the transcript, not the work.
 
+## Dev Team mode
+
+A **Dev team** conversation uses the same selected Claude or Codex backend to
+run a lead and several independent engineer sessions. Hearth owns the plan,
+scheduling, persistence, and routing, so the workflow is the same with either
+provider; provider-native subagents can still appear inside any one lane.
+
+The lead interviews you, writes a specification for approval, plans the work,
+reviews each milestone, and wraps up. Engineers use the conversation's model,
+permission mode, tool access, and provider, with task-specific effort when the
+plan supplies it. Ask mode remains available, but can produce many approval
+prompts; the team board keeps each prompt with the engineer that raised it.
+See [devteam.md](./devteam.md) for the full lifecycle and controls.
+
 ## Attaching images and files
 
 Drop a file onto the composer, paste one, or pick it from **+ → Add photos &

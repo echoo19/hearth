@@ -64,6 +64,7 @@ The one folder Hearth writes for itself:
   chats/index.json          every conversation: id, title, timestamps
   chats/<chatId>.jsonl      one conversation, one JSON record per line
   chats/attachments/<chatId>/  files you sent with a message
+  devteam/<chatId>/         a Dev Team run's state, spec, plan, and engineer transcripts
   app.json                  this project's agent settings (see below)
   .gitignore                written when the project opens; ignores this whole folder
   project.json              its name, mark and colour, as plain JSON
@@ -79,6 +80,11 @@ The one folder Hearth writes for itself:
 Playtests live here, under the project, because a playtest is a fact about one
 game. Chats are the same. The only thing Hearth keeps about you rather than
 about a game is skills, which is why those are the one thing in `~/.hearth/`.
+
+A Dev Team conversation keeps the lead in the ordinary chat transcript and
+stores its orchestration artifacts under `.hearth/devteam/<chatId>/`. Those
+plain files are the source of truth for reload and run history; their exact
+layout and retention limits are in [devteam.md](./devteam.md).
 
 Chat records are appended to disk *before* they are broadcast, so a transcript
 survives a crash, a quit, or an agent that dies mid-turn. Each line is either
