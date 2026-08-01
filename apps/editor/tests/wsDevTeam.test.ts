@@ -39,10 +39,15 @@ class FakeDriver implements ChatDriver {
   stopped = false;
   interrupted = false;
   holdStop = false;
+  readonly closed: Promise<void>;
   private readonly startGate: Promise<void> | null;
   private releaseStartGate: (() => void) | null = null;
+  private resolveClosed!: () => void;
 
   constructor(holdStart = false) {
+    this.closed = new Promise<void>((resolve) => {
+      this.resolveClosed = resolve;
+    });
     this.startGate = holdStart
       ? new Promise<void>((resolve) => {
           this.releaseStartGate = resolve;
@@ -85,15 +90,18 @@ class FakeDriver implements ChatDriver {
     this.stopped = true;
     if (this.holdStop) return;
     this.queue.close();
+    this.resolveClosed();
   }
 
   releaseStop(...events: ChatEvent[]): void {
     for (const event of events) this.queue.push(event);
     this.queue.close();
+    this.resolveClosed();
   }
 
   closeStream(): void {
     this.queue.close();
+    this.resolveClosed();
   }
 
   emit(event: ChatEvent): void {
@@ -139,7 +147,12 @@ async function until(ready: () => boolean | Promise<boolean>, timeoutMs = 4000):
 
 async function makeHarness(
   factory?: (options: Harness['options'][number] | undefined) => Promise<ChatDriver>,
-  hooks?: { beforeDevTeamReplaySend?: () => Promise<void> },
+  hooks?: {
+    beforeDevTeamReplaySend?: () => Promise<void>;
+    onDevTeamControlQueued?: (type: string) => void;
+    onChatSendQueued?: () => void;
+    teardownFlushMs?: number;
+  },
 ): Promise<Harness> {
   const tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-wsdevteam-'));
   const root = path.join(tmp, 'game');
@@ -466,7 +479,7 @@ describe('dev team websocket integration', () => {
     await until(() => harness.drivers[0].sent.length === 1);
     inbox.frames.length = 0;
     inbox.socket.send(JSON.stringify({ type: 'devteam-pause' }));
-    inbox.socket.send(JSON.stringify({ type: 'chat-open', chatId }));
+    inbox.socket.send(JSON.stringify({ type: 'chat-open', chatId: ` ${chatId} ` }));
     await until(() =>
       inbox.frames.some((frame) => frame.type === 'chat-opened') &&
       inbox.frames.some((frame) => frame.type === 'devteam-state' && frame.state.phase === 'paused'),
@@ -674,8 +687,57 @@ describe('dev team websocket integration', () => {
     expect((await readDevTeamState(harness.root, chatId)).error).toContain('closed');
   });
 
+  it('does not let queued open and control work recreate a runtime during shutdown', async () => {
+    let replayArmed = false;
+    let shutdownQueueArmed = false;
+    let replayReached!: () => void;
+    let releaseReplay!: () => void;
+    let controlQueued!: () => void;
+    let sendQueued!: () => void;
+    const reachedReplay = new Promise<void>((resolve) => { replayReached = resolve; });
+    const replayRelease = new Promise<void>((resolve) => { releaseReplay = resolve; });
+    const queuedControl = new Promise<void>((resolve) => { controlQueued = resolve; });
+    const queuedSend = new Promise<void>((resolve) => { sendQueued = resolve; });
+    const harness = await makeHarness(undefined, {
+      beforeDevTeamReplaySend: async () => {
+        if (!replayArmed) return;
+        replayReached();
+        await replayRelease;
+      },
+      onDevTeamControlQueued: () => controlQueued(),
+      onChatSendQueued: () => {
+        if (shutdownQueueArmed) sendQueued();
+      },
+    });
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'start it' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+
+    replayArmed = true;
+    shutdownQueueArmed = true;
+    inbox.socket.send(JSON.stringify({ type: 'chat-open', chatId }));
+    await reachedReplay;
+    inbox.socket.send(JSON.stringify({ type: 'devteam-stop' }));
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'late shutdown send' }));
+    await queuedControl;
+    await queuedSend;
+    inbox.socket.terminate();
+    await new Promise<void>((resolve) => harness.server.close(() => resolve()));
+    releaseReplay();
+    await harness.wsClosed;
+
+    expect((await readDevTeamState(harness.root, chatId)).phase).toBe('interrupted');
+    expect((await readTranscript(harness.root, chatId)).some(
+      (record) => record.role === 'user' && record.text === 'late shutdown send',
+    )).toBe(false);
+    expect(harness.drivers).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect((await readDevTeamState(harness.root, chatId)).phase).toBe('interrupted');
+  });
+
   it('disposes active engineer work before deleting a dev team conversation', async () => {
-    const harness = await makeHarness();
+    const harness = await makeHarness(undefined, { teardownFlushMs: 30 });
     const inbox = await harness.connect();
     const chatId = await newDevTeam(inbox);
     inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'build this' }));
@@ -707,8 +769,21 @@ describe('dev team websocket integration', () => {
     });
     await inbox.next((frame) => frame.type === 'devteam-event' && frame.event.type === 'approval-request');
     const engineerId = (await readDevTeamState(harness.root, chatId)).tasks[0].engineerId;
+    const runDir = path.join(harness.root, '.hearth', 'devteam', chatId);
 
-    const deleted = await harness.ctx.deleteProjectChat(harness.root, chatId);
+    engineer.holdStop = true;
+    const blocked = await harness.ctx.deleteProjectChat(harness.root, ` ${chatId} `);
+
+    expect(blocked).toMatchObject({
+      status: 409,
+      body: { ok: false, error: expect.stringContaining('provider') },
+    });
+    expect(await getChat(harness.root, chatId)).not.toBeNull();
+    expect(await fsp.stat(runDir).catch(() => null)).not.toBeNull();
+    engineer.releaseStop();
+    await engineer.closed;
+
+    const deleted = await harness.ctx.deleteProjectChat(harness.root, ` ${chatId} `);
 
     expect(deleted.status).toBe(200);
     expect(await getChat(harness.root, chatId)).toBeNull();
@@ -721,7 +796,6 @@ describe('dev team websocket integration', () => {
       engineerId,
       event: { type: 'approval-resolved', approvalId: 'delete-approval', decision: 'withdrawn' },
     });
-    const runDir = path.join(harness.root, '.hearth', 'devteam', chatId);
     expect(await fsp.stat(runDir).catch(() => null)).toBeNull();
 
     engineer.emit({ type: 'turn-complete' });

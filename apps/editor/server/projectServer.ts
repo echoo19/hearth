@@ -66,7 +66,7 @@ import {
   saveContextFiles,
 } from './projectContext.js';
 import { announceProviders, beginOpenAiLogin, readChatProviders } from './chatProviders.js';
-import { createChat, deleteChat, getChat, listChats, renameChat, type ChatKind } from './chatStore.js';
+import { createChat, deleteChat, getChat, listChats, renameChat, safeChatId, type ChatKind } from './chatStore.js';
 import { deleteDevTeamArtifacts } from './devTeamStore.js';
 import { ChatAttachmentStager } from './chatAttachments.js';
 import { resolveProjectsHome, slugFromName, slugFromPrompt, uniqueFolderName } from './workspaceSlug.js';
@@ -821,7 +821,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
   // sockets. Emitting here (not straight to sockets) keeps projectServer
   // transport-agnostic — the same as the journal/pty split.
   const exportBus = new EventEmitter();
-  const beforeChatDelete = new Set<(root: string, chatId: string) => Promise<void>>();
+  const beforeChatDelete = new Set<(root: string, chatId: string) => Promise<string | void>>();
   interface ExportJob {
     jobId: string;
     root: string;
@@ -1264,7 +1264,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     /** Desktop-export progress bus; ws.ts subscribes and fans frames to sockets. */
     exportBus,
     /** Lets the socket transport stop live work before the HTTP route removes its conversation. */
-    onBeforeChatDelete(listener: (root: string, chatId: string) => Promise<void>): () => void {
+    onBeforeChatDelete(listener: (root: string, chatId: string) => Promise<string | void>): () => void {
       beforeChatDelete.add(listener);
       return () => beforeChatDelete.delete(listener);
     },
@@ -2058,21 +2058,25 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
           status: 403,
           body: { ok: false, error: 'Folder is not open.' },
         };
-      const chat = await getChat(root, chatId);
+      const id = safeChatId(chatId);
+      const chat = id ? await getChat(root, id) : null;
       if (!chat) {
         return {
           status: 404,
           body: { ok: false, error: 'No such conversation.' },
         };
       }
-      for (const listener of beforeChatDelete) await listener(root, chatId);
-      const removed = await deleteChat(root, chatId);
+      for (const listener of beforeChatDelete) {
+        const blocked = await listener(root, chat.id);
+        if (blocked) return { status: 409, body: { ok: false, error: blocked } };
+      }
+      const removed = await deleteChat(root, chat.id);
       if (!removed)
         return {
           status: 404,
           body: { ok: false, error: 'No such conversation.' },
         };
-      if (chat.kind === 'devteam') await deleteDevTeamArtifacts(root, chatId);
+      if (chat.kind === 'devteam') await deleteDevTeamArtifacts(root, chat.id);
       return { status: 200, body: { ok: true, chats: await listChats(root) } };
     },
 

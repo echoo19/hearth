@@ -412,6 +412,8 @@ export function attachWebSocket(
   opts?: {
     detachLingerMs?: number;
     chatDetachLingerMs?: number;
+    /** Test seam for bounded provider teardown. */
+    teardownFlushMs?: number;
     /**
      * Test seam: stand in a scripted ChatDriver instead of resolving a real
      * backend. The options argument carries the conversation's codex thread
@@ -432,6 +434,10 @@ export function attachWebSocket(
     ) => Promise<ChatDriver>;
     /** Test-only gate after durable replay capture and before frames are sent. */
     beforeDevTeamReplaySend?: () => Promise<void>;
+    /** Test-only notification after a dev-team control frame is queued. */
+    onDevTeamControlQueued?: (type: string) => void;
+    /** Test-only notification after a non-empty chat send is queued. */
+    onChatSendQueued?: () => void;
   },
 ): WebSocketHandle {
   // An explicit ceiling rather than ws's silent 100 MiB default: attachments
@@ -452,10 +458,13 @@ export function attachWebSocket(
   const ptyManager = new PtyManager(ptyBackend);
   const detachLingerMs = opts?.detachLingerMs ?? PTY_DETACH_LINGER_MS;
   const chatDetachLingerMs = opts?.chatDetachLingerMs ?? CHAT_DETACH_LINGER_MS;
+  const teardownFlushMs = opts?.teardownFlushMs ?? TEARDOWN_FLUSH_MS;
   const ptySessions = new Map<WebSocket, PtySession>(); // attached sessions
   const detachedPtys = new Map<string, PtySession>(); // key: root NUL sessionId
   const cliOwnedChats = new Map<string, PtySession>();
   const failedHandoffs = new Map<string, Extract<WsFrame, { type: 'chat-handoff-error' }>>();
+  const closingSessions = new Map<string, Promise<unknown>>();
+  let closing = false;
   let nextPtyKey = 0;
   let nextChatBinding = 0;
   const makeChatDriver = opts?.createChatDriver ?? createChatDriver;
@@ -497,12 +506,17 @@ export function attachWebSocket(
    * meant to land in and mint a second chat for the same first message.
    */
   const chatOps = new WeakMap<WebSocket, Promise<void>>();
+  const chatOpTails = new Set<Promise<void>>();
   function enqueueChatOp(socket: WebSocket, op: () => Promise<void>): void {
+    if (closing) return;
     const prev = chatOps.get(socket) ?? Promise.resolve();
     // A failed op must not wedge every later one; it has already reported
     // whatever it had to say to the socket.
-    const next = prev.then(op, op).catch(() => {});
+    const run = (): Promise<void> => closing ? Promise.resolve() : op();
+    const next = prev.then(run, run).catch(() => {});
     chatOps.set(socket, next);
+    chatOpTails.add(next);
+    void next.then(() => chatOpTails.delete(next));
   }
 
   /**
@@ -518,7 +532,8 @@ export function attachWebSocket(
   const chatLanes = new Map<string, Promise<unknown>>();
   function enqueueChatLane<T>(key: string, op: () => Promise<T>): Promise<T> {
     const prev = chatLanes.get(key) ?? Promise.resolve();
-    const run = prev.then(op, op);
+    const runOp = (): Promise<T> => closing ? Promise.resolve(undefined as T) : op();
+    const run = prev.then(runOp, runOp);
     const tail = run.catch(() => undefined);
     chatLanes.set(key, tail);
     void tail.then(() => {
@@ -903,9 +918,9 @@ export function attachWebSocket(
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
-        Promise.all([session.driver?.closed ?? Promise.resolve(), session.drained]).then(() => true),
+        driverCloseWork(session).then(() => true),
         new Promise<boolean>((resolve) => {
-          timer = setTimeout(() => resolve(false), TEARDOWN_FLUSH_MS);
+          timer = setTimeout(() => resolve(false), teardownFlushMs);
         }),
       ]);
     } finally {
@@ -913,21 +928,64 @@ export function attachWebSocket(
     }
   }
 
+  function driverCloseWork(session: ChatSession): Promise<unknown> {
+    return Promise.all([session.driver?.closed ?? Promise.resolve(), session.drained]);
+  }
+
+  async function settlesWithin(work: Promise<unknown>): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        work.then(() => true, () => false),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), teardownFlushMs);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  async function drainQueuedWork(): Promise<void> {
+    for (;;) {
+      const pending = [...chatOpTails, ...chatLanes.values(), ...devTeamLanes.values()];
+      if (pending.length === 0) return;
+      await Promise.allSettled(pending);
+      await Promise.resolve();
+    }
+  }
+
   const unsubscribeBeforeChatDelete = ctx.onBeforeChatDelete(async (root, chatId) => {
     const key = chatKey(root, chatId);
-    await enqueueChatLane(key, async () => {
+    const stopped = await enqueueChatLane(key, async () => {
       const runtime = devTeamRuntimes.get(key);
-      if (runtime) {
-        await runtime.dispose();
-        if (devTeamRuntimes.get(key) === runtime) devTeamRuntimes.delete(key);
-      }
       const session = chatSessions.get(key);
+      const closures: Promise<unknown>[] = [];
+      if (runtime) closures.push(runtime.dispose());
       if (session) {
         retireChatSession(session, null);
-        await waitForDriverClose(session);
+        const sessionClosing = driverCloseWork(session);
+        closingSessions.set(key, sessionClosing);
+        closures.push(sessionClosing);
+      } else {
+        const sessionClosing = closingSessions.get(key);
+        if (sessionClosing) closures.push(sessionClosing);
       }
-      devTeamLeadAttachments.delete(key);
+      const closed = Promise.all(closures);
+      const cleanUp = (): void => {
+        if (runtime && devTeamRuntimes.get(key) === runtime) devTeamRuntimes.delete(key);
+        closingSessions.delete(key);
+        devTeamLeadAttachments.delete(key);
+      };
+      if (!(await settlesWithin(closed))) {
+        void closed.then(cleanUp, () => undefined);
+        return false;
+      }
+      cleanUp();
+      return true;
     });
+    if (stopped) return;
+    return 'The conversation was not deleted because an agent provider did not stop in time.';
   });
 
   function providerHandoff(chatId: string, text: string): string {
@@ -1033,6 +1091,7 @@ export function attachWebSocket(
     chatId: string,
     lead?: ChatSession | null,
   ): Promise<DevTeamRuntime | null> {
+    if (closing) return null;
     const key = chatKey(root, chatId);
     const existing = devTeamRuntimes.get(key);
     if (existing) {
@@ -1043,12 +1102,14 @@ export function attachWebSocket(
           tools: await getAgentTools(),
         });
       }
+      if (closing) return null;
       return existing;
     }
     const chat = await getChat(root, chatId);
-    if (chat?.kind !== 'devteam') return null;
+    if (closing || chat?.kind !== 'devteam') return null;
     const permissionMode = lead?.permissionMode ?? (await readPermissionMode(root));
     const tools = await getAgentTools();
+    if (closing) return null;
     const runtime = new DevTeamRuntime({
       root,
       chatId,
@@ -1318,12 +1379,14 @@ export function attachWebSocket(
     chatId: string,
     agent?: AgentTurnOptions | null,
   ): Promise<ChatSession | null> {
+    if (closing) return null;
     const key = chatKey(root, chatId);
     // Read fresh on every send, like the skills and the personal prompt the
     // drivers re-read at bind: this is a file a person edits while Hearth is
     // running, and one small read is cheaper than a turn running under the mode
     // they just moved away from.
     const permissionMode = await readPermissionMode(root);
+    if (closing) return null;
     let existing = chatSessions.get(key);
     // A bind is in flight for this conversation. Wait for it and use its
     // driver: there is nothing else this turn could be given to. A session that
@@ -1341,6 +1404,7 @@ export function attachWebSocket(
       existing.lingerTimer = undefined;
       existing.sockets.add(socket);
       await existing.binding;
+      if (closing) return null;
       existing = chatSessions.get(key);
     }
     // A session whose driver has died is not one to join. Its event stream is
@@ -1391,6 +1455,7 @@ export function attachWebSocket(
     // a conversation that is fine.
     const selectedAgent = agent ? { ...(existing?.agent ?? {}), ...agent } : (existing?.agent ?? null);
     const selectedAgentKey = wantedAgentKey ?? existing?.agentKey ?? null;
+    if (closing) return null;
     if (existing) retireChatSession(existing, null);
     // Settled in the `finally` below, on every path out of the bind, because a
     // send waiting on it is holding a person's message.
@@ -1450,6 +1515,11 @@ export function attachWebSocket(
       // agent a transcript to read. Both are passed on every bind; each
       // driver reads only its own and ignores the other's.
       const summary = await getChat(root, session.chatId);
+      const tools = await getAgentTools();
+      if (closing) {
+        chatSessions.delete(key);
+        return null;
+      }
       driver = built = await makeChatDriver(root, {
         resumeThreadId: summary?.codexThreadId ?? null,
         onThreadId: (threadId) =>
@@ -1466,17 +1536,31 @@ export function attachWebSocket(
         // The binding turn's choice decides WHICH backend answers, so it has
         // to be known before the driver is built, not just when it is sent.
         agent: agent ?? null,
-        tools: await getAgentTools(),
+        tools,
         permissionMode,
       });
+      if (closing) {
+        session.driver = driver;
+        driver.stop();
+        return null;
+      }
       await driver.start(session.chatId, root);
+      if (closing) {
+        session.driver = driver;
+        driver.stop();
+        return null;
+      }
     } catch (err) {
-      chatSessions.delete(key);
       // The driver may hold a child process already: CodexDriver.start spawns
       // `codex app-server` BEFORE the handshake, so a failed initialize or a
       // 60s timeout that does not stop the driver orphans that child forever,
       // one per attempt. Same shape the tester path uses (projectServer.ts).
       built?.stop();
+      if (closing && built) {
+        session.driver = built;
+        return null;
+      }
+      chatSessions.delete(key);
       send(socket, {
         type: 'chat-event',
         chatId,
@@ -1787,7 +1871,8 @@ export function attachWebSocket(
             break;
           case 'chat-open':
             {
-              const chatId = typeof frame.chatId === 'string' ? frame.chatId : '';
+              const chatId = safeChatId(frame.chatId);
+              if (!chatId) break;
               const generation = beginChatOpen(ws, chatId);
               enqueueChatOp(ws, async () => {
                 try {
@@ -1809,6 +1894,7 @@ export function attachWebSocket(
               // attached is not.
               if (text.trim() === '' && files.length === 0 && stagedFiles.length === 0) break;
               const agent = parseAgentOptions(frame.agent);
+              opts?.onChatSendQueued?.();
               enqueueChatOp(ws, async () => {
                 // WHICH conversation this lands in is decided on the socket's
                 // own chain, so a `chat-new` typed into immediately still names
@@ -1970,6 +2056,7 @@ export function attachWebSocket(
               const chatId = socketChat.get(ws);
               if (!chatId) break;
               const key = chatKey(root, chatId);
+              opts?.onDevTeamControlQueued?.(frame.type);
               detach(
                 enqueueChatLane(key, async () => {
                   const chat = await getChat(root, chatId);
@@ -2205,6 +2292,7 @@ export function attachWebSocket(
   });
 
   httpServer.once('close', () => {
+    closing = true;
     void (async () => {
       unsubscribeBeforeChatDelete();
       ctx.exportBus.off('frame', onExportFrame);
@@ -2222,8 +2310,8 @@ export function attachWebSocket(
       ptySessions.clear();
       ptyManager.killAll();
 
+      await drainQueuedWork();
       const runtimes = [...devTeamRuntimes];
-      devTeamRuntimes.clear();
       await Promise.all(
         runtimes.map(async ([key, runtime]) => {
           try {
@@ -2235,11 +2323,14 @@ export function attachWebSocket(
           }
         }),
       );
+      devTeamRuntimes.clear();
 
       const sessions = [...chatSessions.values()];
       for (const session of sessions) retireChatSession(session, null);
-      await Promise.all(sessions.map((session) => waitForDriverClose(session)));
+      await Promise.all(sessions.map((session) => driverCloseWork(session)));
+      await drainQueuedWork();
       chatSessions.clear();
+      closingSessions.clear();
       socketChat.clear();
     })()
       .catch((err: unknown) => {

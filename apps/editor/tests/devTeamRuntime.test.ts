@@ -25,7 +25,16 @@ class ScriptedDriver implements ChatDriver {
   stops = 0;
   failStart = false;
   failSend = false;
+  holdClose = false;
+  readonly closed: Promise<void>;
   private stopped = false;
+  private resolveClosed!: () => void;
+
+  constructor() {
+    this.closed = new Promise<void>((resolve) => {
+      this.resolveClosed = resolve;
+    });
+  }
 
   get events(): AsyncIterable<ChatEvent> {
     const queue = this.queue;
@@ -64,6 +73,11 @@ class ScriptedDriver implements ChatDriver {
     this.stopped = true;
     this.stops += 1;
     this.queue.close();
+    if (!this.holdClose) this.resolveClosed();
+  }
+
+  releaseClose(): void {
+    this.resolveClosed();
   }
 }
 
@@ -857,6 +871,47 @@ describe('engineer durability and controls', () => {
     expect(run.snapshot().tasks[0].status).toBe('interrupted');
     expect(drivers[0].sent).toEqual([]);
     expect(drivers[0].stops).toBe(1);
+  });
+
+  it('dispose waits for an engineer that is still being created', async () => {
+    const run = runtime();
+    await reachPlanning(run);
+    await putPlan(plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    let release!: () => void;
+    let creationReached!: () => void;
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    const reached = new Promise<void>((resolve) => { creationReached = resolve; });
+    beforeCreate = async () => {
+      creationReached();
+      await blocked;
+    };
+
+    const planning = settleLead(run, 'Plan ready.');
+    await reached;
+    let disposed = false;
+    const disposing = run.dispose().then(() => { disposed = true; });
+    await Promise.resolve();
+    expect(disposed).toBe(false);
+    release();
+    await Promise.all([planning, disposing]);
+
+    expect(drivers[0].sent).toEqual([]);
+    expect(drivers[0].stops).toBe(1);
+  });
+
+  it('dispose waits for a completed engineer provider to close', async () => {
+    const run = runtime();
+    await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    drivers[0].holdClose = true;
+    await complete(drivers[0], 'Done.');
+    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+
+    let disposed = false;
+    const disposing = run.dispose().then(() => { disposed = true; });
+    await Promise.resolve();
+    expect(disposed).toBe(false);
+    drivers[0].releaseClose();
+    await disposing;
   });
 
   it('does not restart a stale engineer after Stop races its prompt append', async () => {

@@ -203,6 +203,7 @@ interface ActiveEngineer {
   approvals: Set<string>;
   inputs: Set<string>;
   withdrawals: Promise<void> | null;
+  consuming: Promise<void> | null;
 }
 
 type LeadTurn = 'interview' | 'revision' | 'planning' | 'review' | 'wrap';
@@ -293,11 +294,15 @@ export class DevTeamRuntime {
   private loaded = false;
   private loading: Promise<void> | null = null;
   private disposed = false;
+  private disposing: Promise<void> | null = null;
   private leadGeneration = 0;
   private pendingLead: LeadOperation | null = null;
   private processingLead: LeadOperation | null = null;
   private leadQueue: LeadOperation[] = [];
   private active = new Map<string, ActiveEngineer>();
+  private engineerClosures = new Set<Promise<void>>();
+  private engineerConsumers = new Set<Promise<void>>();
+  private trackedEngineerDrivers = new WeakSet<ChatDriver>();
   private dispatches = new Map<string, symbol>();
   private scheduling: Promise<void> | null = null;
   private scheduleAgain = false;
@@ -665,13 +670,19 @@ export class DevTeamRuntime {
     return true;
   }
 
-  async dispose(): Promise<void> {
-    if (this.disposed) return;
+  dispose(): Promise<void> {
+    this.disposing ??= this.disposeOnce();
+    return this.disposing;
+  }
+
+  private async disposeOnce(): Promise<void> {
     this.disposed = true;
     await this.load();
     if (ACTIVE_PHASES.has(this.state.phase) || this.state.phase === 'paused') {
       await this.stopActive('The dev team runtime closed before the run finished.');
     }
+    await this.scheduling;
+    await Promise.all([...this.engineerClosures, ...this.engineerConsumers]);
   }
 
   private async load(): Promise<void> {
@@ -1098,9 +1109,11 @@ export class DevTeamRuntime {
       driver = await this.options.createDriver(request);
       if (!this.dispatchOwned(task.id, token, record)) {
         driver.stop();
+        this.trackEngineerClosure(driver);
         return;
       }
       await driver.start(request.sessionId, this.options.root);
+      this.trackEngineerClosure(driver);
       if (!this.dispatchOwned(task.id, token, record)) {
         driver.stop();
         return;
@@ -1114,6 +1127,7 @@ export class DevTeamRuntime {
         approvals: new Set(),
         inputs: new Set(),
         withdrawals: null,
+        consuming: null,
       };
       this.active.set(engineerId, active);
       const dependencies = (task.dependsOn ?? [])
@@ -1130,7 +1144,10 @@ export class DevTeamRuntime {
         driver.stop();
         return;
       }
-      void this.consumeEngineer(engineerId, active).catch(() => undefined);
+      const consuming = this.consumeEngineer(engineerId, active).catch(() => undefined);
+      active.consuming = consuming;
+      this.engineerConsumers.add(consuming);
+      void consuming.then(() => this.engineerConsumers.delete(consuming));
       const agent = this.state.agent ? { ...this.state.agent } : {};
       if (task.effort) agent.effort = task.effort;
       if (!this.dispatchOwned(task.id, token, record) || this.active.get(engineerId) !== active) {
@@ -1144,6 +1161,7 @@ export class DevTeamRuntime {
       if (active && this.active.get(engineerId) === active) this.active.delete(engineerId);
       try {
         driver?.stop();
+        if (driver) this.trackEngineerClosure(driver);
       } catch {
         // The original setup failure is the useful task error.
       }
@@ -1160,6 +1178,17 @@ export class DevTeamRuntime {
     const phaseOwnsBuild =
       this.state.phase === 'building' || (this.state.phase === 'paused' && this.state.resumePhase === 'building');
     return !this.disposed && phaseOwnsBuild && record.status === 'running' && this.dispatches.get(taskId) === token;
+  }
+
+  private trackEngineerClosure(driver: ChatDriver): void {
+    if (this.trackedEngineerDrivers.has(driver)) return;
+    this.trackedEngineerDrivers.add(driver);
+    const closed = driver.closed ?? Promise.resolve();
+    this.engineerClosures.add(closed);
+    void closed.then(
+      () => this.engineerClosures.delete(closed),
+      () => this.engineerClosures.delete(closed),
+    );
   }
 
   private async consumeEngineer(engineerId: string, active: ActiveEngineer): Promise<void> {

@@ -84,6 +84,7 @@ uses stored Claude session or Codex thread continuation ids where available.
   long-lived conversation can make `state.json` and reopen replay grow.
 - Deleting a conversation first stops its lead and engineers, then removes the
   chat entry, lead transcript, and that conversation's `.hearth/devteam/<chatId>/`
-  artifacts.
+  artifacts. If a provider does not close within the shutdown deadline, deletion
+  fails and retains the conversation and artifacts so live work is never orphaned.
 - The private playtester and terminal-door agents are not automatic team
   members.
