@@ -123,7 +123,10 @@ function runtime(maxConcurrency = 2): DevTeamRuntime {
     appendEngineerRecord: async (engineerId, record) => {
       await beforeEngineerAppend?.(record);
       if (driverFailureStage === 'append' && record.role === 'user') throw new Error('append failed');
-      if (failAgentAppend && record.role === 'agent') throw new Error('agent transcript failed');
+      if (failAgentAppend && record.role === 'agent') {
+        failAgentAppend = false;
+        throw new Error('agent transcript failed');
+      }
       engineerRecords.push({ engineerId, record });
     },
     emitSnapshot: (snapshot) => {
@@ -240,6 +243,19 @@ afterEach(async () => {
 });
 
 describe('dev team lead state machine', () => {
+  it('clears stale handshake files before a new run can observe them', async () => {
+    await putSpec('# Stale spec\n');
+    await putPlan(plan([{ id: 'stale', title: 'Stale', roleId: role.id, detail: 'Stale work' }]));
+    const run = runtime();
+
+    await run.start('A fresh request.');
+
+    await expect(fsp.readFile(path.join(runDir(), 'spec.md'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fsp.readFile(path.join(runDir(), 'plan.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+    await settleLead(run, 'No fresh spec was written.');
+    expect(run.snapshot()).toMatchObject({ phase: 'interviewing', spec: null });
+  });
+
   it('interviews to spec review and sends revisions through the lead handshake', async () => {
     const run = runtime();
     await run.start('A complete brief with no genre assumptions.');
@@ -366,7 +382,7 @@ describe('dev team lead state machine', () => {
     expect(leadPrompts.at(-1)).toMatch(/continue.*interview/i);
   });
 
-  it('does not let a stopped interview completion overwrite interruption after spec read', async () => {
+  it('does not let a stopped interview completion overwrite the terminal run after spec read', async () => {
     const run = runtime();
     await run.start('A brief.');
     await putSpec('# Spec\n');
@@ -378,8 +394,8 @@ describe('dev team lead state machine', () => {
     blocked.release();
     await completion;
 
-    expect(run.snapshot().phase).toBe('interrupted');
-    expect(await readDevTeamState(root, chatId)).toMatchObject({ resumePhase: 'interviewing' });
+    expect(run.snapshot()).toMatchObject({ phase: 'done', error: expect.stringMatching(/stopped/i) });
+    expect(await readDevTeamState(root, chatId)).toMatchObject({ phase: 'done', resumePhase: null });
   });
 
   it('does not dispatch a stopped planning completion after plan read', async () => {
@@ -394,7 +410,7 @@ describe('dev team lead state machine', () => {
     blocked.release();
     await completion;
 
-    expect(run.snapshot().phase).toBe('interrupted');
+    expect(run.snapshot().phase).toBe('done');
     expect(drivers).toEqual([]);
   });
 
@@ -411,7 +427,7 @@ describe('dev team lead state machine', () => {
     blocked.release();
     await completion;
 
-    expect(run.snapshot().phase).toBe('interrupted');
+    expect(run.snapshot().phase).toBe('done');
     expect(leadPrompts.at(-1)).toMatch(/Review milestone/);
   });
 
@@ -429,7 +445,7 @@ describe('dev team lead state machine', () => {
     blocked.release();
     await Promise.all([approving, stopping]);
 
-    expect(run.snapshot().phase).toBe('interrupted');
+    expect(run.snapshot().phase).toBe('done');
     expect(leadPrompts).toHaveLength(promptCount);
   });
 
@@ -467,22 +483,20 @@ describe('dev team lead state machine', () => {
     blocked.release();
     await Promise.all([resuming, stopping]);
 
-    expect(reopened.snapshot().phase).toBe('interrupted');
+    expect(reopened.snapshot().phase).toBe('done');
     expect(leadPrompts).toHaveLength(promptCount);
   });
 
-  it('does not let a delayed pre-Stop completion satisfy the resumed lead turn', async () => {
+  it('keeps Stop terminal and returns later messages to ordinary lead chat', async () => {
     const run = runtime();
     await run.start('An unfinished brief.');
     await run.stop();
     await run.resume();
-    await putSpec('# Resumed spec\n');
 
     await settleLead(run, 'Delayed old completion.');
-    expect(run.snapshot()).toMatchObject({ phase: 'interviewing', spec: null });
-
-    await settleLead(run, 'Resumed completion.');
-    expect(run.snapshot()).toMatchObject({ phase: 'spec-review', spec: '# Resumed spec\n' });
+    expect(run.snapshot()).toMatchObject({ phase: 'done', spec: null, error: expect.stringMatching(/stopped/i) });
+    expect(await run.handleUserMessage('Continue in ordinary chat.')).toBe(false);
+    expect(run.snapshot().phase).toBe('done');
   });
 
   it('runs plan, build, review, and wrap turns through done', async () => {
@@ -581,6 +595,19 @@ describe('engineer scheduling', () => {
 
     expect(requests.map((request) => request.task.id)).toEqual(['a', 'b', 'c', 'd']);
     await run.dispose();
+  });
+
+  it('derives a bounded safe engineer identity from maximum-length task ids', async () => {
+    const taskId = `t${'x'.repeat(127)}`;
+    const run = runtime();
+
+    await reachBuilding(run, plan([{ id: taskId, title: 'Long id', roleId: role.id, detail: 'Long id task' }]));
+
+    const { engineerId, sessionId } = requests[0];
+    expect(engineerId).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/);
+    expect(engineerId.length).toBeLessThanOrEqual(128);
+    expect(sessionId).toBe(engineerId);
+    expect(run.snapshot().tasks[0].engineerId).toBe(engineerId);
   });
 
   it('uses path segments for scope overlap and makes an absent scope exclusive', async () => {
@@ -738,7 +765,7 @@ describe('engineer durability and controls', () => {
     expect(run.snapshot().phase).toBe('building');
   });
 
-  it('stop interrupts active engineers and withdraws their pending asks', async () => {
+  it('stop ends the run and withdraws active engineer asks', async () => {
     const run = runtime();
     await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
     const engineerId = run.snapshot().tasks[0].engineerId;
@@ -758,8 +785,8 @@ describe('engineer durability and controls', () => {
 
     await run.stop();
     expect(drivers[0].interrupts).toBe(1);
-    expect(run.snapshot()).toMatchObject({ phase: 'interrupted' });
-    expect(await readDevTeamState(root, chatId)).toMatchObject({ resumePhase: 'building' });
+    expect(run.snapshot()).toMatchObject({ phase: 'done', error: expect.stringMatching(/stopped/i) });
+    expect(await readDevTeamState(root, chatId)).toMatchObject({ phase: 'done', resumePhase: null });
     expect(run.snapshot().tasks[0].status).toBe('interrupted');
     expect(engineerEvents.slice(-2)).toEqual([
       { engineerId, event: { type: 'approval-resolved', approvalId: 'approval-1', decision: 'withdrawn' } },
@@ -795,7 +822,7 @@ describe('engineer durability and controls', () => {
     expect(drivers[0].stops).toBe(1);
   });
 
-  it('does not start a stale engineer after Stop and Resume race its prompt append', async () => {
+  it('does not restart a stale engineer after Stop races its prompt append', async () => {
     const run = runtime();
     await reachPlanning(run);
     await putPlan(plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
@@ -820,12 +847,11 @@ describe('engineer durability and controls', () => {
     const resuming = run.resume();
     release();
     await Promise.all([planning, resuming]);
-    await vi.waitFor(() => expect(drivers).toHaveLength(2));
 
     expect(drivers[0].sent).toEqual([]);
     expect(drivers[0].stops).toBe(1);
-    expect(drivers[1].sent).toHaveLength(1);
-    expect(run.snapshot().tasks[0].status).toBe('running');
+    expect(drivers).toHaveLength(1);
+    expect(run.snapshot()).toMatchObject({ phase: 'done', tasks: [{ status: 'interrupted' }] });
   });
 
   it.each(['start', 'append', 'send'] as const)('stops a created driver when engineer %s fails', async (stage) => {
@@ -888,6 +914,20 @@ describe('engineer durability and controls', () => {
   it('stops and settles an engineer when its event transcript write fails', async () => {
     const run = runtime();
     await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    const engineerId = run.snapshot().tasks[0].engineerId;
+    drivers[0].queue.push({
+      type: 'approval-request',
+      approvalId: 'approval-before-failure',
+      kind: 'command',
+      title: 'Run',
+      detail: 'Run',
+    });
+    drivers[0].queue.push({
+      type: 'input-request',
+      inputId: 'input-before-failure',
+      questions: [{ id: 'x', label: 'X', type: 'text' }],
+    });
+    await vi.waitFor(() => expect(engineerEvents).toHaveLength(2));
     failAgentAppend = true;
 
     drivers[0].queue.push({ type: 'message-delta', text: 'Unpersisted.' });
@@ -896,6 +936,65 @@ describe('engineer durability and controls', () => {
     expect(run.snapshot().tasks[0].summary).toContain('agent transcript failed');
     expect(drivers[0].stops).toBe(1);
     expect(run.snapshot().phase).toBe('reviewing');
+    expect(engineerRecords.slice(-2)).toEqual([
+      {
+        engineerId,
+        record: {
+          role: 'agent',
+          ts: expect.any(String),
+          event: { type: 'approval-resolved', approvalId: 'approval-before-failure', decision: 'withdrawn' },
+        },
+      },
+      {
+        engineerId,
+        record: {
+          role: 'agent',
+          ts: expect.any(String),
+          event: { type: 'input-resolved', inputId: 'input-before-failure', action: 'withdrawn' },
+        },
+      },
+    ]);
+  });
+
+  it('persists withdrawn asks before settling a bare engineer stream end', async () => {
+    const run = runtime();
+    await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    const engineerId = run.snapshot().tasks[0].engineerId;
+    drivers[0].queue.push({
+      type: 'approval-request',
+      approvalId: 'approval-at-end',
+      kind: 'command',
+      title: 'Run',
+      detail: 'Run',
+    });
+    drivers[0].queue.push({
+      type: 'input-request',
+      inputId: 'input-at-end',
+      questions: [{ id: 'x', label: 'X', type: 'text' }],
+    });
+    await vi.waitFor(() => expect(engineerEvents).toHaveLength(2));
+
+    drivers[0].queue.close();
+
+    await vi.waitFor(() => expect(run.snapshot().tasks[0].status).toBe('error'));
+    expect(engineerRecords.slice(-2)).toEqual([
+      {
+        engineerId,
+        record: {
+          role: 'agent',
+          ts: expect.any(String),
+          event: { type: 'approval-resolved', approvalId: 'approval-at-end', decision: 'withdrawn' },
+        },
+      },
+      {
+        engineerId,
+        record: {
+          role: 'agent',
+          ts: expect.any(String),
+          event: { type: 'input-resolved', inputId: 'input-at-end', action: 'withdrawn' },
+        },
+      },
+    ]);
   });
 });
 
@@ -1050,6 +1149,32 @@ describe('restart, steering, and plan rewrites', () => {
     expect((await readDevTeamState(root, chatId)).steering).toEqual([
       { ts: expect.any(String), text: 'Keep this instruction.' },
     ]);
+  });
+
+  it('merges review amendments by milestone identity when current work is omitted and future work is reordered', async () => {
+    const run = runtime();
+    const second = {
+      id: 'm2',
+      title: 'Second',
+      goal: 'Second outcome',
+      tasks: [{ id: 'second', title: 'Second', roleId: role.id, detail: 'Second task' }],
+    };
+    const third = {
+      id: 'm3',
+      title: 'Third',
+      goal: 'Third outcome',
+      tasks: [{ id: 'third', title: 'Third', roleId: role.id, detail: 'Third task' }],
+    };
+    await reachBuilding(run, plan([{ id: 'first', title: 'First', roleId: role.id, detail: 'First task' }], [second, third]));
+    await complete(drivers[0], 'First done.');
+    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+
+    await putPlan({ version: 1, roles: [role], milestones: [third, second] });
+    await settleLead(run, 'Future work reordered.');
+
+    expect(run.snapshot().plan?.milestones.map((milestone) => milestone.id)).toEqual(['m1', 'm3', 'm2']);
+    expect(run.snapshot().tasks.map((task) => task.taskId)).toEqual(['first', 'third', 'second']);
+    await vi.waitFor(() => expect(requests.at(-1)?.task.id).toBe('third'));
   });
 
   it('keeps completed records when a review rewrites future plan work', async () => {

@@ -295,7 +295,16 @@ describe('dev team websocket integration', () => {
     const resumed = await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
     expect(resumed.type === 'devteam-state' && resumed.state.runId).toBe(runId);
     inbox.socket.send(JSON.stringify({ type: 'devteam-stop' }));
-    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interrupted');
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'done');
+    const sentBeforeFollowup = harness.drivers[1].sent.length;
+    inbox.socket.send(JSON.stringify({
+      type: 'chat-send',
+      text: 'ordinary follow-up',
+      agent: { provider: 'anthropic', model: 'model-b' },
+    }));
+    await until(() => harness.drivers[1].sent.length === sentBeforeFollowup + 1);
+    expect(harness.drivers[1].sent.at(-1)?.text).toBe('ordinary follow-up');
+    expect(await readDevTeamState(harness.root, chatId)).toMatchObject({ runId, phase: 'done' });
     inbox.socket.close();
   });
 
@@ -525,7 +534,7 @@ describe('dev team websocket integration', () => {
     )).toHaveLength(1);
     eventRace.socket.close();
 
-    const engineerId = `devteam-${chatId}-task1`;
+    const engineerId = (await readDevTeamState(harness.root, chatId)).tasks[0].engineerId;
     harness.drivers[1].emit({
       type: 'approval-request', approvalId: 'approval-1', kind: 'command', title: 'Run check', detail: 'npm test',
     });
@@ -610,6 +619,7 @@ describe('dev team websocket integration', () => {
       type: 'approval-request', approvalId: 'delete-approval', kind: 'command', title: 'Write a file', detail: 'src/first',
     });
     await inbox.next((frame) => frame.type === 'devteam-event' && frame.event.type === 'approval-request');
+    const engineerId = (await readDevTeamState(harness.root, chatId)).tasks[0].engineerId;
 
     const deleted = await harness.ctx.deleteProjectChat(harness.root, chatId);
 
@@ -618,7 +628,7 @@ describe('dev team websocket integration', () => {
     expect(engineer.interrupted).toBe(true);
     expect(engineer.stopped).toBe(true);
     expect(harness.drivers).toHaveLength(2);
-    expect(await readEngineerRecords(harness.root, chatId, `devteam-${chatId}-t1`)).toContainEqual({
+    expect(await readEngineerRecords(harness.root, chatId, engineerId)).toContainEqual({
       role: 'agent',
       ts: expect.any(String),
       event: { type: 'approval-resolved', approvalId: 'delete-approval', decision: 'withdrawn' },

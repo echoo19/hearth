@@ -18,6 +18,7 @@ import {
   readDevTeamSpec,
   readDevTeamState,
   readEngineerRecords,
+  resetDevTeamHandshakes,
   writeDevTeamState,
   type DevTeamPhase,
   type DevTeamPlan,
@@ -201,6 +202,7 @@ interface ActiveEngineer {
   files: Set<string>;
   approvals: Set<string>;
   inputs: Set<string>;
+  withdrawals: Promise<void> | null;
 }
 
 type LeadTurn = 'interview' | 'revision' | 'planning' | 'review' | 'wrap';
@@ -225,6 +227,8 @@ const ACTIVE_PHASES = new Set<DevTeamPhase>([
   'reviewing',
   'wrapping',
 ]);
+
+const DEV_TEAM_STOPPED = 'Dev team run stopped.';
 
 function initialState(): DevTeamState {
   return {
@@ -251,6 +255,10 @@ function initialState(): DevTeamState {
 
 function digest(plan: DevTeamPlan): string {
   return createHash('sha256').update(JSON.stringify(plan)).digest('hex');
+}
+
+function engineerIdentity(chatId: string, taskId: string): string {
+  return `devteam-${createHash('sha256').update(`${chatId}\0${taskId}`).digest('hex')}`;
 }
 
 function terminal(status: DevTeamTaskRecord['status']): boolean {
@@ -324,6 +332,8 @@ export class DevTeamRuntime {
       ? [...this.state.history, completedRun(this.state, this.now())]
       : this.state.history;
     const specVersion = this.state.specVersion;
+    await resetDevTeamHandshakes(this.options.root, this.options.chatId);
+    if (!this.operationCurrent(operation)) return;
     this.state = {
       ...initialState(),
       runId: this.id(),
@@ -341,6 +351,7 @@ export class DevTeamRuntime {
     await this.load();
     const message = text.trim();
     if (!message) return false;
+    if (this.state.phase === 'done' && this.state.error === DEV_TEAM_STOPPED) return false;
     if (this.state.phase === 'idle' || this.state.phase === 'done') {
       await this.start(message);
       return true;
@@ -628,8 +639,11 @@ export class DevTeamRuntime {
 
   async stop(): Promise<void> {
     await this.load();
-    if (this.state.phase === 'idle' || this.state.phase === 'done' || this.state.phase === 'interrupted') return;
-    await this.stopActive(null);
+    if (this.state.phase === 'idle' || this.state.phase === 'done') {
+      this.invalidateLead();
+      return;
+    }
+    await this.stopActive(DEV_TEAM_STOPPED);
   }
 
   routeEngineerApproval(
@@ -909,10 +923,12 @@ export class DevTeamRuntime {
       return true;
     }
     const old = this.state.plan;
-    const future = candidate.milestones.slice(this.state.currentMilestone + 1);
+    const locked = old.milestones.slice(0, this.state.currentMilestone + 1);
+    const lockedIds = new Set(locked.map((milestone) => milestone.id));
+    const future = candidate.milestones.filter((milestone) => !lockedIds.has(milestone.id));
     const merged: DevTeamPlan = {
       ...candidate,
-      milestones: [...old.milestones.slice(0, this.state.currentMilestone + 1), ...future],
+      milestones: [...locked, ...future],
     };
     const validated = devTeamPlanSchema.safeParse(merged);
     if (!validated.success) {
@@ -998,7 +1014,11 @@ export class DevTeamRuntime {
 
     if (this.failBlockedTasks(milestone, records)) await this.persist();
 
-    if (milestone.tasks.every((task) => terminal(records.get(task.id)?.status ?? 'pending')) && this.active.size === 0) {
+    if (
+      this.state.phase === 'building' &&
+      milestone.tasks.every((task) => terminal(records.get(task.id)?.status ?? 'pending')) &&
+      this.active.size === 0
+    ) {
       await this.beginReview();
     }
   }
@@ -1045,7 +1065,7 @@ export class DevTeamRuntime {
 
   private async dispatch(task: DevTeamTask, record: DevTeamTaskRecord): Promise<void> {
     const role = this.state.plan!.roles.find((candidate) => candidate.id === task.roleId)!;
-    const engineerId = record.engineerId || `devteam-${this.options.chatId}-${task.id}`;
+    const engineerId = record.engineerId || engineerIdentity(this.options.chatId, task.id);
     record.engineerId = engineerId;
     record.status = 'running';
     record.startedAt = this.now();
@@ -1058,7 +1078,7 @@ export class DevTeamRuntime {
     let driver: ChatDriver | null = null;
     const request: DevTeamEngineerRequest = {
       engineerId,
-      sessionId: `devteam-${this.options.chatId}-${task.id}`,
+      sessionId: engineerId,
       task,
       role,
       agent: this.state.agent,
@@ -1093,6 +1113,7 @@ export class DevTeamRuntime {
         files: new Set(),
         approvals: new Set(),
         inputs: new Set(),
+        withdrawals: null,
       };
       this.active.set(engineerId, active);
       const dependencies = (task.dependsOn ?? [])
@@ -1188,6 +1209,8 @@ export class DevTeamRuntime {
     if (this.active.get(engineerId) !== active) return;
     const record = this.taskRecord(active.task.id);
     if (!record) return;
+    await this.withdrawEngineerAsks(engineerId, active);
+    if (this.active.get(engineerId) !== active) return;
     record.status = status;
     record.endedAt = this.now();
     record.summary = active.currentProse.trim() || active.finalProse || (status === 'error' ? 'Engineer failed.' : undefined);
@@ -1196,6 +1219,30 @@ export class DevTeamRuntime {
     active.driver.stop();
     await this.persist();
     await this.schedule();
+  }
+
+  private withdrawEngineerAsks(engineerId: string, active: ActiveEngineer): Promise<void> {
+    if (active.withdrawals) return active.withdrawals;
+    const withdrawing = this.persistEngineerWithdrawals(engineerId, active);
+    active.withdrawals = withdrawing;
+    return withdrawing.finally(() => {
+      if (active.withdrawals === withdrawing) active.withdrawals = null;
+    });
+  }
+
+  private async persistEngineerWithdrawals(engineerId: string, active: ActiveEngineer): Promise<void> {
+    for (const approvalId of [...active.approvals]) {
+      const event: ChatEvent = { type: 'approval-resolved', approvalId, decision: 'withdrawn' };
+      await this.options.appendEngineerRecord(engineerId, { role: 'agent', ts: this.now(), event });
+      active.approvals.delete(approvalId);
+      this.options.emitEngineerEvent(engineerId, event);
+    }
+    for (const inputId of [...active.inputs]) {
+      const event: ChatEvent = { type: 'input-resolved', inputId, action: 'withdrawn' };
+      await this.options.appendEngineerRecord(engineerId, { role: 'agent', ts: this.now(), event });
+      active.inputs.delete(inputId);
+      this.options.emitEngineerEvent(engineerId, event);
+    }
   }
 
   private async beginReview(operation = this.beginLead('review')): Promise<void> {
@@ -1223,16 +1270,7 @@ export class DevTeamRuntime {
     const phase = this.state.phase;
     const resumePhase = phase === 'paused' ? this.state.resumePhase : phase;
     for (const [engineerId, active] of [...this.active]) {
-      for (const approvalId of active.approvals) {
-        const event: ChatEvent = { type: 'approval-resolved', approvalId, decision: 'withdrawn' };
-        await this.options.appendEngineerRecord(engineerId, { role: 'agent', ts: this.now(), event });
-        this.options.emitEngineerEvent(engineerId, event);
-      }
-      for (const inputId of active.inputs) {
-        const event: ChatEvent = { type: 'input-resolved', inputId, action: 'withdrawn' };
-        await this.options.appendEngineerRecord(engineerId, { role: 'agent', ts: this.now(), event });
-        this.options.emitEngineerEvent(engineerId, event);
-      }
+      await this.withdrawEngineerAsks(engineerId, active);
       this.active.delete(engineerId);
       active.driver.interrupt?.();
       active.driver.stop();
@@ -1247,8 +1285,9 @@ export class DevTeamRuntime {
       record.status = 'interrupted';
       record.endedAt = this.now();
     }
-    this.state.phase = 'interrupted';
-    this.state.resumePhase = resumePhase;
+    const stopped = error === DEV_TEAM_STOPPED;
+    this.state.phase = stopped ? 'done' : 'interrupted';
+    this.state.resumePhase = stopped ? null : resumePhase;
     this.state.error = error;
     await this.persist();
   }

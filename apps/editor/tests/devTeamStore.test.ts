@@ -237,14 +237,42 @@ describe('spec and plan files', () => {
     await fsp.writeFile(path.join(runDir(), 'spec.md'), '# First spec\n');
     const first = await approveDevTeamSpec(root, chatId);
     expect(first.specVersion).toBe(1);
+    expect(first).toMatchObject({ phase: 'planning', retryCount: 0, error: null });
     expect(first.approvals).toEqual([{ specVersion: 1, approvedAt: expect.any(String) }]);
     expect(await readDevTeamSpec(root, chatId)).toBe('# First spec\n');
     expect(await fsp.readFile(path.join(runDir(), 'spec.v1.md'), 'utf8')).toBe('# First spec\n');
 
+    await writeDevTeamState(root, chatId, { ...first, phase: 'spec-review' });
     await fsp.writeFile(path.join(runDir(), 'spec.md'), '# Revised spec\n');
     const second = await approveDevTeamSpec(root, chatId);
     expect(second.specVersion).toBe(2);
     expect(await fsp.readFile(path.join(runDir(), 'spec.v2.md'), 'utf8')).toBe('# Revised spec\n');
+
+    const repeated = await approveDevTeamSpec(root, chatId);
+    expect(repeated.specVersion).toBe(2);
+    expect(repeated.approvals).toHaveLength(2);
+  });
+
+  it('recovers one approval version after a crash between artifact and state writes', async () => {
+    await writeDevTeamState(root, chatId, state({ phase: 'spec-review' }));
+    await fsp.writeFile(path.join(runDir(), 'spec.md'), '# Crash-safe spec\n');
+    const rename = fsp.rename.bind(fsp);
+    let failed = false;
+    vi.spyOn(fsp, 'rename').mockImplementation(async (from, to) => {
+      if (!failed && path.basename(String(to)) === 'state.json') {
+        failed = true;
+        throw new Error('simulated crash before approval state');
+      }
+      await rename(from, to);
+    });
+
+    await expect(approveDevTeamSpec(root, chatId)).rejects.toThrow('simulated crash');
+    expect(await fsp.readFile(path.join(runDir(), 'spec.v1.md'), 'utf8')).toBe('# Crash-safe spec\n');
+    vi.restoreAllMocks();
+
+    const recovered = await approveDevTeamSpec(root, chatId);
+    expect(recovered).toMatchObject({ phase: 'planning', specVersion: 1 });
+    expect(recovered.approvals).toHaveLength(1);
   });
 
   it('returns null when plan or spec files are missing or unreadable', async () => {

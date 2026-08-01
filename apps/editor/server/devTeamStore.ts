@@ -353,6 +353,16 @@ export function writeDevTeamState(root: string, chatId: string, state: DevTeamSt
   );
 }
 
+export function resetDevTeamHandshakes(root: string, chatId: string): Promise<void> {
+  const id = safeChatId(chatId);
+  if (!id) return Promise.reject(new Error('Chat id must be a safe id.'));
+  return serialize(root, id, async () => {
+    await Promise.all(
+      ['spec.md', 'plan.json'].map((file) => fsp.rm(path.join(devTeamRunDir(root, id), file), { force: true })),
+    );
+  });
+}
+
 export async function readDevTeamPlan(root: string, chatId: string): Promise<DevTeamPlan | null> {
   const id = safeChatId(chatId);
   if (!id) return null;
@@ -378,17 +388,22 @@ export function approveDevTeamSpec(root: string, chatId: string): Promise<DevTea
   const id = safeChatId(chatId);
   if (!id) return Promise.reject(new Error('Chat id must be a safe id.'));
   return serialize(root, id, async () => {
-    const spec = await readDevTeamSpec(root, id);
     const current = await readStateFile(root, id);
-    if (spec === null || current.error !== null) return current;
+    if (current.phase !== 'spec-review' || current.error !== null) return current;
+    const spec = await readDevTeamSpec(root, id);
+    if (spec === null) return current;
     const specVersion = current.specVersion + 1;
     const approvedAt = new Date().toISOString();
     await writeAtomic(path.join(devTeamRunDir(root, id), `spec.v${specVersion}.md`), spec);
     const next: DevTeamState = {
       ...current,
+      phase: 'planning',
+      resumePhase: null,
       spec,
       specVersion,
       approvals: [...current.approvals, { specVersion, approvedAt }],
+      retryCount: 0,
+      error: null,
     };
     await writeAtomic(path.join(devTeamRunDir(root, id), 'state.json'), `${JSON.stringify(next, null, 2)}\n`);
     return next;
