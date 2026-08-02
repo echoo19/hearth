@@ -3,9 +3,13 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { AgentTurnOptions } from './chat.js';
 import { parseTranscript, safeChatId, type ChatRecord } from './chatStore.js';
+import { formatPlanIssues } from './devTeamPrompts.js';
 
 export const DEVTEAM_DIR = path.join('.hearth', 'devteam');
 export const DEVTEAM_STATE_UNREADABLE = 'Dev team state is unreadable.';
+/** Why an approval was refused. Both are read by the caller, so they are shared. */
+export const DEVTEAM_SPEC_MISSING = 'The specification is missing.';
+export const DEVTEAM_SPEC_NOT_AWAITING = 'The specification is no longer waiting for approval.';
 
 /** Remove one explicitly deleted conversation's artifacts without exposing a path builder. */
 export async function deleteDevTeamArtifacts(root: string, chatId: string): Promise<boolean> {
@@ -330,7 +334,17 @@ async function writeAtomic(file: string, text: string): Promise<void> {
   await fsp.mkdir(path.dirname(file), { recursive: true });
   const temp = `${file}.${process.pid}.tmp`;
   try {
-    await fsp.writeFile(temp, text, 'utf8');
+    // The rename is only atomic with respect to the directory entry. Without
+    // the fsync the bytes can still be in the page cache when the rename
+    // lands, so a hard kill leaves state.json present and zero length — the
+    // one shape that reads back as corrupt.
+    const handle = await fsp.open(temp, 'w');
+    try {
+      await handle.writeFile(text, 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
     await fsp.rename(temp, file);
   } catch (error) {
     await fsp.rm(temp, { force: true }).catch(() => undefined);
@@ -361,11 +375,33 @@ export function readDevTeamState(root: string, chatId: string): Promise<DevTeamS
 export function writeDevTeamState(root: string, chatId: string, state: DevTeamState): Promise<void> {
   const id = safeChatId(chatId);
   if (!id) return Promise.reject(new Error('Chat id must be a safe id.'));
-  if (state.unreadable === true) return Promise.reject(new Error('Unreadable dev team state cannot be written.'));
-  const parsed = stateSchema.parse(state);
+  // The flag says the FILE could not be read; it says nothing about the state
+  // the app is holding. Refusing to write it made every later persist throw,
+  // so one corrupt read killed the conversation with no way back from inside
+  // the app. Strip it and write what we have. The damaged file itself is only
+  // ever moved aside by quarantineDevTeamState, on an explicit call — no write
+  // path overwrites a file that might still hold someone's run.
+  const { unreadable: _unreadable, ...writable } = state;
+  const parsed = stateSchema.parse(writable);
   return serialize(root, id, () =>
     writeAtomic(path.join(devTeamRunDir(root, id), 'state.json'), `${JSON.stringify(parsed, null, 2)}\n`),
   );
+}
+
+/**
+ * Move an unreadable state file aside so the conversation can start over.
+ *
+ * It is renamed rather than deleted because a file that failed to parse may
+ * still be the only record of a run someone cares about. Deliberately outside
+ * the per-chat write lane: rename is atomic, so a state write landing either
+ * side of this leaves one whole state.json either way, and taking the lane
+ * would deadlock a caller that is already holding it.
+ */
+export async function quarantineDevTeamState(root: string, chatId: string): Promise<void> {
+  const id = safeChatId(chatId);
+  if (!id) return;
+  const file = path.join(devTeamRunDir(root, id), 'state.json');
+  await fsp.rename(file, `${file}.corrupt`).catch(() => undefined);
 }
 
 export function resetDevTeamHandshakes(root: string, chatId: string): Promise<void> {
@@ -378,12 +414,35 @@ export function resetDevTeamHandshakes(root: string, chatId: string): Promise<vo
   });
 }
 
+/**
+ * Read a plan the lead wrote, and say what is wrong with it in words the lead
+ * can act on. `readDevTeamPlan` only answers "is there a plan"; a repair turn
+ * needs the failing field, which is what `error` carries here.
+ */
+export function parsePlanJson(text: string): { plan: DevTeamPlan | null; error: string | null } {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch (error) {
+    return { plan: null, error: `The file is not valid JSON: ${(error as Error).message}` };
+  }
+  const parsed = devTeamPlanSchema.safeParse(raw);
+  if (parsed.success) return { plan: parsed.data, error: null };
+  // Zod types a path segment as PropertyKey. A plan parsed out of JSON can
+  // never carry a symbol key, and the formatter is honest about taking only
+  // what it can print, so drop the case that cannot occur rather than cast.
+  const issues = parsed.error.issues.map((issue) => ({
+    path: issue.path.filter((segment): segment is string | number => typeof segment !== 'symbol'),
+    message: issue.message,
+  }));
+  return { plan: null, error: formatPlanIssues(issues) };
+}
+
 export async function readDevTeamPlan(root: string, chatId: string): Promise<DevTeamPlan | null> {
   const id = safeChatId(chatId);
   if (!id) return null;
   try {
-    const parsed = devTeamPlanSchema.safeParse(JSON.parse(await fsp.readFile(path.join(devTeamRunDir(root, id), 'plan.json'), 'utf8')));
-    return parsed.success ? parsed.data : null;
+    return parsePlanJson(await fsp.readFile(path.join(devTeamRunDir(root, id), 'plan.json'), 'utf8')).plan;
   } catch {
     return null;
   }
@@ -393,20 +452,38 @@ export async function readDevTeamSpec(root: string, chatId: string): Promise<str
   const id = safeChatId(chatId);
   if (!id) return null;
   try {
-    return await fsp.readFile(path.join(devTeamRunDir(root, id), 'spec.md'), 'utf8');
+    const text = await fsp.readFile(path.join(devTeamRunDir(root, id), 'spec.md'), 'utf8');
+    // An empty file is the lead having created spec.md and written nothing.
+    // Callers only test for null, so returning '' advanced a run to planning
+    // on a specification that does not exist.
+    return text.trim() === '' ? null : text;
   } catch {
     return null;
   }
 }
 
+/**
+ * Approve the spec on disk, or say why it was not approved.
+ *
+ * A bail-out used to return `current` untouched, which still carries the spec
+ * the caller was already showing and no error — indistinguishable from a real
+ * approval. The caller then recorded an approval that never happened by
+ * rewriting `approvals[approvals.length - 1]`, which on an empty array sets
+ * property `-1` and JSON.stringify drops it silently: the run advanced to
+ * planning with no approval and no version. So every bail-out now names its
+ * reason in `error`, where the caller already looks. The returned state is an
+ * answer to this call, not necessarily what is on disk: nothing is persisted
+ * on a bail-out.
+ */
 export function approveDevTeamSpec(root: string, chatId: string): Promise<DevTeamState> {
   const id = safeChatId(chatId);
   if (!id) return Promise.reject(new Error('Chat id must be a safe id.'));
   return serialize(root, id, async () => {
     const current = await readStateFile(root, id);
-    if (current.phase !== 'spec-review' || current.error !== null) return current;
+    if (current.error !== null) return current;
+    if (current.phase !== 'spec-review') return { ...current, error: DEVTEAM_SPEC_NOT_AWAITING };
     const spec = await readDevTeamSpec(root, id);
-    if (spec === null) return current;
+    if (spec === null) return { ...current, error: DEVTEAM_SPEC_MISSING };
     const specVersion = current.specVersion + 1;
     const approvedAt = new Date().toISOString();
     await writeAtomic(path.join(devTeamRunDir(root, id), `spec.v${specVersion}.md`), spec);

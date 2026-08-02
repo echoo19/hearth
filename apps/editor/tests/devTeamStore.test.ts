@@ -6,6 +6,8 @@ import {
   approveDevTeamSpec,
   appendEngineerRecord,
   deleteDevTeamArtifacts,
+  parsePlanJson,
+  quarantineDevTeamState,
   readDevTeamPlan,
   readDevTeamSpec,
   readDevTeamState,
@@ -106,15 +108,61 @@ describe('dev team run state', () => {
     }
   });
 
-  it('refuses to write a state derived from an unreadable sentinel', async () => {
+  it('writes the state it is holding even after an unreadable read', async () => {
     await fsp.mkdir(runDir(), { recursive: true });
     await fsp.writeFile(stateFile(), '{ preserve this damage');
     const unreadable = await readDevTeamState(root, chatId);
+    expect(unreadable.unreadable).toBe(true);
 
-    await expect(writeDevTeamState(root, chatId, { ...unreadable, retryCount: 1 })).rejects.toThrow(
-      'Unreadable dev team state cannot be written.',
-    );
-    expect(await fsp.readFile(stateFile(), 'utf8')).toBe('{ preserve this damage');
+    await writeDevTeamState(root, chatId, { ...unreadable, retryCount: 1 });
+
+    const written = JSON.parse(await fsp.readFile(stateFile(), 'utf8'));
+    expect('unreadable' in written).toBe(false);
+    expect(written).toMatchObject({ retryCount: 1, phase: 'interrupted' });
+    expect(await readDevTeamState(root, chatId)).toMatchObject({ retryCount: 1 });
+  });
+
+  it('quarantines a corrupt file instead of leaving the conversation dead', async () => {
+    await fsp.mkdir(runDir(), { recursive: true });
+    await fsp.writeFile(stateFile(), '{ preserve this damage');
+
+    await quarantineDevTeamState(root, chatId);
+
+    expect(await fsp.readFile(`${stateFile()}.corrupt`, 'utf8')).toBe('{ preserve this damage');
+    await expect(fsp.stat(stateFile())).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readDevTeamState(root, chatId)).toEqual(state({ runId: '', phase: 'idle' }));
+  });
+
+  it('quarantines nothing for a missing file or an unsafe id', async () => {
+    await expect(quarantineDevTeamState(root, chatId)).resolves.toBeUndefined();
+    await expect(quarantineDevTeamState(root, '../outside')).resolves.toBeUndefined();
+    await expect(fsp.stat(path.join(root, '.hearth', 'devteam'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('round-trips a whole state through the atomic write', async () => {
+    const written = state({
+      phase: 'building',
+      plan: validPlan,
+      tasks: [{ taskId: 'loop', engineerId: 'eng-1', status: 'running', startedAt: 't1' }],
+      steering: [{ ts: 't2', text: 'Keep it small' }],
+      spec: '# Spec',
+      specVersion: 1,
+      approvals: [{ specVersion: 1, approvedAt: 't0' }],
+    });
+    await writeDevTeamState(root, chatId, written);
+
+    expect(await readDevTeamState(root, chatId)).toEqual(written);
+    expect((await fsp.readdir(runDir())).filter((name) => name.includes('.tmp'))).toEqual([]);
+  });
+
+  it('defaults milestone repairs and round-trips the counts a repair writes', async () => {
+    await fsp.mkdir(runDir(), { recursive: true });
+    const { milestoneRepairs: _repairs, ...legacy } = state();
+    await fsp.writeFile(stateFile(), JSON.stringify(legacy));
+    expect((await readDevTeamState(root, chatId)).milestoneRepairs).toEqual({});
+
+    await writeDevTeamState(root, chatId, state({ milestoneRepairs: { m1: 1 } }));
+    expect((await readDevTeamState(root, chatId)).milestoneRepairs).toEqual({ m1: 1 });
   });
 
   it('serializes atomic state writes so concurrent callers leave one whole state', async () => {
@@ -280,7 +328,60 @@ describe('spec and plan files', () => {
   it('returns null when plan or spec files are missing or unreadable', async () => {
     expect(await readDevTeamPlan(root, chatId)).toBeNull();
     expect(await readDevTeamSpec(root, chatId)).toBeNull();
-    expect(await approveDevTeamSpec(root, chatId)).toEqual(state({ runId: '', phase: 'idle' }));
+    expect(await approveDevTeamSpec(root, chatId)).toEqual(
+      state({ runId: '', phase: 'idle', error: 'The specification is no longer waiting for approval.' }),
+    );
+  });
+
+  it('reads an empty specification as no specification', async () => {
+    await fsp.mkdir(runDir(), { recursive: true });
+    for (const empty of ['', '   ', '\n\n\t']) {
+      await fsp.writeFile(path.join(runDir(), 'spec.md'), empty);
+      expect(await readDevTeamSpec(root, chatId)).toBeNull();
+    }
+    await fsp.writeFile(path.join(runDir(), 'spec.md'), '  # Real spec  \n');
+    expect(await readDevTeamSpec(root, chatId)).toBe('  # Real spec  \n');
+  });
+
+  it('records no approval when the specification is gone by the time it is approved', async () => {
+    await writeDevTeamState(root, chatId, state({ phase: 'spec-review', spec: '# The spec they read' }));
+
+    const refused = await approveDevTeamSpec(root, chatId);
+
+    expect(refused.error).toBe('The specification is missing.');
+    expect(refused.specVersion).toBe(0);
+    expect(refused.approvals).toEqual([]);
+    const onDisk = JSON.parse(await fsp.readFile(stateFile(), 'utf8'));
+    expect(onDisk).toMatchObject({ phase: 'spec-review', specVersion: 0, approvals: [] });
+  });
+
+  it('refuses to approve over a state that is already carrying an error', async () => {
+    await writeDevTeamState(root, chatId, state({ phase: 'spec-review', error: 'The lead agent stopped.' }));
+    await fsp.writeFile(path.join(runDir(), 'spec.md'), '# Ignored spec\n');
+
+    const refused = await approveDevTeamSpec(root, chatId);
+
+    expect(refused.error).toBe('The lead agent stopped.');
+    expect(refused.approvals).toEqual([]);
+    expect(await fsp.readdir(runDir())).not.toContain('spec.v1.md');
+  });
+});
+
+describe('plan parsing', () => {
+  it('names the failing field so a repair turn has something to fix', () => {
+    const { goal: _goal, ...milestone } = validPlan.milestones[0];
+    const parsed = parsePlanJson(JSON.stringify({ ...validPlan, milestones: [milestone] }));
+
+    expect(parsed.plan).toBeNull();
+    expect(parsed.error).toContain('milestones.0.goal');
+  });
+
+  it('separates broken JSON from a plan that parsed but does not fit', () => {
+    const broken = parsePlanJson('{ "version": 1,');
+    expect(broken.plan).toBeNull();
+    expect(broken.error).toMatch(/^The file is not valid JSON: /);
+
+    expect(parsePlanJson(JSON.stringify(validPlan))).toEqual({ plan: validPlan, error: null });
   });
 });
 
