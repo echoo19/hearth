@@ -139,7 +139,10 @@ describe('DevTeamPane', () => {
   it('renders a lead-first calm board with milestone and engineer status', () => {
     render(<DevTeamPane />);
 
-    expect(screen.getByRole('status', { name: 'Dev team phase' }).textContent).toContain('Build');
+    // The lit step IS the phase readout while they agree; the name beside it
+    // only speaks up for the phases that share a step (review, wrap, paused).
+    expect(screen.getByRole('listitem', { current: 'step' }).textContent).toContain('Build');
+    expect(screen.getByRole('status', { name: 'Dev team phase' }).textContent).toBe('');
     const lanes = screen.getAllByRole('button', { name: /lane/i });
     expect(lanes[0].textContent).toContain('Lead');
     expect(screen.getByText('Playable loop')).toBeTruthy();

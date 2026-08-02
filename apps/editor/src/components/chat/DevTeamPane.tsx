@@ -47,8 +47,11 @@ function PhaseHeader({ state }: { state: DevTeamSnapshot | null }) {
           </li>
         ))}
       </ol>
+      {/* Reviewing, wrapping, paused and interrupted all sit on the Build step,
+          so the phase name is the only thing that says which. When it merely
+          repeats the lit step it is printing the same word twice. */}
       <span className="devteam-phase-name" role="status" aria-label="Dev team phase">
-        {devTeamPhaseLabel(phase)}
+        {devTeamPhaseLabel(phase) === STEPS[active] ? '' : devTeamPhaseLabel(phase)}
       </span>
       <div className="devteam-controls">
         {canPause && <Button size="sm" variant="ghost" aria-label="Pause dev team" onClick={pause}>Pause</Button>}
