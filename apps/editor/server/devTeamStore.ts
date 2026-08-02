@@ -104,6 +104,16 @@ export interface DevTeamSnapshot {
   summary: string | null;
   wrap: string | null;
   error: string | null;
+  /**
+   * When the run entered the phase it is in, as epoch milliseconds.
+   *
+   * The pane could say WHAT was happening and never how long it had been
+   * happening, and those are not the same fact. A run whose lead turn hangs
+   * looks exactly like one that is thinking: the board reads "The lead is
+   * preparing the plan" at minute one and at hour two, with nothing to press.
+   * Null for a run persisted before this existed, and for `idle`.
+   */
+  phaseSince: number | null;
 }
 
 export interface DevTeamState extends DevTeamSnapshot {
@@ -285,6 +295,10 @@ const stateSchema: z.ZodType<DevTeamState> = z.object({
   summary: z.string().nullable(),
   wrap: z.string().nullable(),
   error: z.string().nullable(),
+  // Defaulted, not required: every run written before this field existed must
+  // still load. A null reads as "not known", which the pane states as such
+  // rather than inventing a start time.
+  phaseSince: z.number().nullable().default(null),
 }).strict();
 
 function emptyState(over: Partial<DevTeamState> = {}): DevTeamState {
@@ -308,6 +322,7 @@ function emptyState(over: Partial<DevTeamState> = {}): DevTeamState {
     summary: null,
     wrap: null,
     error: null,
+    phaseSince: null,
     ...over,
   };
 }

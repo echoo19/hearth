@@ -308,11 +308,88 @@
   text-transform: uppercase;
 }
 
-.devteam-board-note,
+/* The one panel in this pane that is allowed to be loud, because it appears
+   only when the run has stopped moving and the person needs to be told so. */
+.devteam-stall {
+  padding: 16px 18px;
+  border: 1px solid var(--warn-soft);
+  border-radius: var(--radius-lg);
+  background: var(--warn-soft);
+}
+
+.devteam-stall-lead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-snug);
+}
+
+.devteam-stall-lead svg {
+  flex: none;
+  color: var(--warn);
+}
+
+.devteam-stall-body {
+  max-width: 62ch;
+  margin: 8px 0 0;
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.devteam-stall-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* The counter beside the live phase. Faint enough that the phase name stays
+   the thing being read, present enough to answer "is this moving?". */
+.devteam-step-clock {
+  color: var(--ink-faint);
+}
+
 .devteam-lane-empty {
   margin: 0;
   color: var(--ink-mute);
   font-size: var(--text-sm);
+}
+
+/* A working state, not a caption. It was one grey sentence floating at the top
+   of an empty column, which is what made a run that had stopped and a run that
+   was thinking look identical. */
+.devteam-board-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+}
+
+.devteam-board-note-flame {
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: var(--accent);
+}
+
+.devteam-board-note-clock {
+  margin-left: auto;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
 }
 
 .devteam-milestones {

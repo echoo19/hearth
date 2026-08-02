@@ -306,6 +306,7 @@ describe('Recents, across folders', () => {
         version: 1,
         runId: 'run-1',
         phase: 'building',
+      phaseSince: null,
         steering: [],
         plan: null,
         tasks: [
@@ -334,6 +335,7 @@ describe('Recents, across folders', () => {
       version: 1 as const,
       runId: 'run-1',
       phase: 'paused' as const,
+      phaseSince: null,
       steering: [],
       plan: null,
       tasks: [],

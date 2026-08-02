@@ -9,11 +9,40 @@ import {
 } from '../../chat/devteam';
 import { useApp } from '../../store';
 import type { ChatMessage, DevTeamCompletedRun, DevTeamSnapshot, DevTeamTaskRecord } from '../../types';
+import { formatElapsed } from '../../chat/duration';
 import { Icon } from '../ui';
 import { Button } from '../ui/Button';
 import { Composer } from './Composer';
 import { Markdown } from './Markdown';
 import { MessageList, MessageTurns } from './MessageList';
+import { useElapsed } from './WorkingRow';
+
+/**
+ * The phases that are ONE lead turn, and so the ones where time passing with
+ * nothing to show means the turn is not coming back.
+ *
+ * `building` is deliberately absent. It can legitimately run for a very long
+ * time, and while it does there are engineer lanes on screen reporting what
+ * they are doing, so the pane is not silent and the person is not stranded.
+ */
+const LEAD_TURN_PHASES = new Set<DevTeamSnapshot['phase']>([
+  'interviewing',
+  'drafting-spec',
+  'planning',
+  'reviewing',
+  'wrapping',
+]);
+
+/**
+ * How long a single lead turn may go without finishing before the pane offers
+ * a way out of it.
+ *
+ * A clean planning turn measured about fifty seconds against a real provider.
+ * Three minutes is comfortably longer than slow-but-working and far shorter
+ * than the hour a hung turn will otherwise sit there for. It is a threshold for
+ * OFFERING help, not for taking action: nothing is cancelled on its own.
+ */
+const STALL_AFTER_MS = 3 * 60 * 1000;
 
 /**
  * The four handshakes a run passes through, in the order it passes them.
@@ -61,7 +90,7 @@ function stepIndex(state: Pick<DevTeamSnapshot, 'phase' | 'spec' | 'plan'> | nul
  * only imply. A finished step trades its number for a tick, which is the one
  * moment the count stops being the useful fact about it.
  */
-function RunRail({ state }: { state: DevTeamSnapshot | null }) {
+function RunRail({ state, elapsed }: { state: DevTeamSnapshot | null; elapsed: number | null }) {
   const pause = useApp((s) => s.pauseDevTeam);
   const resume = useApp((s) => s.resumeDevTeam);
   const stop = useApp((s) => s.stopDevTeam);
@@ -80,6 +109,7 @@ function RunRail({ state }: { state: DevTeamSnapshot | null }) {
   // the phase name is the only thing that says which. When it merely repeats
   // the step it is attached to, it is printing the same word twice.
   const detail = devTeamPhaseLabel(phase) === STEPS[active] ? '' : devTeamPhaseLabel(phase);
+  const counter = elapsed === null ? null : formatElapsed(elapsed);
   const finished = state?.tasks.filter((task) => task.status === 'done').length ?? 0;
 
   return (
@@ -96,9 +126,20 @@ function RunRail({ state }: { state: DevTeamSnapshot | null }) {
                 <span className="devteam-step-name">{step}</span>
                 {/* Only the step actually being worked carries a detail line,
                     so the column has exactly one place worth looking at. */}
-                {stepState === 'current' && detail && (
+                {stepState === 'current' && (detail || counter) && (
                   <span className="devteam-step-detail" role="status" aria-label="Dev team phase">
                     {detail}
+                    {/* The counter is the fact the board was missing: it is what
+                        tells a turn that is thinking apart from one that has
+                        stopped. Not announced, because a screen reader reading a
+                        stopwatch once a second is interruption, not
+                        information. */}
+                    {counter && (
+                      <span className="devteam-step-clock" aria-hidden="true">
+                        {detail ? ' · ' : ''}
+                        {counter}
+                      </span>
+                    )}
                   </span>
                 )}
               </span>
@@ -131,6 +172,56 @@ function RunRail({ state }: { state: DevTeamSnapshot | null }) {
         </div>
       )}
     </aside>
+  );
+}
+
+/**
+ * How long the current phase has been running, ticking, or null when the run
+ * is not in one or the state predates the field.
+ */
+function usePhaseElapsed(state: DevTeamSnapshot | null): number | null {
+  const active = state !== null && LEAD_TURN_PHASES.has(state.phase);
+  return useElapsed(state?.phaseSince ?? undefined, active);
+}
+
+/**
+ * The way out of a step that is not going to finish on its own.
+ *
+ * This exists because of a run that sat in `planning` for over an hour with a
+ * complete, schema-valid plan.json already on disk. The pane said "The lead is
+ * preparing the plan", which was not true, and offered Stop, which would have
+ * thrown that plan away. The person had no way to tell a hung turn from a slow
+ * one and nothing to press that would help.
+ *
+ * It says how long, states plainly that this is longer than it should be, and
+ * offers the two real choices. It appears only after STALL_AFTER_MS, so a turn
+ * that is merely taking its time is never nagged about.
+ */
+function StallNotice({ elapsed, phase }: { elapsed: number; phase: DevTeamSnapshot['phase'] }) {
+  const recover = useApp((s) => s.recoverDevTeam);
+  const stop = useApp((s) => s.stopDevTeam);
+  const step = devTeamPhaseLabel(phase).toLowerCase();
+
+  return (
+    <section className="devteam-stall" role="status">
+      <p className="devteam-stall-lead">
+        <Icon name="warning" size={13} />
+        The lead has been {step} for {formatElapsed(elapsed) ?? 'a while'} without finishing.
+      </p>
+      <p className="devteam-stall-body">
+        A turn that runs this long has usually stopped responding rather than slowed down. Picking the run
+        back up keeps whatever the team has already written to the project and carries on from it; if
+        there is nothing usable yet, the run parks so you can run the step again.
+      </p>
+      <div className="devteam-stall-actions">
+        <Button variant="primary" icon="restart" onClick={recover}>
+          Pick the run back up
+        </Button>
+        <Button variant="danger" icon="stop" onClick={stop}>
+          Stop the run
+        </Button>
+      </div>
+    </section>
   );
 }
 
@@ -286,8 +377,40 @@ const TASK_GLYPH: Partial<Record<DevTeamTaskRecord['status'], string>> = {
   waiting: 'warning',
 };
 
-function Milestones({ state }: { state: Pick<DevTeamSnapshot, 'plan' | 'tasks' | 'currentMilestone'> }) {
-  if (!state.plan) return <p className="devteam-board-note">The lead is preparing the plan.</p>;
+/**
+ * What the Plan region shows before there is a plan.
+ *
+ * It was one grey sentence at the top of an otherwise empty column, which told
+ * you what was supposed to be happening and nothing about whether it still
+ * was. The counter is the difference: a number that climbs says the run is
+ * alive, and a number that has climbed too far is the thing the stall notice
+ * then acts on.
+ */
+function PlanPending({ elapsed }: { elapsed: number | null }) {
+  const counter = elapsed === null ? null : formatElapsed(elapsed);
+  return (
+    <p className="devteam-board-note">
+      <span className="devteam-board-note-flame" aria-hidden="true">
+        <Icon name="fire" size={13} />
+      </span>
+      The lead is writing the plan.
+      {counter && (
+        <span className="devteam-board-note-clock" aria-hidden="true">
+          {counter}
+        </span>
+      )}
+    </p>
+  );
+}
+
+function Milestones({
+  state,
+  elapsed = null,
+}: {
+  state: Pick<DevTeamSnapshot, 'plan' | 'tasks' | 'currentMilestone'>;
+  elapsed?: number | null;
+}) {
+  if (!state.plan) return <PlanPending elapsed={elapsed} />;
   const records = new Map(state.tasks.map((task) => [task.taskId, task]));
   return (
     <nav className="devteam-milestones" aria-label="Build milestones">
@@ -319,7 +442,7 @@ function Milestones({ state }: { state: Pick<DevTeamSnapshot, 'plan' | 'tasks' |
   );
 }
 
-function TeamBoard({ state }: { state: DevTeamSnapshot }) {
+function TeamBoard({ state, elapsed = null }: { state: DevTeamSnapshot; elapsed?: number | null }) {
   const messages = useApp((s) => s.messages);
   const lanes = useApp((s) => s.devTeamLanes);
   const roles = new Map(state.plan?.roles.map((role) => [role.id, role]));
@@ -338,7 +461,7 @@ function TeamBoard({ state }: { state: DevTeamSnapshot }) {
         <Icon name="checkpoint" size={11} />
         Plan
       </h2>
-      <Milestones state={state} />
+      <Milestones state={state} elapsed={elapsed} />
       <h2 className="devteam-section">
         <Icon name="team" size={11} />
         Team
@@ -409,6 +532,8 @@ function composerCopy(state: DevTeamSnapshot | null): { label: string; placehold
 export function DevTeamPane() {
   const state = useApp((s) => s.devTeam);
   const permissionMode = useApp((s) => s.permissionMode);
+  const elapsed = usePhaseElapsed(state);
+  const stalled = elapsed !== null && elapsed >= STALL_AFTER_MS;
   const copy = composerCopy(state);
   // A board needs something to draw. `planning` earns one because it says the
   // plan is being written; a run parked before a plan exists does not, and used
@@ -435,8 +560,9 @@ export function DevTeamPane() {
           mis-positioned; there was just no column structure for anything to be
           positioned against. */}
       <div className="devteam-console">
-        <RunRail state={state} />
+        <RunRail state={state} elapsed={elapsed} />
         <div className="devteam-main">
+        {stalled && state && <StallNotice elapsed={elapsed!} phase={state.phase} />}
         {state && state.steering.length > 0 && (
           <p className="devteam-steering-note" role="status">
             {state.steering.length === 1
@@ -472,7 +598,7 @@ export function DevTeamPane() {
             <SpecReview state={state} />
           </div>
         ) : board ? (
-          <TeamBoard state={state!} />
+          <TeamBoard state={state!} elapsed={elapsed} />
         ) : done ? (
           <div className="devteam-flow">
             <MessageList />

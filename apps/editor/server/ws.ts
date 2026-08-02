@@ -193,6 +193,9 @@ export type WsFrame =
   | { type: 'devteam-pause' } // client -> server
   | { type: 'devteam-resume' } // client -> server
   | { type: 'devteam-stop' } // client -> server
+  // Give up on a turn that is not going to finish, and go on from whatever the
+  // team actually left on disk. See DevTeamRuntime.recover.
+  | { type: 'devteam-recover' } // client -> server
   | {
       type: 'devteam-engineer-approval';
       engineerId: string;
@@ -1303,6 +1306,7 @@ export function attachWebSocket(
       version: state.version,
       runId: state.runId,
       phase: state.phase,
+      phaseSince: state.phaseSince,
       steering: state.steering,
       plan: state.plan,
       tasks: state.tasks,
@@ -2195,6 +2199,7 @@ export function attachWebSocket(
           case 'devteam-approve-spec':
           case 'devteam-pause':
           case 'devteam-resume':
+          case 'devteam-recover':
           case 'devteam-stop':
             {
               const chatId = socketChat.get(ws);
@@ -2226,6 +2231,7 @@ export function attachWebSocket(
                     await runtime.approveSpec();
                   } else if (frame.type === 'devteam-pause') await runtime.pause();
                   else if (frame.type === 'devteam-resume') await runtime.resume();
+                  else if (frame.type === 'devteam-recover') await runtime.recover();
                   else await runtime.stop();
                 }),
                 `dev team ${chatId}: could not apply ${frame.type}`,

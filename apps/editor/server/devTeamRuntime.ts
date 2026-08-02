@@ -143,12 +143,20 @@ const ACTIVE_PHASES = new Set<DevTeamPhase>([
 ]);
 
 const DEV_TEAM_STOPPED = 'Dev team run stopped.';
+/**
+ * Said when a turn was given up on rather than ended. Names what happened and
+ * what to do next, because this is the message a person reads at the moment
+ * they have been staring at a board that was not moving.
+ */
+const DEV_TEAM_STALLED =
+  'The lead stopped responding, so the run was parked with nothing left running. Resume to run that step again.';
 
 function initialState(): DevTeamState {
   return {
     version: 1,
     runId: '',
     phase: 'idle',
+    phaseSince: null,
     milestoneRepairs: {},
     resumePhase: null,
     planDigest: null,
@@ -222,6 +230,8 @@ export class DevTeamRuntime {
   private disposed = false;
   private disposing: Promise<void> | null = null;
   private leadGeneration = 0;
+  /** The phase as of the last persist, so `phaseSince` moves only on a change. */
+  private persistedPhase: DevTeamPhase | null = null;
   private pendingLead: LeadOperation | null = null;
   private processingLead: LeadOperation | null = null;
   private leadQueue: LeadOperation[] = [];
@@ -560,6 +570,30 @@ export class DevTeamRuntime {
           operation!,
         );
       } else {
+        // A plan may already be sitting on disk, complete and valid, from a
+        // turn that wrote it and then hung without ever handing it back. Take
+        // it rather than paying for the same plan twice and getting a
+        // different one. Safe because resetDevTeamHandshakes deletes plan.json
+        // whenever a run starts over, so a file here belongs to this run, and
+        // because `needsRepair` above already claims the case where the plan
+        // on disk is the one we know to be broken.
+        //
+        // Not when something is queued for the lead. Planning is also
+        // interrupted by a REBIND — the person changed the agent mid-turn and
+        // said something while doing it — and taking the old plan there would
+        // hold their note back until the next review when they have just this
+        // second typed it. Someone who has spoken gets a turn that hears them.
+        const existing = this.state.steering.length > 0
+          ? { plan: null, error: null }
+          : await this.readPlanResult();
+        if (existing.plan && this.operationCurrent(operation!)) {
+          this.removeLead(operation!);
+          this.adoptPlan(existing.plan);
+          this.state.phase = 'building';
+          await this.persist();
+          await this.schedule();
+          return;
+        }
         await this.sendLeadWithSteering(
           (steering) => buildPlanPrompt(this.options.chatId, this.state.spec!, steering),
           operation!,
@@ -631,6 +665,10 @@ export class DevTeamRuntime {
 
   private async hydrate(): Promise<void> {
     this.state = await readDevTeamState(this.options.root, this.options.chatId);
+    // Seeded from what was read, so the first persist after a load only stamps
+    // a new phaseSince if the phase actually moved. Without this, merely
+    // opening a conversation would reset how long its phase had been running.
+    this.persistedPhase = this.state.phase;
     if (this.state.unreadable) {
       // The file did not parse, so nothing here can be trusted or written over
       // it. Move it aside rather than delete it: it may still be the only
@@ -667,6 +705,16 @@ export class DevTeamRuntime {
   }
 
   private async persist(): Promise<void> {
+    // Stamped here rather than at each of the two dozen sites that assign a
+    // phase, because missing one of those sites produces a clock that is wrong
+    // rather than a clock that is absent, and a wrong elapsed time is worse
+    // than none: it is the pane claiming to know something it does not.
+    if (this.state.phase !== this.persistedPhase) {
+      this.persistedPhase = this.state.phase;
+      // Through the injected clock rather than Date.now(), so a test that
+      // controls time controls this too.
+      this.state.phaseSince = this.state.phase === 'idle' ? null : Date.parse(this.now());
+    }
     const revision = structuredClone(this.state);
     if (this.options.persistState) await this.options.persistState(revision);
     else {
@@ -691,6 +739,7 @@ export class DevTeamRuntime {
       summary,
       wrap,
       error,
+      phaseSince,
     } = state;
     return structuredClone({
       version,
@@ -707,6 +756,7 @@ export class DevTeamRuntime {
       summary,
       wrap,
       error,
+      phaseSince,
     });
   }
 
@@ -826,6 +876,77 @@ export class DevTeamRuntime {
     }
   }
 
+  /**
+   * Take a validated plan as the run's plan and lay out a record per task.
+   *
+   * Shared by the normal end of a planning turn and by `recover`, which is the
+   * point: recovery must produce exactly the state a completed turn would have,
+   * or it is a second way of being half-planned rather than a way out of one.
+   */
+  private adoptPlan(plan: DevTeamPlan): void {
+    this.state.plan = plan;
+    this.state.planDigest = digest(plan);
+    // The id is derived, not allocated, so it can be settled now rather than at
+    // dispatch. A record that carries it from 'pending' onward gives the board
+    // a stable lane key instead of every unstarted task sharing the empty one.
+    this.state.tasks = plan.milestones.flatMap((milestone) =>
+      milestone.tasks.map((task) => ({
+        taskId: task.id,
+        engineerId: engineerIdentity(this.options.chatId, this.state.runId, task.id),
+        status: 'pending' as const,
+      })),
+    );
+    this.state.currentMilestone = 0;
+    this.state.retryCount = 0;
+    this.state.error = null;
+  }
+
+  /**
+   * Pick the run up from what the team actually produced, when the turn that
+   * was supposed to hand it over never finished.
+   *
+   * A lead turn can end without ending: the agent writes its artifact and the
+   * process then sits there, alive and silent. Nothing in the runtime notices,
+   * because a hung turn and a slow turn are the same thing from outside. The
+   * run stayed in `planning` with `plan: null` and `error: null` while a
+   * complete, schema-valid plan.json sat on disk, and the only control offered
+   * was Stop, which throws that plan away.
+   *
+   * So: read the artifact, and if it is good, go on as though the turn had
+   * ended properly. If it is not, park the run where Resume can re-run the
+   * phase. Either way the person gets somewhere, which is the whole point;
+   * "never show a dead end with nothing to press" is the rule this broke.
+   */
+  async recover(): Promise<void> {
+    await this.load();
+    if (!ACTIVE_PHASES.has(this.state.phase)) return;
+
+    if (this.state.phase === 'planning') {
+      this.invalidateLead();
+      const result = await this.readPlanResult();
+      if (result.plan) {
+        this.adoptPlan(result.plan);
+        this.state.phase = 'building';
+        this.state.resumePhase = null;
+        await this.persist();
+        await this.schedule();
+        return;
+      }
+      // A plan that is present but wrong is worth saying out loud: it is the
+      // difference between "the lead never answered" and "the lead answered
+      // badly", and only the second is worth a repair turn on Resume.
+      if (result.error) this.state.retryCount = Math.max(this.state.retryCount, 1);
+      await this.stopActive(
+        result.error
+          ? `The lead stopped responding and the plan it left is not valid: ${result.error}`
+          : DEV_TEAM_STALLED,
+      );
+      return;
+    }
+
+    await this.stopActive(DEV_TEAM_STALLED);
+  }
+
   private async finishPlanning(paused: boolean, operation: LeadOperation, phase: DevTeamPhase): Promise<void> {
     const result = await this.readPlanResult();
     if (!this.leadCompletionCurrent(operation, paused, phase)) return;
@@ -852,21 +973,7 @@ export class DevTeamRuntime {
       }
       return;
     }
-    this.state.plan = result.plan;
-    this.state.planDigest = digest(result.plan);
-    // The id is derived, not allocated, so it can be settled now rather than at
-    // dispatch. A record that carries it from 'pending' onward gives the board
-    // a stable lane key instead of every unstarted task sharing the empty one.
-    this.state.tasks = result.plan.milestones.flatMap((milestone) =>
-      milestone.tasks.map((task) => ({
-        taskId: task.id,
-        engineerId: engineerIdentity(this.options.chatId, this.state.runId, task.id),
-        status: 'pending' as const,
-      })),
-    );
-    this.state.currentMilestone = 0;
-    this.state.retryCount = 0;
-    this.state.error = null;
+    this.adoptPlan(result.plan);
     this.state.phase = paused ? 'paused' : 'building';
     this.state.resumePhase = paused ? 'building' : null;
     await this.persist();

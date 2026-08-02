@@ -572,6 +572,9 @@ export interface AppState {
   approveDevTeamSpec(): void;
   pauseDevTeam(): void;
   resumeDevTeam(): void;
+  /** Give up on a turn that is not going to finish and go on from whatever the
+   *  team left on disk. See DevTeamRuntime.recover. */
+  recoverDevTeam(): void;
   stopDevTeam(): void;
   approveEngineer(
     engineerId: string,
@@ -3010,6 +3013,10 @@ export const useApp = create<AppState>((set, get) => {
 
     resumeDevTeam() {
       get().sendFrame({ type: 'devteam-resume' });
+    },
+
+    recoverDevTeam() {
+      get().sendFrame({ type: 'devteam-recover' });
     },
 
     stopDevTeam() {

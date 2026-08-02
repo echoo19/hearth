@@ -373,6 +373,81 @@ describe('dev team lead state machine', () => {
     expect(leadPrompts.at(-1)).toMatch(/invalid/i);
   });
 
+  /**
+   * A lead turn can write its artifact and then never end. The run sat in
+   * `planning` with `plan: null` and `error: null` while a complete,
+   * schema-valid plan.json was on disk, the board said "The lead is preparing
+   * the plan", and the only control offered was Stop, which discards it.
+   */
+  it('picks a stalled planning turn up from the plan the lead already wrote', async () => {
+    const written = plan([
+      { id: 'a', title: 'A', roleId: role.id, detail: 'First' },
+      { id: 'b', title: 'B', roleId: role.id, detail: 'Second' },
+    ]);
+    const run = runtime();
+    await reachPlanning(run);
+    await putPlan(written);
+    // Deliberately no settleLead: this is the turn that never comes back.
+    expect(run.snapshot()).toMatchObject({ phase: 'planning', plan: null, error: null });
+
+    await run.recover();
+
+    await vi.waitFor(() => expect(run.snapshot().phase).toBe('building'), WAIT_FOR);
+    expect(run.snapshot()).toMatchObject({
+      plan: written,
+      error: null,
+      currentMilestone: 0,
+    });
+    // Recovery has to produce exactly what a completed turn would, or it is a
+    // second way of being half-planned rather than a way out of one: a record
+    // per planned task, and the build already moving on the first of them.
+    expect(run.snapshot().tasks.map((task) => task.taskId)).toEqual(['a', 'b']);
+    expect(run.snapshot().tasks.every((task) => task.engineerId !== '')).toBe(true);
+    await vi.waitFor(
+      () => expect(run.snapshot().tasks.find((task) => task.taskId === 'a')?.status).toBe('running'),
+      WAIT_FOR,
+    );
+  });
+
+  it('parks a stalled turn that left nothing usable, rather than leaving it running', async () => {
+    const run = runtime();
+    await reachPlanning(run);
+
+    await run.recover();
+
+    // Parked with nothing in flight, and the phase it was on kept so Resume
+    // runs that step again. The message has to say what happened: this is what
+    // someone reads after watching a board that was not moving.
+    expect(run.snapshot()).toMatchObject({
+      phase: 'interrupted',
+      error: expect.stringMatching(/stopped responding/i),
+    });
+  });
+
+  it('takes a plan already on disk when resuming instead of paying for it twice', async () => {
+    // The same stall, but the app was restarted before anyone recovered it, so
+    // hydrate parked the run and the hung turn is gone with the old process.
+    // Resume must not re-run a turn whose work is sitting there complete: the
+    // lead would be paid to produce a second, different plan for the same spec.
+    const written = plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'First' }]);
+    const first = runtime();
+    await reachPlanning(first);
+    await putPlan(written);
+
+    // A new instance over the same folder is what a restart looks like from
+    // here. It hydrates lazily, on the first call that needs state, and
+    // resume() is such a call: hydrate parks the active phase and resume then
+    // picks it up in the same turn.
+    const restarted = runtime();
+    const promptCount = leadPrompts.length;
+
+    await restarted.resume();
+
+    await vi.waitFor(() => expect(restarted.snapshot().phase).toBe('building'), WAIT_FOR);
+    expect(restarted.snapshot()).toMatchObject({ plan: written, error: null });
+    expect(leadPrompts).toHaveLength(promptCount);
+  });
+
   it('queues planning direction into repair exactly once after its tracked completion', async () => {
     const run = runtime();
     await reachPlanning(run);
