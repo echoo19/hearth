@@ -146,7 +146,9 @@ interface Harness {
 
 const openHarnesses = new Set<Harness>();
 
-async function until(ready: () => boolean | Promise<boolean>, timeoutMs = 4000): Promise<void> {
+// See the note on WAIT_FOR in devTeamRuntime.test.ts: an integration poll that
+// only fits on an idle machine is a CI failure waiting to happen.
+async function until(ready: () => boolean | Promise<boolean>, timeoutMs = 15_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!(await ready())) {
     if (Date.now() > deadline) throw new Error('timed out waiting');
@@ -210,7 +212,7 @@ async function makeHarness(
       return {
         socket,
         frames,
-        async next(match, timeoutMs = 4000) {
+        async next(match, timeoutMs = 15_000) {
           let found: WsFrame | undefined;
           await until(() => {
             const index = frames.findIndex(match);

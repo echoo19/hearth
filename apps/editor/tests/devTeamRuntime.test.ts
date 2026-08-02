@@ -223,6 +223,35 @@ function blockNextRename(): { reached: Promise<void>; release: () => void } {
   return { reached, release };
 }
 
+/**
+ * Polling budget for the whole file.
+ *
+ * These runs are driven by real promise chains and real fs writes, so every
+ * assertion about a phase is a poll. Vitest's 1s default is comfortable on an
+ * idle machine and not on one running the whole monorepo suite beside it, and a
+ * test that only passes when nothing else is happening is a test that will fail
+ * on CI for no reason. Budget generously: a passing poll returns immediately,
+ * so this costs nothing when things work.
+ */
+const WAIT_FOR = { timeout: 15_000, interval: 10 } as const;
+
+/**
+ * Wait for the lead to have been SENT the milestone review, not merely for the
+ * phase to say so.
+ *
+ * The run persists and publishes `reviewing` before `sendLead` is accepted, so
+ * a test that waits on the phase alone can read the PREVIOUS turn's prompt or
+ * settle a turn the lead has not been given yet. That is the same race the
+ * socket tests already guard against, and it is what made these tests fail
+ * under load and nowhere else.
+ */
+async function waitForReview(run: DevTeamRuntime): Promise<void> {
+  await vi.waitFor(() => {
+    expect(run.snapshot().phase).toBe('reviewing');
+    expect(leadPrompts.at(-1)).toContain('Review milestone');
+  }, WAIT_FOR);
+}
+
 async function settleLead(run: DevTeamRuntime, text = 'Lead response'): Promise<void> {
   await run.handleLeadEvent({ type: 'message-delta', text });
   await run.handleLeadEvent({ type: 'turn-complete' });
@@ -241,13 +270,13 @@ async function reachBuilding(run: DevTeamRuntime, value: DevTeamPlan): Promise<v
   await reachPlanning(run);
   await putPlan(value);
   await settleLead(run, 'The plan is ready.');
-  await vi.waitFor(() => expect(run.snapshot().phase).toBe('building'));
+  await vi.waitFor(() => expect(run.snapshot().phase).toBe('building'), WAIT_FOR);
 }
 
 async function complete(driver: ScriptedDriver, text = 'Task handoff.'): Promise<void> {
   driver.queue.push({ type: 'message-delta', text });
   driver.queue.push({ type: 'turn-complete' });
-  await vi.waitFor(() => expect(driver.sent).toHaveLength(1));
+  await vi.waitFor(() => expect(driver.sent).toHaveLength(1), WAIT_FOR);
 }
 
 beforeEach(async () => {
@@ -366,11 +395,11 @@ describe('dev team lead state machine', () => {
 
     await putPlan(plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
     await settleLead(run, 'Original planning turn complete.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('building'));
+    await vi.waitFor(() => expect(run.snapshot().phase).toBe('building'), WAIT_FOR);
     expect((await readDevTeamState(root, chatId)).steering).toHaveLength(1);
 
     await complete(drivers[0], 'A done.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
     expect(leadPrompts.at(-1)).toContain('Carry this into milestone review.');
     await settleLead(run, 'Review complete.');
     expect((await readDevTeamState(root, chatId)).steering).toEqual([]);
@@ -454,7 +483,7 @@ describe('dev team lead state machine', () => {
     const run = runtime();
     await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
     await complete(drivers[0], 'A done.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
     const blocked = blockNextFileRead('plan.json');
 
     const completion = settleLead(run, 'Review ready.');
@@ -543,7 +572,7 @@ describe('dev team lead state machine', () => {
     ]);
 
     await run.resume();
-    await vi.waitFor(() => expect(drivers).toHaveLength(2));
+    await vi.waitFor(() => expect(drivers).toHaveLength(2), WAIT_FOR);
     expect(run.snapshot()).toMatchObject({ phase: 'building', tasks: [{ status: 'running' }] });
   });
 
@@ -574,7 +603,7 @@ describe('dev team lead state machine', () => {
 
     expect(drivers).toHaveLength(1);
     await complete(drivers[0], 'Foundation implemented.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
     expect(leadPrompts.at(-1)).toContain('Review milestone 1: Foundation.');
     expect(leadPrompts.at(-1)).toContain('Foundation implemented.');
 
@@ -630,17 +659,16 @@ describe('engineer scheduling', () => {
     expect(requests.map((request) => request.task.id)).toEqual(['a', 'c']);
     expect(drivers.every((driver) => driver.iterations === 1)).toBe(true);
     await complete(drivers[0], 'A done.');
-    await vi.waitFor(() => expect(requests.map((request) => request.task.id)).toEqual(['a', 'c', 'b']));
+    await vi.waitFor(() => expect(requests.map((request) => request.task.id)).toEqual(['a', 'c', 'b']), WAIT_FOR);
     await complete(drivers[1], 'C done.');
-    await vi.waitFor(() => expect(requests.map((request) => request.task.id)).toEqual(['a', 'c', 'b', 'd']));
+    await vi.waitFor(() => expect(requests.map((request) => request.task.id)).toEqual(['a', 'c', 'b', 'd']), WAIT_FOR);
     await complete(drivers[2], 'B done.');
     await complete(drivers[3], 'D done.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
-    await vi.waitFor(() => expect(leadPrompts.at(-1)).toContain('Review milestone 1'));
+    await waitForReview(run);
     expect(requests.some((request) => request.task.id === 'later')).toBe(false);
 
     await settleLead(run, 'First milestone accepted.');
-    await vi.waitFor(() => expect(requests.at(-1)?.task.id).toBe('later'));
+    await vi.waitFor(() => expect(requests.at(-1)?.task.id).toBe('later'), WAIT_FOR);
     expect(run.snapshot().currentMilestone).toBe(1);
   });
 
@@ -694,9 +722,9 @@ describe('engineer scheduling', () => {
     expect(requests[0].engineerId).toBe(first.engineerId);
 
     await complete(drivers[0], 'A done.');
-    await vi.waitFor(() => expect(drivers).toHaveLength(2));
+    await vi.waitFor(() => expect(drivers).toHaveLength(2), WAIT_FOR);
     await complete(drivers[1], 'B done.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
     await settleLead(run, 'Reviewed.');
     await settleLead(run, 'Wrapped.');
     expect(run.snapshot().phase).toBe('done');
@@ -722,9 +750,9 @@ describe('engineer scheduling', () => {
     await complete(drivers[1], 'AB done.');
     expect(requests.map((request) => request.task.id)).toEqual(['a', 'ab']);
     await complete(drivers[0], 'A done.');
-    await vi.waitFor(() => expect(requests.at(-1)?.task.id).toBe('child'));
+    await vi.waitFor(() => expect(requests.at(-1)?.task.id).toBe('child'), WAIT_FOR);
     await complete(drivers[2], 'Child done.');
-    await vi.waitFor(() => expect(requests.at(-1)?.task.id).toBe('exclusive'));
+    await vi.waitFor(() => expect(requests.at(-1)?.task.id).toBe('exclusive'), WAIT_FOR);
   });
 
   it('maps effort without changing the selected provider or model and builds a complete neutral prompt', async () => {
@@ -773,7 +801,7 @@ describe('engineer durability and controls', () => {
     driver.queue.push({ type: 'message-delta', text: 'Final handoff.' });
     driver.queue.push({ type: 'turn-complete' });
 
-    await vi.waitFor(() => expect(run.snapshot().tasks[0]?.status).toBe('done'));
+    await vi.waitFor(() => expect(run.snapshot().tasks[0]?.status).toBe('done'), WAIT_FOR);
     expect(run.snapshot().tasks[0]).toMatchObject({ summary: 'Final handoff.', files: ['src/a.ts', 'src/b.ts'] });
     expect(engineerRecords[0]).toMatchObject({
       engineerId: run.snapshot().tasks[0].engineerId,
@@ -799,7 +827,7 @@ describe('engineer durability and controls', () => {
       inputId: 'input-1',
       questions: [{ id: 'answer', label: 'Answer', type: 'text' }],
     });
-    await vi.waitFor(() => expect(engineerEvents).toHaveLength(2));
+    await vi.waitFor(() => expect(engineerEvents).toHaveLength(2), WAIT_FOR);
     expect(engineerEvents.map((item) => item.engineerId)).toEqual([engineerId, engineerId]);
 
     expect(run.routeEngineerApproval(engineerId, 'approval-1', 'allow', 'once')).toBe(true);
@@ -824,7 +852,7 @@ describe('engineer durability and controls', () => {
       title: 'Run',
       detail: 'Run',
     });
-    await vi.waitFor(() => expect(run.snapshot().tasks[0].status).toBe('waiting'));
+    await vi.waitFor(() => expect(run.snapshot().tasks[0].status).toBe('waiting'), WAIT_FOR);
     expect(await readDevTeamState(root, chatId)).toMatchObject({ tasks: [{ status: 'waiting' }] });
 
     drivers[0].queue.push({
@@ -833,23 +861,23 @@ describe('engineer durability and controls', () => {
       questions: [{ id: 'x', label: 'X', type: 'text' }],
     });
     drivers[0].queue.push({ type: 'approval-resolved', approvalId: 'ask-1', decision: 'allow' });
-    await vi.waitFor(() => expect(engineerEvents).toHaveLength(3));
+    await vi.waitFor(() => expect(engineerEvents).toHaveLength(3), WAIT_FOR);
     // One answered ask does not unblock a lane that is still holding another.
     expect(run.snapshot().tasks[0].status).toBe('waiting');
 
     drivers[0].queue.push({ type: 'input-resolved', inputId: 'ask-2', action: 'submit' });
-    await vi.waitFor(() => expect(run.snapshot().tasks[0].status).toBe('running'));
+    await vi.waitFor(() => expect(run.snapshot().tasks[0].status).toBe('running'), WAIT_FOR);
     expect(run.snapshot().tasks[0].engineerId).toBe(engineerId);
 
     await complete(drivers[0], 'A done.');
-    await vi.waitFor(() => expect(run.snapshot().tasks[0].status).toBe('done'));
+    await vi.waitFor(() => expect(run.snapshot().tasks[0].status).toBe('done'), WAIT_FOR);
   });
 
   it('records an engineer error and still settles the milestone into review', async () => {
     const run = runtime();
     await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
     drivers[0].queue.push({ type: 'error', message: 'provider failed' });
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
     expect(run.snapshot().tasks[0]).toMatchObject({ status: 'error', summary: 'provider failed' });
   });
 
@@ -866,7 +894,7 @@ describe('engineer durability and controls', () => {
     expect(requests.map((request) => request.task.id)).toEqual(['a']);
 
     drivers[0].queue.push({ type: 'error', message: 'root failed' });
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
     expect(run.snapshot().tasks.map((task) => [task.taskId, task.status])).toEqual([
       ['c', 'error'],
       ['b', 'error'],
@@ -887,11 +915,11 @@ describe('engineer durability and controls', () => {
     expect(run.snapshot()).toMatchObject({ phase: 'paused' });
     expect(await readDevTeamState(root, chatId)).toMatchObject({ resumePhase: 'building' });
     await complete(drivers[0], 'A done.');
-    await vi.waitFor(() => expect(run.snapshot().tasks[0]?.status).toBe('done'));
+    await vi.waitFor(() => expect(run.snapshot().tasks[0]?.status).toBe('done'), WAIT_FOR);
     expect(drivers).toHaveLength(1);
 
     await run.resume();
-    await vi.waitFor(() => expect(drivers).toHaveLength(2));
+    await vi.waitFor(() => expect(drivers).toHaveLength(2), WAIT_FOR);
     expect(run.snapshot().phase).toBe('building');
   });
 
@@ -911,7 +939,7 @@ describe('engineer durability and controls', () => {
       inputId: 'input-1',
       questions: [{ id: 'x', label: 'X', type: 'text' }],
     });
-    await vi.waitFor(() => expect(engineerEvents).toHaveLength(2));
+    await vi.waitFor(() => expect(engineerEvents).toHaveLength(2), WAIT_FOR);
 
     await run.stop();
     expect(drivers[0].interrupts).toBe(1);
@@ -943,7 +971,7 @@ describe('engineer durability and controls', () => {
       inputId: 'unpersisted-input',
       questions: [{ id: 'x', label: 'X', type: 'text' }],
     });
-    await vi.waitFor(() => expect(engineerEvents).toHaveLength(2));
+    await vi.waitFor(() => expect(engineerEvents).toHaveLength(2), WAIT_FOR);
     persistentlyFailAgentAppend = true;
 
     await expect(run.stop()).resolves.toBeUndefined();
@@ -1021,7 +1049,7 @@ describe('engineer durability and controls', () => {
     await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
     drivers[0].holdClose = true;
     await complete(drivers[0], 'Done.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
 
     let disposed = false;
     const disposing = run.dispose().then(() => { disposed = true; });
@@ -1060,7 +1088,7 @@ describe('engineer durability and controls', () => {
     expect(drivers[0].sent).toEqual([]);
     expect(drivers[0].stops).toBe(1);
     // Resume starts a fresh engineer rather than handing work to the retired one.
-    await vi.waitFor(() => expect(drivers).toHaveLength(2));
+    await vi.waitFor(() => expect(drivers).toHaveLength(2), WAIT_FOR);
     expect(run.snapshot()).toMatchObject({ phase: 'building', tasks: [{ status: 'running' }] });
   });
 
@@ -1117,7 +1145,7 @@ describe('engineer durability and controls', () => {
     await reached;
     await run.stop();
     release();
-    await vi.waitFor(() => expect(engineerRecords.at(-1)).toMatchObject({ record: { role: 'agent' } }));
+    await vi.waitFor(() => expect(engineerRecords.at(-1)).toMatchObject({ record: { role: 'agent' } }), WAIT_FOR);
     expect(run.snapshot().tasks[0].status).toBe('interrupted');
   });
 
@@ -1137,12 +1165,12 @@ describe('engineer durability and controls', () => {
       inputId: 'input-before-failure',
       questions: [{ id: 'x', label: 'X', type: 'text' }],
     });
-    await vi.waitFor(() => expect(engineerEvents).toHaveLength(2));
+    await vi.waitFor(() => expect(engineerEvents).toHaveLength(2), WAIT_FOR);
     failAgentAppend = true;
 
     drivers[0].queue.push({ type: 'message-delta', text: 'Unpersisted.' });
 
-    await vi.waitFor(() => expect(run.snapshot().tasks[0].status).toBe('error'));
+    await vi.waitFor(() => expect(run.snapshot().tasks[0].status).toBe('error'), WAIT_FOR);
     expect(run.snapshot().tasks[0].summary).toContain('agent transcript failed');
     expect(drivers[0].stops).toBe(1);
     expect(run.snapshot().phase).toBe('reviewing');
@@ -1182,11 +1210,11 @@ describe('engineer durability and controls', () => {
       inputId: 'input-at-end',
       questions: [{ id: 'x', label: 'X', type: 'text' }],
     });
-    await vi.waitFor(() => expect(engineerEvents).toHaveLength(2));
+    await vi.waitFor(() => expect(engineerEvents).toHaveLength(2), WAIT_FOR);
 
     drivers[0].queue.close();
 
-    await vi.waitFor(() => expect(run.snapshot().tasks[0].status).toBe('error'));
+    await vi.waitFor(() => expect(run.snapshot().tasks[0].status).toBe('error'), WAIT_FOR);
     expect(engineerRecords.slice(-2)).toEqual([
       {
         engineerId,
@@ -1218,12 +1246,12 @@ describe('engineer durability and controls', () => {
       title: 'Run',
       detail: 'Run',
     });
-    await vi.waitFor(() => expect(engineerEvents).toHaveLength(1));
+    await vi.waitFor(() => expect(engineerEvents).toHaveLength(1), WAIT_FOR);
     persistentlyFailAgentAppend = true;
 
     drivers[0].queue.close();
 
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
     expect(run.snapshot()).toMatchObject({
       phase: 'reviewing',
       error: expect.stringMatching(/withdraw.*persist|persist.*withdraw/i),
@@ -1253,7 +1281,7 @@ describe('restart, steering, and plan rewrites', () => {
     expect(drivers).toHaveLength(0);
 
     await reopened.resume();
-    await vi.waitFor(() => expect(drivers).toHaveLength(1));
+    await vi.waitFor(() => expect(drivers).toHaveLength(1), WAIT_FOR);
     expect(requests[0].resumeContinuationId).toBe(before.continuationId);
     expect(reopened.snapshot().phase).toBe('building');
   });
@@ -1271,7 +1299,7 @@ describe('restart, steering, and plan rewrites', () => {
     expect(await readDevTeamState(root, chatId)).toMatchObject({ phase: 'paused', resumePhase: 'building' });
 
     await reopened.resume();
-    await vi.waitFor(() => expect(requests.map((request) => request.task.id)).toEqual(['a']));
+    await vi.waitFor(() => expect(requests.map((request) => request.task.id)).toEqual(['a']), WAIT_FOR);
     expect(reopened.snapshot()).toMatchObject({ phase: 'building', tasks: [{ taskId: 'a', status: 'running' }] });
   });
 
@@ -1333,7 +1361,7 @@ describe('restart, steering, and plan rewrites', () => {
     expect(leadPrompts).toHaveLength(promptCount);
 
     await interview.resume();
-    await vi.waitFor(() => expect(drivers).toHaveLength(1));
+    await vi.waitFor(() => expect(drivers).toHaveLength(1), WAIT_FOR);
     expect(interview.snapshot().phase).toBe('building');
     expect(leadPrompts).toHaveLength(promptCount);
   });
@@ -1342,7 +1370,7 @@ describe('restart, steering, and plan rewrites', () => {
     const run = runtime();
     await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
     await complete(drivers[0], 'A done.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
     const reviewPromptCount = leadPrompts.length;
 
     await run.pause();
@@ -1369,7 +1397,7 @@ describe('restart, steering, and plan rewrites', () => {
     ]);
 
     await complete(drivers[0], 'A done.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
     expect(leadPrompts.at(-1)).toContain('Please emphasize clarity.');
     expect((await readDevTeamState(root, chatId)).steering).toHaveLength(1);
     await settleLead(run, 'Review complete.');
@@ -1381,7 +1409,7 @@ describe('restart, steering, and plan rewrites', () => {
     const run = runtime();
     await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
     await complete(drivers[0], 'A done.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
     await settleLead(run, 'Review complete.');
     expect(run.snapshot().phase).toBe('wrapping');
     const promptCount = leadPrompts.length;
@@ -1402,7 +1430,7 @@ describe('restart, steering, and plan rewrites', () => {
     const run = runtime();
     await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
     await complete(drivers[0], 'A done.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
     await settleLead(run, 'Review complete.');
     expect(run.snapshot().phase).toBe('wrapping');
     expect(await run.handleUserMessage('Mention the alternate launch path.')).toBe(true);
@@ -1430,7 +1458,7 @@ describe('restart, steering, and plan rewrites', () => {
     await reachBuilding(run, plan([failing]));
 
     drivers[0].queue.push({ type: 'error', message: 'provider failed' });
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
 
     await settleLead(run, 'The task failed.');
     expect(run.snapshot()).toMatchObject({ phase: 'reviewing', error: expect.stringContaining('failed: a') });
@@ -1439,11 +1467,11 @@ describe('restart, steering, and plan rewrites', () => {
 
     await putPlan(plan([failing, { id: 'a-repair', title: 'Repair A', roleId: role.id, detail: 'Redo the work' }]));
     await settleLead(run, 'I added a repair task.');
-    await vi.waitFor(() => expect(requests.at(-1)?.task.id).toBe('a-repair'));
+    await vi.waitFor(() => expect(requests.at(-1)?.task.id).toBe('a-repair'), WAIT_FOR);
     expect(run.snapshot()).toMatchObject({ phase: 'building', currentMilestone: 0, error: null });
 
     await complete(drivers[1], 'Repaired.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
     await settleLead(run, 'Reviewed the repair.');
 
     // One repair round only: the second review advances instead of asking again,
@@ -1457,7 +1485,7 @@ describe('restart, steering, and plan rewrites', () => {
     const run = runtime();
     await reachBuilding(run, plan([{ id: 'done', title: 'Done', roleId: role.id, detail: 'Do it' }]));
     await complete(drivers[0], 'Done.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
 
     await putPlan(
       plan([
@@ -1475,7 +1503,7 @@ describe('restart, steering, and plan rewrites', () => {
     const run = runtime();
     await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
     await complete(drivers[0], 'A done.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
     await run.handleUserMessage('Keep this instruction.');
     failLeadSend = true;
 
@@ -1502,14 +1530,14 @@ describe('restart, steering, and plan rewrites', () => {
     };
     await reachBuilding(run, plan([{ id: 'first', title: 'First', roleId: role.id, detail: 'First task' }], [second, third]));
     await complete(drivers[0], 'First done.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
 
     await putPlan({ version: 1, roles: [role], milestones: [third, second] });
     await settleLead(run, 'Future work reordered.');
 
     expect(run.snapshot().plan?.milestones.map((milestone) => milestone.id)).toEqual(['m1', 'm3', 'm2']);
     expect(run.snapshot().tasks.map((task) => task.taskId)).toEqual(['first', 'third', 'second']);
-    await vi.waitFor(() => expect(requests.at(-1)?.task.id).toBe('third'));
+    await vi.waitFor(() => expect(requests.at(-1)?.task.id).toBe('third'), WAIT_FOR);
   });
 
   it('keeps completed records when a review rewrites future plan work', async () => {
@@ -1522,7 +1550,7 @@ describe('restart, steering, and plan rewrites', () => {
     };
     await reachBuilding(run, plan([{ id: 'done', title: 'Done', roleId: role.id, detail: 'Do it' }], [second]));
     await complete(drivers[0], 'Immutable handoff.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
     const completed = { ...run.snapshot().tasks.find((task) => task.taskId === 'done') };
 
     await putPlan(
@@ -1550,7 +1578,7 @@ describe('restart, steering, and plan rewrites', () => {
     };
     await reachBuilding(run, plan([{ id: 'done', title: 'Done', roleId: role.id, detail: 'Done' }], [future]));
     await complete(drivers[0], 'Done.');
-    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'));
+    await waitForReview(run);
 
     const otherRole = { id: 'other', name: 'Other', focus: 'Future only' };
     await putPlan({
