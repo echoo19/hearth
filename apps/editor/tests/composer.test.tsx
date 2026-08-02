@@ -275,6 +275,22 @@ describe('the attachment tray', () => {
     expect((screen.getByRole('button', { name: 'Send' }) as HTMLButtonElement).disabled).toBe(true);
     expect(useApp.getState().composerDrafts.chat?.attachments).toHaveLength(1);
   });
+
+  // A restriction someone has not run into is not news. It used to sit under
+  // the box for the whole run, which spent the one line the composer has on
+  // explaining something nobody had tried to do.
+  it('explains the text-only restriction when a file is offered, not before', () => {
+    const reason = 'Steering is text-only while the team is running.';
+    render(<Composer attachmentDisabledReason={reason} />);
+    expect(screen.queryByText(reason)).toBeNull();
+
+    const file = png('steering.png');
+    fireEvent.drop(document.querySelector('.composer-card')!, {
+      dataTransfer: { items: [{ kind: 'file', getAsFile: () => file }], files: [file], types: ['Files'] },
+    });
+
+    expect(screen.getByText(reason)).toBeTruthy();
+  });
 });
 
 describe('the + menu', () => {

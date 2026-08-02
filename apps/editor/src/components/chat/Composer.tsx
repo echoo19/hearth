@@ -149,6 +149,11 @@ export function Composer({
   // it must not be startable twice from one impatient double-press.
   const [starting, setStarting] = useState(false);
   const [homeKind, setHomeKind] = useState<'chat' | 'devteam'>('chat');
+  // A restriction is worth a sentence when someone runs into it, and is noise
+  // for the rest of the run. This is set by the three places a file can be
+  // offered and cleared as soon as something is sent, so the explanation
+  // arrives with the refusal instead of sitting under the box for an hour.
+  const [attachmentRefused, setAttachmentRefused] = useState(false);
   const [dropping, setDropping] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -167,7 +172,10 @@ export function Composer({
   // true synchronously, and the whole batch is judged before any of it is read.
   const addFiles = useCallback(
     async (files: readonly File[]): Promise<void> => {
-      if (attachmentDisabledReason) return;
+      if (attachmentDisabledReason) {
+        setAttachmentRefused(true);
+        return;
+      }
       const tray = (): readonly PendingAttachment[] =>
         (useApp.getState().composerDrafts[variant] ?? EMPTY_DRAFT).attachments;
       const accepted: File[] = [];
@@ -265,6 +273,8 @@ export function Composer({
 
   function send(): void {
     if (!canSend) return;
+    // Something went; the refusal that was being explained is over.
+    setAttachmentRefused(false);
     const value = text;
     const files = attachments;
     if (!isHome) {
@@ -295,7 +305,10 @@ export function Composer({
         onDragOver={(e) => {
           if (!pasteCarriesFiles(e.dataTransfer)) return;
           e.preventDefault();
-          if (attachmentDisabledReason) return;
+          if (attachmentDisabledReason) {
+            setAttachmentRefused(true);
+            return;
+          }
           setDropping(true);
         }}
         onDragLeave={(e) => {
@@ -309,8 +322,7 @@ export function Composer({
           setDropping(false);
           if (files.length === 0) return;
           e.preventDefault();
-          if (attachmentDisabledReason) return;
-          void addFiles(files);
+          void addFiles(files); // refuses and explains itself when files are not accepted
         }}
       >
         {/* Off-screen rather than display:none — a hidden input can still be
@@ -345,8 +357,7 @@ export function Composer({
             const files = filesFromTransfer(e.clipboardData);
             if (files.length === 0) return; // plain text: let it type itself
             e.preventDefault();
-            if (attachmentDisabledReason) return;
-            void addFiles(files);
+            void addFiles(files); // refuses and explains itself when files are not accepted
           }}
           onKeyDown={(e) => {
             const action = composerKeyAction({
@@ -430,7 +441,10 @@ export function Composer({
               Dev team
             </Button>
           )}
-          {blocked || attachmentDisabledReason
+          {/* `blocked` is a standing fact about the connection and always
+              earns its place. The attachment reason is a refusal, so it shows
+              when someone has just been refused and then gets out of the way. */}
+          {blocked || (attachmentDisabledReason && (attachmentRefused || attachmentBlocked))
             ? <span className="composer-note">{blocked ?? attachmentDisabledReason}</span>
             : <span className="composer-row-gap" />}
           {/* What the agent may do without asking, and who answers. In that
