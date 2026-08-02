@@ -15,6 +15,8 @@ import type { ChatRecord } from './chatStore.js';
 import {
   approveDevTeamSpec,
   devTeamPlanSchema,
+  parsePlanJson,
+  quarantineDevTeamState,
   readDevTeamSpec,
   readDevTeamState,
   readEngineerRecords,
@@ -126,6 +128,13 @@ interface LeadOperation {
 // survive a restart untouched, and rewriting them as interrupted only forced a
 // Resume click before someone could answer the question they were just asked.
 const ACTIVE_PHASES = new Set<DevTeamPhase>([
+  // `interviewing` belongs here and `spec-review` does not, and the difference
+  // is whether anything is RUNNING. An interview has a lead turn in flight —
+  // that is what buildInterviewResumePrompt exists to restart. A spec review is
+  // a person reading a document; marking it interrupted on reopen threw away
+  // the one screen they needed, the spec and its Approve button, to recover
+  // from an interruption that never happened.
+  'interviewing',
   'drafting-spec',
   'planning',
   'building',
@@ -623,6 +632,12 @@ export class DevTeamRuntime {
   private async hydrate(): Promise<void> {
     this.state = await readDevTeamState(this.options.root, this.options.chatId);
     if (this.state.unreadable) {
+      // The file did not parse, so nothing here can be trusted or written over
+      // it. Move it aside rather than delete it: it may still be the only
+      // record of a run, and leaving it in place made every later write throw
+      // and the conversation unusable for good.
+      await quarantineDevTeamState(this.options.root, this.options.chatId);
+      this.state = await readDevTeamState(this.options.root, this.options.chatId);
       this.loaded = true;
       return;
     }
@@ -802,9 +817,10 @@ export class DevTeamRuntime {
   private async readPlanResult(): Promise<{ plan: DevTeamPlan | null; error: string | null }> {
     const file = path.join(this.options.root, '.hearth', 'devteam', this.options.chatId, 'plan.json');
     try {
-      const parsed = devTeamPlanSchema.safeParse(JSON.parse(await fsp.readFile(file, 'utf8')));
-      if (parsed.success) return { plan: parsed.data, error: null };
-      return { plan: null, error: parsed.error.issues.map((issue) => issue.message).join(' ') };
+      // Through parsePlanJson, so a repair turn is told WHICH field is wrong.
+      // Joining bare issue messages produced "Required Required Unrecognized
+      // key(s)", which names nothing and spends one of three repair attempts.
+      return parsePlanJson(await fsp.readFile(file, 'utf8'));
     } catch (error) {
       return { plan: null, error: (error as Error).message };
     }

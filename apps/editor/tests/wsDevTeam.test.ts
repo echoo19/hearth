@@ -339,16 +339,20 @@ describe('dev team websocket integration', () => {
     const resumed = await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
     expect(resumed.type === 'devteam-state' && resumed.state.runId).toBe(runId);
     inbox.socket.send(JSON.stringify({ type: 'devteam-stop' }));
-    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'done');
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interrupted');
+    // Stop parks the run rather than ending it, so what is typed afterwards is
+    // steering for the resumed run and must not reach the lead as a turn.
     const sentBeforeFollowup = harness.drivers[1].sent.length;
     inbox.socket.send(JSON.stringify({
       type: 'chat-send',
       text: 'ordinary follow-up',
       agent: { provider: 'anthropic', model: 'model-b' },
     }));
-    await until(() => harness.drivers[1].sent.length === sentBeforeFollowup + 1);
-    expect(harness.drivers[1].sent.at(-1)?.text).toBe('ordinary follow-up');
-    expect(await readDevTeamState(harness.root, chatId)).toMatchObject({ runId, phase: 'done' });
+    await inbox.next((frame) => frame.type === 'devteam-steering-accepted' && frame.chatId === chatId);
+    expect(harness.drivers[1].sent.length).toBe(sentBeforeFollowup);
+    const stopped = await readDevTeamState(harness.root, chatId);
+    expect(stopped).toMatchObject({ runId, phase: 'interrupted' });
+    expect(stopped.steering.map((note) => note.text)).toEqual(['ordinary follow-up']);
     inbox.socket.close();
   });
 

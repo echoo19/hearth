@@ -251,7 +251,6 @@ function TeamBoard({ state }: { state: DevTeamSnapshot }) {
           );
         })}
       </div>
-      {state.error && <p className="devteam-error" role="alert">{state.error}</p>}
     </div>
   );
 }
@@ -292,7 +291,11 @@ export function DevTeamPane() {
   const state = useApp((s) => s.devTeam);
   const permissionMode = useApp((s) => s.permissionMode);
   const copy = composerCopy(state);
-  const board = state ? isTeamBoardPhase(state.phase) : false;
+  // A board needs something to draw. `planning` earns one because it says the
+  // plan is being written; a run parked before a plan exists does not, and used
+  // to render an empty grid over the conversation that explains it — which is
+  // exactly what a person reopening an interrupted interview needs to read.
+  const board = state ? isTeamBoardPhase(state.phase) && (state.plan !== null || state.phase === 'planning') : false;
   const done = state?.phase === 'done';
   const approvedSpec = state !== null && state.spec !== null && state.approvals.some(
     (approval) => approval.specVersion === state.specVersion,
@@ -327,6 +330,7 @@ export function DevTeamPane() {
             </div>
           </details>
         )}
+        {state?.error && <p className="devteam-error" role="alert">{state.error}</p>}
         {state?.phase === 'spec-review' ? (
           <div className="devteam-flow">
             <MessageList />

@@ -96,7 +96,7 @@ export function buildPlanPrompt(chatId: string, spec: string, steering = ''): st
     'Create the smallest capable team and an executable milestone plan for the approved specification below.',
     'Invent roles for this project; do not use a fixed organization chart. Keep tasks focused, dependencies explicit, scopes safe relative path prefixes, and effort low, medium, or high only when useful.',
     'Each task is executed by a separate agent with no memory of the others and no view of their conversations. Everything a task needs must be in its own title and detail, or in the handoff of a task it declares in dependsOn.',
-    'Declare scope on every task you can. Tasks with overlapping scopes never run at the same time, and a task with no scope runs alone — omitting scope serializes the whole run.',
+    'Declare scope on every task you can. Tasks with overlapping scopes never run at the same time, and a task with no scope runs alone, so omitting scope serializes the whole run.',
     '',
     PLAN_SHAPE,
     '',

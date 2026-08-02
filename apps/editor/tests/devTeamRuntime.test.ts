@@ -1275,20 +1275,35 @@ describe('restart, steering, and plan rewrites', () => {
     expect(reopened.snapshot()).toMatchObject({ phase: 'building', tasks: [{ taskId: 'a', status: 'running' }] });
   });
 
-  it('leaves an interrupted-looking interview alone and answers it in ordinary chat', async () => {
+  it('starts over from an unreadable state file instead of refusing every later write', async () => {
     const first = runtime();
-    await first.start('An unfinished brief.');
-    const promptCount = leadPrompts.length;
+    await first.start('A brief.');
+    const file = path.join(root, '.hearth', 'devteam', chatId, 'state.json');
+    await fsp.writeFile(file, '{ this is not json');
 
     const reopened = runtime();
     await reopened.start();
 
-    // Nothing of ours was in flight, so there is nothing to resume: the person
-    // answers the question the lead already asked.
-    expect(reopened.snapshot()).toMatchObject({ phase: 'interviewing', error: null });
-    expect(await readDevTeamState(root, chatId)).toMatchObject({ phase: 'interviewing' });
-    expect(await reopened.handleUserMessage('Here is the missing detail.')).toBe(false);
-    expect(leadPrompts).toHaveLength(promptCount);
+    // The corrupt file is kept beside the run rather than deleted, and the
+    // conversation can be used again — it used to throw on every persist.
+    expect(await fsp.readFile(`${file}.corrupt`, 'utf8')).toBe('{ this is not json');
+    expect(reopened.snapshot().phase).toBe('idle');
+    expect(await reopened.handleUserMessage('Start again.')).toBe(true);
+    expect((await readDevTeamState(root, chatId)).phase).toBe('interviewing');
+  });
+
+  it('marks a reopened interview interrupted, because its lead turn was in flight', async () => {
+    const first = runtime();
+    await first.start('An unfinished brief.');
+
+    const reopened = runtime();
+    await reopened.start();
+
+    // The opposite of the spec review below: a turn WAS running, and only the
+    // lead can pick it up again, so Resume is the honest offer.
+    expect(reopened.snapshot()).toMatchObject({ phase: 'interrupted' });
+    // resumePhase is state, not snapshot — the pane never needs it, Resume does.
+    expect(await readDevTeamState(root, chatId)).toMatchObject({ resumePhase: 'interviewing' });
   });
 
   it('folds paused revision and planning completions without losing files or duplicating lead turns', async () => {
