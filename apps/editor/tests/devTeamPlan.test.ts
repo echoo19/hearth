@@ -171,13 +171,20 @@ describe('the plan prompt', () => {
 });
 
 describe('the interview prompt', () => {
-  it('says what a specification contains and where it goes', () => {
+  it('says who reads the specification and where it goes, without dictating its shape', () => {
     const prompt = buildInterviewPrompt('chat-1', 'Make me something.');
     expect(prompt).toContain('look at the project folder');
-    expect(prompt).toContain('what "finished" means for this run');
-    expect(prompt).toContain('deliberately out of scope');
+    // The lead has to know its audience and its budget...
+    expect(prompt).toMatch(/approves it.*planner|planner.*approves it/);
+    expect(prompt).toContain('this run will actually build');
     expect(prompt).toContain('.hearth/devteam/chat-1/spec.md');
     expect(prompt).toContain('Make me something.');
+    // ...and must be left to choose the form. A section list here would decide
+    // the shape of every specification Hearth ever writes, and pinning one in a
+    // test locks the next edit out of changing it. Ban the shape, check the
+    // intent — the same rule the website's contract tests had to learn.
+    expect(prompt).toContain('shape it however suits this project');
+    expect(prompt).not.toMatch(/Write it as:|first section|in this order|the following sections/i);
   });
 
   it('keeps the standing rule against assuming the kind of project', () => {

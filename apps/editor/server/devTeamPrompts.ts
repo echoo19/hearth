@@ -63,7 +63,10 @@ export function buildInterviewPrompt(chatId: string, request: string): string {
     'Before asking anything, look at the project folder to see what already exists; do not propose rebuilding what is there.',
     'Briefly interview the person only where the request leaves a material decision open. Adapt to the detail already provided; a complete brief may need no questions.',
     'Use a structured question tool when useful, while keeping prose questions valid. Do not assume a genre, dimension, engine, role, or input method.',
-    'The specification is read and approved by a person, then handed to a planner. Write it as: what this is in one paragraph, the core loop or primary flow, the things a person can do, what "finished" means for this run, and anything deliberately out of scope. Keep it to what this run will actually build.',
+    // Says who reads it and what they need to do with it, and stops there. A
+    // section list here would decide the shape of every specification Hearth
+    // ever writes, which is the same mistake as assuming a genre.
+    'Two readers use the specification: a person who approves it, and a planner who breaks it into tasks. Give them enough to act without asking you again, cover only what this run will actually build, and shape it however suits this project.',
     `When the brief is ready, write the complete specification to ${runPath(chatId, 'spec.md')} and end the turn. Do not put the specification in a different file.`,
     '',
     'Initial request:',
