@@ -62,14 +62,21 @@ const STEPS = ['Interview', 'Specification', 'Build', 'Done'] as const;
  * spec means the interview never finished, a spec with no plan means it was
  * waiting on the plan.
  */
-function stepIndex(state: Pick<DevTeamSnapshot, 'phase' | 'spec' | 'plan'> | null): number {
+function stepIndex(
+  state: Pick<DevTeamSnapshot, 'phase' | 'spec' | 'plan' | 'approvals' | 'specVersion'> | null,
+): number {
   const phase = state?.phase ?? 'idle';
   if (phase === 'idle' || phase === 'interviewing' || phase === 'drafting-spec') return 0;
   if (phase === 'spec-review') return 1;
   if (phase === 'done') return 3;
   if (phase === 'paused' || phase === 'interrupted') {
     if (!state?.spec) return 0;
-    if (!state.plan) return 1;
+    // Approval, not the plan, is what marks the end of the Specification step.
+    // Keying on `plan` put a run that was interrupted while PLANNING back on
+    // Specification, because planning is exactly the stretch where a spec is
+    // approved and a plan does not exist yet. That is the longest a lead turn
+    // ever runs, so it was also the state most likely to be looked at.
+    if (!state.approvals.some((approval) => approval.specVersion === state.specVersion)) return 1;
   }
   return 2;
 }
@@ -181,7 +188,12 @@ function RunRail({ state, elapsed }: { state: DevTeamSnapshot | null; elapsed: n
  */
 function usePhaseElapsed(state: DevTeamSnapshot | null): number | null {
   const active = state !== null && LEAD_TURN_PHASES.has(state.phase);
-  return useElapsed(state?.phaseSince ?? undefined, active);
+  const elapsed = useElapsed(state?.phaseSince ?? undefined, active);
+  // `useElapsed`'s active flag only decides whether the clock TICKS; it still
+  // returns a duration for an inactive one. Returning that here would have
+  // called a two hour build stalled and offered to recover a run whose
+  // engineers were working the whole time.
+  return active ? elapsed : null;
 }
 
 /**

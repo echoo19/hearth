@@ -178,6 +178,30 @@ describe('DevTeamPane', () => {
     expect(screen.getByRole('textbox', { name: 'Tell the team' }).getAttribute('placeholder')).toBe('Tell the team…');
   });
 
+  it('lights Build for a run interrupted after its spec was approved', () => {
+    // Planning is the stretch where the spec is approved and no plan exists
+    // yet, and it is the longest a lead turn ever runs, so it is the state most
+    // likely to be looked at. Deriving the step from `plan` sent it back to
+    // Specification, a step it had already finished.
+    cleanup();
+    act(() => useApp.setState({
+      devTeam: snapshot({ phase: 'interrupted', plan: null, tasks: [] }),
+    } as never));
+    render(<DevTeamPane />);
+
+    expect(screen.getByRole('listitem', { current: 'step' }).textContent).toContain('Build');
+  });
+
+  it('lights Specification for a run interrupted before anyone approved one', () => {
+    cleanup();
+    act(() => useApp.setState({
+      devTeam: snapshot({ phase: 'interrupted', plan: null, tasks: [], approvals: [] }),
+    } as never));
+    render(<DevTeamPane />);
+
+    expect(screen.getByRole('listitem', { current: 'step' }).textContent).toContain('Specification');
+  });
+
   it('names the phase on the lit step when the two do not already agree', () => {
     // Reviewing, wrapping, paused and interrupted all sit on the Build step,
     // and the phase name is the only thing that says which of them it is. It
@@ -192,6 +216,45 @@ describe('DevTeamPane', () => {
     const phase = screen.getByRole('status', { name: 'Dev team phase' });
     expect(phase.textContent).toBe(devTeamPhaseLabel('reviewing'));
     expect(step.contains(phase)).toBe(true);
+  });
+
+  it('offers a way out once a single lead turn has run far too long', () => {
+    // The pane used to show "The lead is preparing the plan" at minute one and
+    // at hour two with no way to tell those apart and nothing to press but
+    // Stop, which discards whatever the turn had already written.
+    const recoverDevTeam = vi.fn();
+    cleanup();
+    act(() => useApp.setState({
+      recoverDevTeam,
+      devTeam: snapshot({ phase: 'planning', plan: null, phaseSince: Date.now() - 20 * 60 * 1000 }),
+    } as never));
+    render(<DevTeamPane />);
+
+    expect(screen.getByText(/has been planning for .* without finishing/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Pick the run back up/ }));
+    expect(recoverDevTeam).toHaveBeenCalledTimes(1);
+  });
+
+  it('says nothing about stalling while a turn is merely taking its time', () => {
+    cleanup();
+    act(() => useApp.setState({
+      devTeam: snapshot({ phase: 'planning', plan: null, phaseSince: Date.now() - 20 * 1000 }),
+    } as never));
+    render(<DevTeamPane />);
+
+    expect(screen.queryByRole('button', { name: /Pick the run back up/ })).toBeNull();
+  });
+
+  it('never calls a long build stalled, because its lanes are still reporting', () => {
+    // `building` is the one long phase that is not a single turn. Nagging about
+    // it would fire on every healthy run that takes more than three minutes.
+    cleanup();
+    act(() => useApp.setState({
+      devTeam: snapshot({ phase: 'building', phaseSince: Date.now() - 2 * 60 * 60 * 1000 }),
+    } as never));
+    render(<DevTeamPane />);
+
+    expect(screen.queryByRole('button', { name: /Pick the run back up/ })).toBeNull();
   });
 
   it('opens a blocked lane on its own and routes asks to that engineer only', () => {
