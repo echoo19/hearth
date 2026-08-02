@@ -181,20 +181,26 @@
    the thing you are about to write into is identified the same way it is in
    the rail — one mark learned once. */
 
+/* One of the composer's cluster of triggers, and it wears the cluster's
+   metrics: --ctl-h-sm and --radius-sm, like the kind toggle and the two
+   pickers beside it. It used to be 26px with a 999px radius, which was both a
+   fourth control height in a system that allows three and a second shape in a
+   row of six controls. */
 .project-select {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   flex: none;
   max-width: 15rem;
-  height: 26px;
-  padding: 0 8px;
+  height: var(--ctl-h-sm);
+  padding: 0 10px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink-mute);
   font: inherit;
   font-size: var(--text-xs);
+  font-weight: var(--fw-label);
   cursor: pointer;
   transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
 }
@@ -2444,6 +2450,12 @@
    other direction. Stated as zero, the pill gives up its name to the ellipsis
    and keeps its padding, its chevron and its effort mark, which is the part
    that still reads as a control. */
+/* A control, so it carries a boundary at rest. It was `border: 0` on a
+   transparent background, which made "Ask outside" and "Choose a model" two
+   more pieces of grey text in a row that already had several, with only a
+   chevron to say they could be pressed. Same hairline and radius as the
+   project chip and the kind toggle: the composer's foot is one cluster of
+   controls, and Send is the only filled thing in it. */
 .model-pill {
   display: inline-flex;
   align-items: center;
@@ -2453,12 +2465,13 @@
   height: var(--ctl-h-sm);
   max-width: 15rem;
   padding: 0 10px;
-  border: 0;
-  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--ink-mute);
   font-family: var(--font-ui);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-label);
   cursor: pointer;
   transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
 }

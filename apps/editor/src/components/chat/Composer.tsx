@@ -432,7 +432,11 @@ export function Composer({
           {picksProject && <ProjectSelector />}
           {picksProject && (
             <Button
-              variant="ghost"
+              // `quiet`, not `ghost`: a toggle whose OFF state draws nothing
+              // is a toggle you have to be told about. It sits in a row of
+              // bordered triggers and is the only one that also holds a state,
+              // so it needs the boundary more than any of them.
+              variant="quiet"
               size="sm"
               icon="team"
               className="composer-kind"
