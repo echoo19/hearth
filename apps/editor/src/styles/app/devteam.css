@@ -751,6 +751,14 @@
 .app-shell.is-narrow .devteam-steps {
   flex-direction: row;
   align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Same reason as the media block below: in a row, a name track that can shrink
+   to zero does. */
+.app-shell.is-narrow .devteam-steps li {
+  flex: none;
+  grid-template-columns: 22px auto;
 }
 
 .app-shell.is-narrow .devteam-steps li + li::before {
@@ -797,6 +805,7 @@
   .devteam-steps {
     flex-direction: row;
     align-items: center;
+    flex-wrap: wrap;
     min-width: 0;
   }
 
@@ -805,6 +814,18 @@
     top: 50%;
     width: 8px;
     height: 1px;
+  }
+
+  /* The live step keeps its words at their natural width and the row wraps
+     around it. The vertical rail's `minmax(0, 1fr)` name track is right in a
+     fixed-width column and wrong in a flex row: measured at a 520px window it
+     let the only step still showing a name squeeze down to a single character,
+     so the console read "3  E" over "P" where it should have read "Build" over
+     "PLANNING". A step that cannot show its own name is worse than one that
+     shows only its number. */
+  .devteam-steps li {
+    flex: none;
+    grid-template-columns: 22px auto;
   }
 
   /* Only the live step keeps its words; the rest keep their numbers, which is

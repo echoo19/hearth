@@ -248,6 +248,17 @@ describe('style gates', () => {
     expect(narrow).toMatch(/\.devteam-milestones\s*\{[^}]*flex-wrap:\s*wrap/);
     expect(narrow).not.toMatch(/\.devteam-milestones\s*\{[^}]*overflow-x:\s*auto/);
 
+    // The step that is actually running keeps its own name. Measured at a
+    // 520px window: laid out as a row, the `minmax(0, 1fr)` name track that is
+    // right in a fixed-width column let the live step squeeze to one character,
+    // so the console read "3  E" over "P" instead of "Build" over "PLANNING".
+    // Both the row and the column form of the rail have to opt out of it.
+    for (const block of [narrow, css.slice(0, start)]) {
+      expect(block).toMatch(/\.devteam-steps li\s*\{[^}]*grid-template-columns:\s*22px auto/);
+      expect(block).toMatch(/\.devteam-steps li\s*\{[^}]*flex:\s*none/);
+      expect(block).toMatch(/\.devteam-steps\s*\{[^}]*flex-wrap:\s*wrap/);
+    }
+
     // The same collapse has to happen when the app measures itself narrow with
     // a wide viewport, which is the case the media query alone never sees.
     expect(css).toMatch(
