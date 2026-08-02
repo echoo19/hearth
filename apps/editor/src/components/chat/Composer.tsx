@@ -435,6 +435,7 @@ export function Composer({
               variant="ghost"
               size="sm"
               icon="team"
+              className="composer-kind"
               aria-pressed={homeKind === 'devteam'}
               onClick={() => setHomeKind((kind) => (kind === 'chat' ? 'devteam' : 'chat'))}
             >

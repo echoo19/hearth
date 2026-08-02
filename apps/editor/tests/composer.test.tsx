@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, cleanup, act, waitFor } from '@testing-library/react';
 import { Composer } from '../src/components/chat/Composer';
-import { setModelChoice } from '../src/chat/modelChoice';
+import { agentForTurn, getModelChoice, setModelChoice } from '../src/chat/modelChoice';
 import { FOLDER_DRAFT_KEYS, useApp } from '../src/store';
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from '../src/chat/attachments';
 
@@ -316,7 +316,7 @@ describe('the + menu', () => {
 });
 
 describe('the model pill', () => {
-  it('offers only the active agent’s models, and a deliberate way to switch', () => {
+  it('offers only the active agent’s models, and a door to where the agent is chosen', () => {
     render(<Composer />);
     const pill = screen.getByRole('button', { name: 'Model' });
     // Not "Auto". There is no automatic row to be on, so nothing chosen is an
@@ -329,15 +329,20 @@ describe('the model pill', () => {
     // choosing a GPT model moved the conversation to codex with nothing saying
     // so, while the account row still described a different sign-in.
     const headers = [...document.querySelectorAll('.menu-header-name')].map((el) => el.textContent);
-    expect(headers).toEqual(['Claude', 'Switch agent']);
+    expect(headers).toEqual(['Claude']);
     expect(screen.getByRole('menuitemcheckbox', { name: 'Opus 5' })).toBeTruthy();
-    // The other vendor's models are absent. Its NAME is present, once, as the
-    // row that changes agent — which is the act, said out loud.
+    // Neither the other vendor's models NOR a way to switch to it. Which agent
+    // answers is not a per-message choice and is not offered beside one; the
+    // menu carries the door to where it is settled instead.
     expect(screen.queryByRole('menuitemcheckbox', { name: /GPT/ })).toBeNull();
-    expect(screen.getByRole('menuitem', { name: /Codex CLI/ })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: /Codex CLI/ })).toBeNull();
+    // A door to Settings either way: "Set up in Settings…" when this agent is
+    // not ready, plain "Settings…" when it is. Never both, and never a row
+    // that switches agent from here.
+    expect(screen.getByRole('menuitem', { name: /Settings…/ })).toBeTruthy();
   });
 
-  it('follows the project to the other agent, catalogue and switch row both', () => {
+  it('follows the project to the other agent, catalogue and all', () => {
     // The mirror image of the case above, and the one that proves the menu is
     // built from who is ACTIVE rather than from a favoured vendor. Nothing has
     // been picked in this window, so the active agent is the one the project
@@ -367,18 +372,18 @@ describe('the model pill', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Model' }));
 
     const headers = [...document.querySelectorAll('.menu-header-name')].map((el) => el.textContent);
-    expect(headers).toEqual(['ChatGPT', 'Switch agent']);
+    expect(headers).toEqual(['ChatGPT']);
     expect(screen.getByRole('menuitemcheckbox', { name: /GPT-5.6-Sol/ })).toBeTruthy();
     expect(screen.getByRole('menuitemcheckbox', { name: /GPT-5.4-Mini/ })).toBeTruthy();
-    // Claude's models are absent; its backend is present once, as the switch.
+    // Claude is absent entirely — models and backend both.
     expect(screen.queryByRole('menuitemcheckbox', { name: 'Opus 5' })).toBeNull();
-    expect(screen.getByRole('menuitem', { name: /Claude Code CLI/ })).toBeTruthy();
+    expect(screen.queryByRole('menuitem', { name: /Claude Code CLI/ })).toBeNull();
   });
 
-  it('changes who answers through the store, so the project hears about it too', () => {
-    // The switch row is not a local pill. It writes the standing choice AND
-    // records the agent in the project, which is the fix for the older bug
-    // where the composer and Settings each held their own opinion.
+  it('sends someone to Settings to change agent rather than doing it beside the box', () => {
+    // Swapping the whole catalogue is not the same size of decision as picking
+    // a model, and it used to sit one click from the box you type in. Settings
+    // is where the sign-in and the model shortlist it depends on already live.
     const setChatProvider = vi.fn();
     patchStore({
       setChatProvider,
@@ -397,9 +402,30 @@ describe('the model pill', () => {
       },
     });
     render(<Composer />);
+    const opened = vi.fn();
+    window.addEventListener('hearth:open-settings', opened);
     fireEvent.click(screen.getByRole('button', { name: 'Model' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /Codex CLI/ }));
-    expect(setChatProvider).toHaveBeenCalledWith('openai');
+    expect(screen.queryByRole('menuitem', { name: /Codex CLI/ })).toBeNull();
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Settings…/ }));
+    window.removeEventListener('hearth:open-settings', opened);
+    expect(setChatProvider).not.toHaveBeenCalled();
+    expect(opened).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries the agent, model and effort into a new chat rather than starting blank', () => {
+    // The choice is the window's standing preference, not a property of the
+    // conversation it was made in. Starting a new chat used to be the moment
+    // people found that out the hard way.
+    const chosen = { provider: 'openai' as const, model: 'gpt-5.6-sol', effort: 'high' };
+    setModelChoice(chosen);
+    useApp.getState().newChat();
+    expect(getModelChoice()).toEqual(chosen);
+    // And it survives the round trip through storage, so the next launch of the
+    // app opens on the agent this window was last using.
+    expect(JSON.parse(localStorage.getItem('hearth:modelChoice') ?? 'null')).toEqual(chosen);
+    // agentForTurn is what the send path calls, and it must not quietly drop a
+    // chosen effort while the catalogue is still on its way.
+    expect(agentForTurn(getModelChoice(), null)).toEqual(chosen);
   });
 
   it('has no Chat/Terminal switch, because a conversation’s kind is fixed when it starts', () => {

@@ -5,33 +5,48 @@
  * the model had — and they have to agree, both on the wording and on when to
  * keep quiet. A replayed transcript folds in a millisecond, so without a floor
  * every line in it would claim to have taken 0.0s.
+ *
+ * Whole seconds, never tenths. A number that is being watched should count the
+ * way a person counts — one, two, three — and a decimal place on a figure that
+ * changes ten times a second is movement carrying no information.
  */
 
 /** Below this, a duration is noise rather than information. */
 export const DURATION_FLOOR_MS = 100;
 
-/** `840ms` / `1.2s` / `2m 04s` — one unit, never two decimal places. */
+/**
+ * `5s` / `2m 04s` / `3h 5m 10s`. Seconds are padded once a larger unit is
+ * present so the line cannot jitter as it ticks; the leading unit never is,
+ * because nothing sits to its left to line up with.
+ */
+function spanOf(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const padded = String(seconds).padStart(2, '0');
+  if (hours > 0) return `${hours}h ${minutes}m ${padded}s`;
+  if (minutes > 0) return `${minutes}m ${padded}s`;
+  return `${seconds}s`;
+}
+
+/** `840ms` / `5s` / `2m 04s` / `3h 5m 10s` — sub-second spans keep their unit. */
 export function formatDuration(ms: number | undefined): string | null {
   if (ms === undefined || ms < DURATION_FLOOR_MS) return null;
+  // Under a second there is no whole second to report, and `0s` would read as
+  // "instant" for something that took most of one.
   if (ms < 1000) return `${Math.round(ms)}ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}m ${String(Math.round(seconds % 60)).padStart(2, '0')}s`;
+  return spanOf(Math.round(ms / 1000));
 }
 
 /**
- * The same span, rounded for a line that is being watched rather than read.
- * A live counter ticking tenths is a fidget, so while something is still
- * running it counts whole seconds — and says nothing at all for the first few,
- * because most turns are over before a stopwatch is interesting.
+ * The same span for a line that is being watched rather than read: it says
+ * nothing at all for the first few seconds, because most turns are over before
+ * a stopwatch is interesting.
  */
 export const ELAPSED_FLOOR_S = 3;
 
 export function formatElapsed(ms: number): string | null {
   const seconds = Math.floor(ms / 1000);
   if (seconds < ELAPSED_FLOOR_S) return null;
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`;
+  return spanOf(seconds);
 }

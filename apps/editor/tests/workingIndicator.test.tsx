@@ -134,8 +134,8 @@ describe('the line in the transcript', () => {
     expect(screen.getAllByText('Thinking')).toHaveLength(1);
     expect(document.querySelector('.msg-working')).toBeNull();
     // ...and the fold, not a separate row, is what pulses and counts.
-    expect(document.querySelector('.reasoning-line .working-pulse')).not.toBeNull();
-    expect(document.querySelector('.reasoning-line .working-elapsed')?.textContent).toBe('4.2s');
+    expect(document.querySelector('.reasoning-line .working-flame')).not.toBeNull();
+    expect(document.querySelector('.reasoning-line .working-elapsed')?.textContent).toBe('4s');
   });
 
   it('goes back to the plain working line once the thought is over', () => {
@@ -150,7 +150,7 @@ describe('the line in the transcript', () => {
         true,
       ),
     ]);
-    expect(screen.getByText('Thought for 4.2s')).toBeTruthy();
+    expect(screen.getByText('Thought for 4s')).toBeTruthy();
     expect(screen.getByText('Working')).toBeTruthy();
   });
 
@@ -181,7 +181,7 @@ describe('reasoningLabel — how long it thought', () => {
   });
 
   it('reports the span once the thinking is over', () => {
-    expect(reasoningLabel({ durationMs: 12_300 }, false)).toBe('Thought for 12.3s');
+    expect(reasoningLabel({ durationMs: 12_300 }, false)).toBe('Thought for 12s');
   });
 
   it('says only "Thought" when there is no span worth reporting', () => {
@@ -189,6 +189,20 @@ describe('reasoningLabel — how long it thought', () => {
     // be a measurement of the disk.
     expect(reasoningLabel({ durationMs: undefined }, false)).toBe('Thought');
     expect(reasoningLabel({ durationMs: 4 }, false)).toBe('Thought');
+  });
+
+  it('counts in whole units all the way up, so a long turn stays readable', () => {
+    // No tenths anywhere: a figure that changes ten times a second is movement
+    // carrying no information. Seconds pad only once a larger unit is present,
+    // so a ticking line cannot jitter.
+    expect(formatDuration(840)).toBe('840ms');
+    expect(formatDuration(5_000)).toBe('5s');
+    expect(formatDuration(59_400)).toBe('59s');
+    expect(formatDuration(124_000)).toBe('2m 04s');
+    expect(formatDuration(11_110_000)).toBe('3h 5m 10s');
+    expect(formatElapsed(2_900)).toBeNull();
+    expect(formatElapsed(9_900)).toBe('9s');
+    expect(formatElapsed(3_600_000)).toBe('1h 0m 00s');
   });
 });
 
@@ -202,7 +216,7 @@ describe('where the span comes from', () => {
     expect(part.kind).toBe('reasoning');
     expect(part.kind === 'reasoning' && part.text).toBe('first second');
     expect(part.kind === 'reasoning' && part.durationMs).toBe(2500);
-    expect(formatDuration(part.kind === 'reasoning' ? part.durationMs : 0)).toBe('2.5s');
+    expect(formatDuration(part.kind === 'reasoning' ? part.durationMs : 0)).toBe('3s');
   });
 
   it('leaves a single-delta thought unmeasured rather than claiming zero', () => {
@@ -216,7 +230,7 @@ describe('where the span comes from', () => {
     showTranscript([
       turn([{ kind: 'reasoning', text: 'the working-out', startedAt: 1, durationMs: 8200 }], false),
     ]);
-    expect(screen.getByText('Thought for 8.2s')).toBeTruthy();
+    expect(screen.getByText('Thought for 8s')).toBeTruthy();
     // Folded: the reasoning is not the answer and must not be read by default.
     expect(screen.queryByText('the working-out')).toBeNull();
   });

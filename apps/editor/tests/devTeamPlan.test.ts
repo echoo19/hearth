@@ -187,6 +187,16 @@ describe('the interview prompt', () => {
     expect(prompt).not.toMatch(/Write it as:|first section|in this order|the following sections/i);
   });
 
+  it('asks the lead to contribute taste, and scales the interview to what is missing', () => {
+    const prompt = buildInterviewPrompt('chat-1', 'make me a game');
+    expect(prompt).toContain('in proportion to what is missing');
+    expect(prompt).toContain('two or three concrete and genuinely different options');
+    expect(prompt).toContain('changing its shape');
+    // The push for a fuller interview must not become a push toward a house
+    // style: the options come from the person's idea, not from a stock list.
+    expect(prompt).toContain('never out of a template');
+  });
+
   it('keeps the standing rule against assuming the kind of project', () => {
     expect(buildInterviewPrompt('chat-1', 'Make me something.')).toContain(
       'Do not assume a genre, dimension, engine, role, or input method.',

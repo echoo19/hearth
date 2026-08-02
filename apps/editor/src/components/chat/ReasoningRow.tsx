@@ -11,8 +11,8 @@
  */
 import React, { useState } from 'react';
 import type { ChatReasoningPart } from '../../types';
-import { formatDuration } from '../../chat/duration';
-// The pulse and the label share the working line's classes on purpose — one
+import { formatDuration, formatElapsed } from '../../chat/duration';
+// The flame and the label share the working line's classes on purpose — one
 // "still going" idiom in the app. Styles live in styles/app/chat.css.
 import { Icon } from '../ui';
 
@@ -32,7 +32,10 @@ export function ReasoningRow({ part, live = false }: { part: ChatReasoningPart; 
   // While the thinking is live this row IS the turn's working line — it takes
   // the pulse, and MessageList suppresses the one it would otherwise draw
   // underneath. Two lines both saying "Thinking" is the app stuttering.
-  const spent = live ? formatDuration(part.durationMs) : null;
+  // The live counter is the working line's, not the finished-span one: a thought
+  // still being had is being WATCHED, so it waits a few seconds before saying
+  // anything and then counts whole seconds like the flame beside it.
+  const spent = live ? formatElapsed(part.durationMs ?? 0) : null;
 
   return (
     <div className="reasoning-row" data-open={open} data-live={live || undefined}>
@@ -40,7 +43,14 @@ export function ReasoningRow({ part, live = false }: { part: ChatReasoningPart; 
         <span className="reasoning-chevron" aria-hidden="true">
           <Icon name="chevron" size={9} />
         </span>
-        {live && <span className="working-pulse" aria-hidden="true" />}
+        {/* The same flame the working line burns, not the generic dot. While
+            the thinking is live this row IS the turn's working line, so the two
+            must not be two different pictures of the same fact. */}
+        {live && (
+          <span className="working-flame" aria-hidden="true">
+            <Icon name="fire" />
+          </span>
+        )}
         <span className="working-label">{reasoningLabel(part, live)}</span>
         {/* Counted from the deltas themselves, so it grows with the thought
             rather than needing a clock of its own. */}

@@ -61,7 +61,9 @@ export function buildInterviewPrompt(chatId: string, request: string): string {
   return [
     'You are the lead for a small development team. Work in a provider-neutral, project-appropriate way.',
     'Before asking anything, look at the project folder to see what already exists; do not propose rebuilding what is there.',
-    'Briefly interview the person only where the request leaves a material decision open. Adapt to the detail already provided; a complete brief may need no questions.',
+    'Interview in proportion to what is missing. A detailed brief may need nothing. A one-line idea is not a brief, and handing one straight to a planner produces something generic, so do the work of turning it into a real one first.',
+    'Contribute taste, do not just collect answers. Propose two or three concrete and genuinely different options for a decision and say which you would pick and why; a question that hands the thinking back is a question you should have answered yourself. The options must come out of their idea, never out of a template.',
+    'Push hardest on the decisions that change what the thing IS, and on the ones someone would regret only discovering at the end. Keep going while the answers are still changing its shape; stop as soon as they are only adding detail.',
     'Use a structured question tool when useful, while keeping prose questions valid. Do not assume a genre, dimension, engine, role, or input method.',
     // Says who reads it and what they need to do with it, and stops there. A
     // section list here would decide the shape of every specification Hearth

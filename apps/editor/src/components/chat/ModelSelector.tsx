@@ -335,25 +335,23 @@ export function ModelSelector() {
     items.push({ label: 'Set up in Settings…', onSelect: openSettings });
   }
 
-  // Changing who answers is its own act, with its own heading, below the models
-  // rather than above them. Below because the common errand is picking a model
-  // for the agent you are already using, and a switch at the top of the menu is
-  // the one a pointer crosses on the way to everything else.
-  const others = AGENT_BACKENDS.filter((entry) => entry.provider !== group.provider);
-  if (others.length > 0) {
+  // Which AGENT answers is not a per-message choice, so it is not offered
+  // here. It used to be: a "Switch agent" list sat under the models, one
+  // click from the box you type in, and swapping the whole catalogue mid-
+  // sentence is not the same size of decision as picking a model. It is
+  // settled once, in Settings, where the sign-in and the model shortlist it
+  // depends on already live. The door stays in the menu so the answer to
+  // "where did that go" is one click away.
+  // One door, not two: an unavailable agent already has "Set up in Settings…"
+  // above, and a second row pointing at the same screen reads as a duplicate.
+  if (group.availability.available) {
     items.push({ separator: true });
-    items.push({ header: 'Switch agent', note: 'Changes who answers' });
-    for (const entry of others) {
-      const availability = providerAvailability(entry.provider, providers);
-      items.push({
-        label: entry.name,
-        shortcut: availability.note,
-        onSelect: () => {
-          if (!availability.available) openSettings();
-          else void setChatProvider(entry.provider);
-        },
-      });
-    }
+    items.push({
+      label: 'Settings…',
+      icon: 'gear',
+      shortcut: 'Change agent',
+      onSelect: openSettings,
+    });
   }
 
   return (

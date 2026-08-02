@@ -2978,3 +2978,20 @@
     transition: none;
   }
 }
+
+/* The one control in this row that changes what the NEXT message will be: with
+   it on, sending starts a team run instead of a conversation. The ghost
+   toggle's ordinary on-state — a slightly lighter fill — is the right weight
+   for "this panel is showing", and much too quiet for that. Ember, because
+   this is the current action, and a tint rather than a fill so it cannot
+   out-shout Send, which is the app's one filled ember control. */
+.composer-kind[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-soft);
+}
+
+.composer-kind[aria-pressed='true']:hover {
+  background: var(--accent-faint);
+  color: var(--accent-hover);
+}
