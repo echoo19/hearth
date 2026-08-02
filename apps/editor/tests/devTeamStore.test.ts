@@ -39,6 +39,7 @@ function state(over: Partial<DevTeamState> = {}): DevTeamState {
     version: 1,
     runId: 'run-1',
     phase: 'planning',
+    milestoneRepairs: {},
     resumePhase: null,
     planDigest: null,
     plan: null,

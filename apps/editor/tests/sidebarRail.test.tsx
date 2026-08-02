@@ -306,6 +306,7 @@ describe('Recents, across folders', () => {
         version: 1,
         runId: 'run-1',
         phase: 'building',
+        steering: [],
         plan: null,
         tasks: [
           { taskId: 'one', engineerId: 'one', status: 'running' },
@@ -333,6 +334,7 @@ describe('Recents, across folders', () => {
       version: 1 as const,
       runId: 'run-1',
       phase: 'paused' as const,
+      steering: [],
       plan: null,
       tasks: [],
       approvals: [],

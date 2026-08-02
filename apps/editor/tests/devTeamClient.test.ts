@@ -15,6 +15,7 @@ const SNAPSHOT: DevTeamSnapshot = {
   version: 1,
   runId: 'run-1',
   phase: 'building',
+  steering: [],
   plan: null,
   tasks: [{ taskId: 'task-1', engineerId: 'engineer-1', status: 'running' }],
   approvals: [],

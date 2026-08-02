@@ -30,6 +30,7 @@ const snapshot = (over: Partial<DevTeamSnapshot> = {}): DevTeamSnapshot => ({
   version: 1,
   runId: 'run-1',
   phase: 'building',
+  steering: [],
   plan,
   tasks: [
     { taskId: 'controls', engineerId: 'engineer-controls', status: 'running', files: ['src/input.ts'] },

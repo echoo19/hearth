@@ -227,6 +227,10 @@ export type WsFrame =
   // it is unaffected.
   | { type: 'chat-event'; chatId?: string; event: ChatEvent }
   | { type: 'devteam-state'; chatId: string; state: DevTeamSnapshot }
+  // A steering note is absorbed into the run's state rather than sent to the
+  // lead's driver, so no turn ever starts and no `done` ever arrives. Without
+  // this the composer waits forever for a turn that was never begun.
+  | { type: 'devteam-steering-accepted'; chatId: string }
   | { type: 'devteam-event'; chatId: string; engineerId: string; event: ChatEvent }
   | { type: 'chat-opened'; chat: ChatSummary; records: ChatRecord[] }
   | { type: 'chat-list'; chats: ChatSummary[] }
@@ -1213,6 +1217,7 @@ export function attachWebSocket(
       version: state.version,
       runId: state.runId,
       phase: state.phase,
+      steering: state.steering,
       plan: state.plan,
       tasks: state.tasks,
       approvals: state.approvals,

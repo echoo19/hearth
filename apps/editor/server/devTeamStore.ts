@@ -87,6 +87,9 @@ export interface DevTeamSnapshot {
   version: 1;
   runId: string;
   phase: DevTeamPhase;
+  /** Notes typed during an active phase, still waiting to reach the lead. The
+   *  pane cannot tell someone their note was received without this. */
+  steering: DevTeamSteeringRecord[];
   plan: DevTeamPlan | null;
   tasks: DevTeamTaskRecord[];
   approvals: DevTeamApprovalRecord[];
@@ -102,8 +105,10 @@ export interface DevTeamSnapshot {
 export interface DevTeamState extends DevTeamSnapshot {
   resumePhase: DevTeamPhase | null;
   planDigest: string | null;
-  steering: DevTeamSteeringRecord[];
   retryCount: number;
+  /** Milestone id -> how many times its plan has been repaired after a failed
+   *  task, so one bad task cannot loop the run forever. */
+  milestoneRepairs: Record<string, number>;
   agent: AgentTurnOptions | null;
   /** Set only on a read sentinel. Never valid persisted state. */
   unreadable?: true;
@@ -262,6 +267,7 @@ const stateSchema: z.ZodType<DevTeamState> = z.object({
   steering: z.array(z.object({ ts: z.string(), text: z.string() }).strict()),
   currentMilestone: z.number().int().nonnegative(),
   retryCount: z.number().int().nonnegative(),
+  milestoneRepairs: z.record(z.string(), z.number().int().nonnegative()).default({}),
   agent: z
     .object({
       provider: z.enum(['anthropic', 'openai']).optional(),
@@ -291,6 +297,7 @@ function emptyState(over: Partial<DevTeamState> = {}): DevTeamState {
     steering: [],
     currentMilestone: 0,
     retryCount: 0,
+    milestoneRepairs: {},
     agent: null,
     spec: null,
     specVersion: 0,

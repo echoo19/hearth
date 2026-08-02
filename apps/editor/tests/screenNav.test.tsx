@@ -43,6 +43,7 @@ const DEV_TEAM: DevTeamSnapshot = {
   version: 1,
   runId: 'run-1',
   phase: 'wrapping',
+  steering: [],
   plan: null,
   tasks: [],
   approvals: [],
