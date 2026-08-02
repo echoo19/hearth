@@ -245,10 +245,16 @@ const WAIT_FOR = { timeout: 15_000, interval: 10 } as const;
  * socket tests already guard against, and it is what made these tests fail
  * under load and nowhere else.
  */
-async function waitForReview(run: DevTeamRuntime): Promise<void> {
+async function waitForReview(run: DevTeamRuntime, after = -1): Promise<void> {
   await vi.waitFor(() => {
     expect(run.snapshot().phase).toBe('reviewing');
     expect(leadPrompts.at(-1)).toContain('Review milestone');
+    // A run that reviews twice has an OLD review prompt sitting at the end of
+    // the list, which satisfies the text match the instant the phase flips and
+    // before the new turn exists. Settling then answers a turn that has not
+    // begun, and the run sits in `reviewing` for good. Pass the prompt count
+    // taken before the triggering action to wait for a prompt that is new.
+    expect(leadPrompts.length).toBeGreaterThan(after);
   }, WAIT_FOR);
 }
 
@@ -1173,7 +1179,8 @@ describe('engineer durability and controls', () => {
     await vi.waitFor(() => expect(run.snapshot().tasks[0].status).toBe('error'), WAIT_FOR);
     expect(run.snapshot().tasks[0].summary).toContain('agent transcript failed');
     expect(drivers[0].stops).toBe(1);
-    expect(run.snapshot().phase).toBe('reviewing');
+    // The task failing and the milestone closing are separate persisted steps.
+    await vi.waitFor(() => expect(run.snapshot().phase).toBe('reviewing'), WAIT_FOR);
     expect(engineerRecords.slice(-2)).toEqual([
       {
         engineerId,
@@ -1470,13 +1477,17 @@ describe('restart, steering, and plan rewrites', () => {
     await vi.waitFor(() => expect(requests.at(-1)?.task.id).toBe('a-repair'), WAIT_FOR);
     expect(run.snapshot()).toMatchObject({ phase: 'building', currentMilestone: 0, error: null });
 
+    const beforeSecondReview = leadPrompts.length;
     await complete(drivers[1], 'Repaired.');
-    await waitForReview(run);
+    await waitForReview(run, beforeSecondReview);
     await settleLead(run, 'Reviewed the repair.');
 
     // One repair round only: the second review advances instead of asking again,
     // and the failure is still named so the wrap cannot call it finished.
-    expect(run.snapshot()).toMatchObject({ phase: 'wrapping', error: expect.stringContaining('failed: a') });
+    await vi.waitFor(
+      () => expect(run.snapshot()).toMatchObject({ phase: 'wrapping', error: expect.stringContaining('failed: a') }),
+      WAIT_FOR,
+    );
     expect(await readDevTeamState(root, chatId)).toMatchObject({ milestoneRepairs: { m1: 2 } });
     expect(drivers).toHaveLength(2);
   });
