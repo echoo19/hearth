@@ -474,51 +474,131 @@
   color: var(--warn);
 }
 
+/* A grid of members, not a stack of rows. They are headless: the grid is the
+   only place their existence is visible, so it has to be scannable at a glance
+   and stay put when one of them is opened. Rows that expanded in place buried
+   the rest of the team behind whichever one you were reading. */
 .devteam-lanes {
-  min-width: 0;
-  border-top: 1px solid var(--border);
-}
-
-.devteam-lane {
-  min-width: 0;
-  border-bottom: 1px solid var(--border);
-}
-
-/* A row in a console: who, then how far along, then the last thing observed,
-   then whether it needs you. The name takes the slack and everything after it
-   sits against the right edge, so a column of lanes lines its states up under
-   one another and can be read down rather than across.
-
-   It used to give the name a capped 16rem track and let the TAIL take the
-   slack, which put the state word floating somewhere in the middle of the row
-   at a position set by the length of the title beside it. Nothing lined up
-   with anything in the row above. */
-.devteam-lane-head {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, auto) auto auto;
-  align-items: center;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.devteam-card {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  width: 100%;
-  min-height: var(--ctl-h);
-  padding: 9px 8px;
-  border: 0;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: transparent;
+  background: var(--bg-1);
   color: var(--ink-mute);
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+  transition:
+    background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
 }
 
-.devteam-lane-head:hover {
+.devteam-card:hover {
+  border-color: var(--border-strong);
   background: var(--bg-2);
+}
+
+/* The one being read. An accent border rather than a fill, so the grid still
+   reads as a grid and the selected card does not out-shout a card that is
+   waiting on an answer. */
+.devteam-card[aria-expanded='true'] {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.devteam-card-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.devteam-card-who {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.devteam-card-who strong {
+  overflow: hidden;
   color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-snug);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.devteam-card-who span {
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-size: var(--text-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.devteam-card-foot {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* The last thing observed. Clipped to one line: the card is a summary, and the
+   whole of it is one press away. */
+.devteam-lane-tail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* How far along, as a status word rather than a caption. Tracked caps read as
+   a state at a glance, and the colour lets the grid be read without names. */
+.devteam-lane-activity {
+  flex: none;
+  color: var(--ink-mute);
+  font-size: var(--text-3xs);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.devteam-card[data-status='running'] .devteam-lane-activity {
+  color: var(--accent);
+}
+
+.devteam-card[data-status='waiting'] .devteam-lane-activity {
+  color: var(--warn);
+}
+
+.devteam-card[data-status='error'] .devteam-lane-activity,
+.devteam-card[data-status='interrupted'] .devteam-lane-activity {
+  color: var(--err);
+}
+
+.devteam-card[data-status='done'] .devteam-lane-activity {
+  color: var(--ok);
 }
 
 /* A tile rather than a dot: it has to hold a glyph, and a bounded tile is what
-   makes a column of them line up as an index down the left of the board. The
-   tint is the status, so the mark answers "who" and "how is it going" at once. */
+   lines a grid of them up. The tint is the status, so the mark answers "who"
+   and "how is it going" at once. */
 .devteam-lane-mark {
   display: grid;
   place-items: center;
@@ -531,42 +611,55 @@
   color: var(--ink-faint);
 }
 
-.devteam-lane[data-status='lead'] .devteam-lane-mark {
+.devteam-card[data-status='lead'] .devteam-lane-mark {
   color: var(--ink-mute);
 }
 
-.devteam-lane[data-status='running'] .devteam-lane-mark {
+.devteam-card[data-status='running'] .devteam-lane-mark {
   border-color: var(--accent-soft);
   background: var(--accent-soft);
   color: var(--accent);
 }
 
-.devteam-lane[data-status='done'] .devteam-lane-mark {
+.devteam-card[data-status='done'] .devteam-lane-mark {
   border-color: var(--ok-soft);
   background: var(--ok-soft);
   color: var(--ok);
 }
 
-.devteam-lane[data-status='waiting'] .devteam-lane-mark {
+.devteam-card[data-status='waiting'] .devteam-lane-mark {
   border-color: var(--warn-soft);
   background: var(--warn-soft);
   color: var(--warn);
 }
 
-.devteam-lane[data-status='error'] .devteam-lane-mark,
-.devteam-lane[data-status='interrupted'] .devteam-lane-mark {
+.devteam-card[data-status='error'] .devteam-lane-mark,
+.devteam-card[data-status='interrupted'] .devteam-lane-mark {
   border-color: var(--err-soft);
   background: var(--err-soft);
   color: var(--err);
 }
 
-.devteam-lane-who {
-  display: flex;
+/* --- The log of the one being read --------------------------------------- */
+
+.devteam-log {
   min-width: 0;
-  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-1);
 }
 
-.devteam-lane-who strong {
+.devteam-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.devteam-log-head h3 {
+  min-width: 0;
   overflow: hidden;
   color: var(--ink);
   font-size: var(--text-sm);
@@ -576,54 +669,9 @@
   white-space: nowrap;
 }
 
-.devteam-lane-who span,
-.devteam-lane-tail {
-  overflow: hidden;
-  color: var(--ink-faint);
-  font-size: var(--text-2xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The last thing this lane was observed doing. A value the machine reported,
-   so it is set in the value face: a path, a file count, a sentence fragment
-   from the agent. Mono is what stops it reading as a second title. */
-.devteam-lane-tail {
-  font-family: var(--font-mono);
-  max-width: 26rem;
-}
-
-/* How far along, as a status word rather than a caption. Tracked caps read as
-   a state at a glance, and a column of them lines up down the board. */
-.devteam-lane-activity {
-  overflow: hidden;
-  color: var(--ink-mute);
-  font-size: var(--text-3xs);
-  font-weight: var(--fw-strong);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* The state colours the word, so the board can be read down the status column
-   without reading any of the names. Muted is the resting case (queued, done
-   without incident); the three that want attention take their semantic hue. */
-.devteam-lane[data-status='running'] .devteam-lane-activity {
-  color: var(--accent);
-}
-
-.devteam-lane[data-status='waiting'] .devteam-lane-activity {
-  color: var(--warn);
-}
-
-.devteam-lane[data-status='error'] .devteam-lane-activity,
-.devteam-lane[data-status='interrupted'] .devteam-lane-activity {
-  color: var(--err);
-}
-
-.devteam-lane[data-status='done'] .devteam-lane-activity {
-  color: var(--ok);
+.devteam-log-body {
+  min-width: 0;
+  padding: 16px;
 }
 
 .devteam-ask-badge {
@@ -638,20 +686,6 @@
   font-size: var(--text-2xs);
 }
 
-.devteam-lane-chevron {
-  grid-column: -1;
-  color: var(--ink-faint);
-  transform: rotate(0deg);
-  transition: transform var(--t-fast) var(--ease-out);
-}
-
-.devteam-lane-head[aria-expanded='true'] .devteam-lane-chevron {
-  transform: rotate(90deg);
-}
-
-.devteam-lane-body {
-  padding: 4px 8px 16px 24px;
-}
 
 .devteam-lane-turns {
   display: flex;
@@ -941,14 +975,15 @@
     border-top: 0;
   }
 
-  .devteam-lane-head {
-    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+  /* One card per row once two will not fit: the grid's 15rem minimum would
+     otherwise force a horizontal overflow rather than a second line. */
+  .devteam-lanes {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .devteam-lane-head,
-  .devteam-lane-chevron,
+  .devteam-card,
   .devteam-run-chevron,
   .devteam-spec-record > summary {
     transition: none;

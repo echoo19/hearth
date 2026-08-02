@@ -230,7 +230,7 @@ describe('DevTeamPane', () => {
     } as never));
     render(<DevTeamPane />);
 
-    expect(screen.getByText(/has been planning for .* without finishing/)).toBeTruthy();
+    expect(screen.getByText(/has not finished Planning after /)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Pick the run back up/ }));
     expect(recoverDevTeam).toHaveBeenCalledTimes(1);
   });
@@ -255,6 +255,39 @@ describe('DevTeamPane', () => {
     render(<DevTeamPane />);
 
     expect(screen.queryByRole('button', { name: /Pick the run back up/ })).toBeNull();
+  });
+
+  it('shows one member log at a time and swaps it when another card is picked', () => {
+    // The team is headless: the grid is the only place they exist, and the log
+    // is the only way to see what one of them actually did. Reading one must
+    // not bury the others, so exactly one log is open and the grid stays put.
+    render(<DevTeamPane />);
+
+    const controls = screen.getByRole('button', { name: /Build controls lane/i });
+    const look = screen.getByRole('button', { name: /Shape the look lane/i });
+    // The blocked one shows itself without being asked.
+    expect(controls.getAttribute('aria-expanded')).toBe('true');
+    expect(look.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getAllByRole('region', { name: /log$/ })).toHaveLength(1);
+
+    fireEvent.click(look);
+    expect(look.getAttribute('aria-expanded')).toBe('true');
+    expect(controls.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getAllByRole('region', { name: /log$/ })).toHaveLength(1);
+    expect(screen.getByRole('region', { name: 'Shape the look log' })).toBeTruthy();
+
+    // Pressing the open one again closes it: nothing is forced open forever.
+    fireEvent.click(look);
+    expect(screen.queryByRole('region', { name: /log$/ })).toBeNull();
+  });
+
+  it('tells you a headless member has reported nothing rather than showing a blank', () => {
+    cleanup();
+    act(() => useApp.setState({ devTeamLanes: { 'engineer-controls': [], 'engineer-look': [] } } as never));
+    render(<DevTeamPane />);
+
+    fireEvent.click(screen.getByRole('button', { name: /Shape the look lane/i }));
+    expect(screen.getByText(/headless, so whatever it does shows up here/)).toBeTruthy();
   });
 
   it('opens a blocked lane on its own and routes asks to that engineer only', () => {

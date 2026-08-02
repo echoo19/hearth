@@ -212,13 +212,16 @@ function usePhaseElapsed(state: DevTeamSnapshot | null): number | null {
 function StallNotice({ elapsed, phase }: { elapsed: number; phase: DevTeamSnapshot['phase'] }) {
   const recover = useApp((s) => s.recoverDevTeam);
   const stop = useApp((s) => s.stopDevTeam);
-  const step = devTeamPhaseLabel(phase).toLowerCase();
+  // The phase labels are nouns — "Review", "Planning", "Wrapping up" — so the
+  // sentence has to take one as a noun. Lowercasing one into a gerund slot
+  // produced "The lead has been review for 17m 56s", which shipped.
+  const step = devTeamPhaseLabel(phase);
 
   return (
     <section className="devteam-stall" role="status">
       <p className="devteam-stall-lead">
         <Icon name="warning" size={13} />
-        The lead has been {step} for {formatElapsed(elapsed) ?? 'a while'} without finishing.
+        The lead has not finished {step} after {formatElapsed(elapsed) ?? 'a long time'}.
       </p>
       <p className="devteam-stall-body">
         A turn that runs this long has usually stopped responding rather than slowed down. Picking the run
@@ -276,103 +279,133 @@ function laneTail(messages: readonly ChatMessage[], record?: DevTeamTaskRecord):
   return record ? devTeamTaskLabel(record.status) : '';
 }
 
-function Lane({
+/**
+ * One member of the team, as a card.
+ *
+ * They are headless: nothing they do is visible anywhere else in the app, and
+ * a person managing them needs to see who is on the job, how each one is
+ * doing, and then the actual log of one of them. A row that expanded in place
+ * answered the last of those and made the first two harder, because a board of
+ * full width rows is read one line at a time and an opened one buries the rest.
+ *
+ * The card carries every fact worth scanning: who, what they are for, the state
+ * (as a tracked-caps word, coloured), the last thing observed, and whether they
+ * are waiting on an answer. Pressing it shows the log underneath the grid.
+ */
+function TeamCard({
   name,
   focus,
-  messages,
-  record,
-  engineerId,
-  phase,
-  initiallyOpen = false,
-  keyboardActive = false,
+  status,
+  activity,
+  tail,
+  asks,
+  selected,
+  panelId,
+  onSelect,
 }: {
   name: string;
   focus?: string;
-  messages: readonly ChatMessage[];
-  record?: DevTeamTaskRecord;
-  engineerId?: string;
-  /** Lead lane only: what the phase says the lead is doing between turns. */
-  phase?: DevTeamSnapshot['phase'];
-  initiallyOpen?: boolean;
-  /** Only one ask across the whole board may own Enter/Escape and focus. */
-  keyboardActive?: boolean;
+  /** The lane's data-status: a task status, or 'lead' for the lead. */
+  status: string;
+  activity: string;
+  tail: string;
+  asks: number;
+  selected: boolean;
+  panelId: string;
+  onSelect: () => void;
 }) {
-  const approve = useApp((s) => s.approveEngineer);
-  const answer = useApp((s) => s.answerEngineerInput);
-  const asks = pendingLaneAsk(messages);
-  // A lane that cannot proceed without an answer is the whole board's business,
-  // so it opens itself and stays open until the ask is settled.
-  const blocked = asks.count > 0;
-  const [open, setOpen] = useState(initiallyOpen || blocked);
-  const blockedRef = useRef(blocked);
-  blockedRef.current = blocked;
-  const activity = engineerId
-    ? devTeamActivity(messages, record?.status)
-    : devTeamLeadActivity(messages, phase);
-  // A lane with no prose to report falls back to its own status, which is the
-  // word the activity column is already showing: "QUEUED   Queued". Two columns
-  // saying one thing reads as two facts and is worth less than one.
-  const observed = laneTail(messages, record);
-  const tail = observed === activity ? '' : observed;
-  const waiting = asks.count > 0
-    ? `, ${asks.count} waiting ${asks.count === 1 ? 'question' : 'questions'}`
-    : '';
-  const id = `devteam-lane-${record?.taskId ?? engineerId ?? 'lead'}`;
-
-  useEffect(() => {
-    if (blocked) setOpen(true);
-  }, [blocked]);
-
-  useEffect(() => {
-    setOpen(initiallyOpen || blockedRef.current);
-  }, [initiallyOpen]);
-
+  const waiting = asks > 0 ? `, ${asks} waiting ${asks === 1 ? 'question' : 'questions'}` : '';
   return (
-    <section className="devteam-lane" data-status={record?.status ?? 'lead'}>
-      <button
-        type="button"
-        className="devteam-lane-head"
-        aria-expanded={open}
-        aria-controls={id}
-        aria-label={`${name} lane${focus ? `, ${focus}` : ''}, ${activity}${tail ? `, ${tail}` : ''}${waiting}`}
-        onClick={() => setOpen((value) => !value)}
-      >
-        {/* Who this lane is, as a glyph, tinted by how it is doing. One mark
-            carries both facts: the shape says lead or engineer and the colour
-            says running, waiting, finished or failed, so a column of lanes can
-            be scanned without reading a word of it. It replaced a 7px dot that
-            only ever carried the second half. */}
+    <button
+      type="button"
+      className="devteam-card"
+      data-status={status}
+      aria-expanded={selected}
+      aria-controls={panelId}
+      aria-label={`${name} lane${focus ? `, ${focus}` : ''}, ${activity}${tail ? `, ${tail}` : ''}${waiting}`}
+      onClick={onSelect}
+    >
+      <span className="devteam-card-head">
+        {/* Who this is, as a glyph, tinted by how it is doing. One mark carries
+            both facts: the shape says lead or engineer and the colour says
+            running, waiting, finished or failed, so a grid of them can be
+            scanned without reading a word. */}
         <span className="devteam-lane-mark" aria-hidden="true">
-          {/* Keyed off the task record, not the engineer id: a task that is
-              planned but not yet dispatched has an empty engineer id and is
-              still an engineer's lane. Only the lead has no record at all. */}
-          <Icon name={record ? 'bot' : 'review'} size={13} />
+          <Icon name={status === 'lead' ? 'review' : 'bot'} size={13} />
         </span>
-        <span className="devteam-lane-who">
+        <span className="devteam-card-who">
           <strong>{name}</strong>
           {focus && <span>{focus}</span>}
         </span>
+        {asks > 0 && (
+          <span
+            className="devteam-ask-badge"
+            aria-label={`${asks} waiting ${asks === 1 ? 'question' : 'questions'}`}
+          >
+            {asks}
+          </span>
+        )}
+      </span>
+      <span className="devteam-card-foot">
         <span className="devteam-lane-activity">{activity}</span>
-        <span className="devteam-lane-tail">{tail}</span>
-        {asks.count > 0 && <span className="devteam-ask-badge" aria-label={`${asks.count} waiting ${asks.count === 1 ? 'question' : 'questions'}`}>{asks.count}</span>}
-        <span className="devteam-lane-chevron" aria-hidden="true">›</span>
-      </button>
-      {open && (
-        <div className="devteam-lane-body" id={id}>
-          {messages.length > 0 ? (
-            <MessageTurns
-              messages={messages}
-              className="devteam-lane-turns"
-              controls={engineerId ? {
-                activeApprovalId: keyboardActive && asks.active?.kind === 'approval' ? asks.active.id : null,
-                activeInputId: keyboardActive && asks.active?.kind === 'input' ? asks.active.id : null,
-                onApproval: (approvalId, decision, choiceId) => approve(engineerId, approvalId, decision, choiceId),
-                onInput: (inputId, action, answers) => answer(engineerId, inputId, action, answers),
-              } : undefined}
-            />
-          ) : <p className="devteam-lane-empty">No activity reported yet.</p>}
-        </div>
-      )}
+        {tail && <span className="devteam-lane-tail">{tail}</span>}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * The log of the one member currently being looked at.
+ *
+ * It sits under the grid rather than inside a card, so choosing a different
+ * member does not move the grid under the pointer, and so a long transcript
+ * cannot push the rest of the team off the screen above it.
+ */
+function LaneLog({
+  id,
+  name,
+  messages,
+  engineerId,
+  asks,
+  keyboardActive,
+  onClose,
+}: {
+  id: string;
+  name: string;
+  messages: readonly ChatMessage[];
+  engineerId?: string;
+  asks: ReturnType<typeof pendingLaneAsk>;
+  keyboardActive: boolean;
+  onClose: () => void;
+}) {
+  const approve = useApp((s) => s.approveEngineer);
+  const answer = useApp((s) => s.answerEngineerInput);
+  return (
+    <section className="devteam-log" id={id} aria-label={`${name} log`}>
+      <header className="devteam-log-head">
+        <h3>{name}</h3>
+        <Button size="sm" variant="quiet" icon="close" onClick={onClose}>
+          Close
+        </Button>
+      </header>
+      <div className="devteam-log-body">
+        {messages.length > 0 ? (
+          <MessageTurns
+            messages={messages}
+            className="devteam-lane-turns"
+            controls={engineerId ? {
+              activeApprovalId: keyboardActive && asks.active?.kind === 'approval' ? asks.active.id : null,
+              activeInputId: keyboardActive && asks.active?.kind === 'input' ? asks.active.id : null,
+              onApproval: (approvalId, decision, choiceId) => approve(engineerId, approvalId, decision, choiceId),
+              onInput: (inputId, action, answers) => answer(engineerId, inputId, action, answers),
+            } : undefined}
+          />
+        ) : (
+          <p className="devteam-lane-empty">
+            Nothing has been reported yet. This one is headless, so whatever it does shows up here.
+          </p>
+        )}
+      </div>
     </section>
   );
 }
@@ -454,14 +487,75 @@ function Milestones({
   );
 }
 
+/** The lead's own entry id. Not a task id, and task ids cannot collide with it
+ *  because the schema requires them to start with an alphanumeric. */
+const LEAD_ID = '\u0000lead';
+
 function TeamBoard({ state, elapsed = null }: { state: DevTeamSnapshot; elapsed?: number | null }) {
   const messages = useApp((s) => s.messages);
   const lanes = useApp((s) => s.devTeamLanes);
   const roles = new Map(state.plan?.roles.map((role) => [role.id, role]));
   const tasks = new Map(state.plan?.milestones.flatMap((milestone) => milestone.tasks).map((task) => [task.id, task]));
-  const activeAskEngineerId = state.tasks.find((record) =>
-    pendingLaneAsk(lanes[record.engineerId] ?? []).count > 0,
-  )?.engineerId;
+
+  // One list, lead first, so selection and keyboard ownership are decided in a
+  // single place rather than negotiated between rows that cannot see each other.
+  const members = [
+    {
+      id: LEAD_ID,
+      name: 'Lead',
+      focus: 'Plan and review',
+      status: 'lead',
+      messages,
+      engineerId: undefined as string | undefined,
+      activity: devTeamLeadActivity(messages, state.phase),
+      record: undefined as DevTeamTaskRecord | undefined,
+    },
+    ...state.tasks.map((record) => {
+      const task = tasks.get(record.taskId);
+      const role = task ? roles.get(task.roleId) : undefined;
+      const own = lanes[record.engineerId] ?? [];
+      return {
+        // Two pending tasks share an empty engineer id, and an engineer id only
+        // exists once the task is dispatched. The task id is unique by schema
+        // and stable for the life of the run.
+        id: record.taskId,
+        name: task?.title ?? role?.name ?? 'Engineer',
+        focus: role?.name ?? role?.focus,
+        status: record.status as string,
+        messages: own,
+        engineerId: record.engineerId,
+        activity: devTeamActivity(own, record.status),
+        record,
+      };
+    }),
+  ].map((member) => {
+    const asks = pendingLaneAsk(member.messages);
+    // A member with no prose to report falls back to its own status, which is
+    // the word the state column is already showing: "QUEUED  Queued". Two
+    // places saying one thing reads as two facts and is worth less than one.
+    const observed = laneTail(member.messages, member.record);
+    return { ...member, asks, tail: observed === member.activity ? '' : observed };
+  });
+
+  const blocked = members.find((member) => member.asks.count > 0);
+  const blockedId = blocked?.id ?? null;
+  const [picked, setPicked] = useState<string | null>(null);
+
+  // A member that cannot proceed without an answer is the whole board's
+  // business, so it shows itself. It does not PIN itself: someone who wants to
+  // read a different log while one is waiting can still click away, and when
+  // this one is settled the next blocked member takes its place.
+  useEffect(() => {
+    if (blockedId) setPicked(blockedId);
+  }, [blockedId]);
+
+  // The lead's own turn is the thing worth reading while it reviews or wraps.
+  useEffect(() => {
+    if (state.phase === 'reviewing' || state.phase === 'wrapping') setPicked(LEAD_ID);
+  }, [state.phase]);
+
+  const selected = members.find((member) => member.id === picked) ?? null;
+  const panelId = 'devteam-log';
 
   return (
     <div className="devteam-board">
@@ -479,32 +573,35 @@ function TeamBoard({ state, elapsed = null }: { state: DevTeamSnapshot; elapsed?
         Team
       </h2>
       <div className="devteam-lanes" aria-label="Team activity">
-        <Lane
-          name="Lead"
-          focus="Plan and review"
-          messages={messages}
-          phase={state.phase}
-          initiallyOpen={state.phase === 'reviewing' || state.phase === 'wrapping'}
-        />
-        {state.tasks.map((record) => {
-          const task = tasks.get(record.taskId);
-          const role = task ? roles.get(task.roleId) : undefined;
-          return (
-            <Lane
-              // Two pending tasks share an empty engineer id, and an engineer id
-              // only exists once the task is dispatched. The task id is unique
-              // by schema and stable for the life of the run.
-              key={record.taskId}
-              name={task?.title ?? role?.name ?? 'Engineer'}
-              focus={role?.name ?? role?.focus}
-              messages={lanes[record.engineerId] ?? []}
-              record={record}
-              engineerId={record.engineerId}
-              keyboardActive={record.engineerId === activeAskEngineerId}
-            />
-          );
-        })}
+        {members.map((member) => (
+          <TeamCard
+            key={member.id}
+            name={member.name}
+            focus={member.focus}
+            status={member.status}
+            activity={member.activity}
+            tail={member.tail}
+            asks={member.asks.count}
+            selected={member.id === picked}
+            panelId={panelId}
+            onSelect={() => setPicked((current) => (current === member.id ? null : member.id))}
+          />
+        ))}
       </div>
+      {selected && (
+        <LaneLog
+          id={panelId}
+          name={selected.name}
+          messages={selected.messages}
+          engineerId={selected.engineerId}
+          asks={selected.asks}
+          // Only one ask on the whole board may own Enter and Escape, and it is
+          // the one being looked at: a shortcut that answers a question offscreen
+          // is worse than no shortcut.
+          keyboardActive={selected.id === blockedId}
+          onClose={() => setPicked(null)}
+        />
+      )}
     </div>
   );
 }
