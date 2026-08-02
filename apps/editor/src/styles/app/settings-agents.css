@@ -36,7 +36,7 @@
 .set-agent-start-title {
   margin: 0;
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   color: var(--ink);
 }
 
@@ -202,7 +202,7 @@
 
 .set-agent-name {
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   color: var(--ink);
 }
 
@@ -359,7 +359,7 @@
 .set-agent-section-title {
   margin: 0;
   font-size: var(--text-2xs);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   letter-spacing: 0.02em;
   color: var(--ink-mute);
 }

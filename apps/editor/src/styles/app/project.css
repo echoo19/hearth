@@ -76,7 +76,7 @@
 .proj-title {
   margin: 0;
   font-size: var(--text-2xl);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   letter-spacing: -0.02em;
   color: var(--ink);
   overflow-wrap: anywhere;
@@ -140,7 +140,7 @@
 .proj-list-title {
   margin: 18px 0 4px;
   font-size: var(--text-xs);
-  font-weight: 500;
+  font-weight: var(--fw-label);
   color: var(--ink-mute);
 }
 
@@ -304,7 +304,7 @@
   min-width: 0;
   margin: 0;
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: var(--fw-label);
   color: var(--ink);
 }
 

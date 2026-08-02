@@ -1,11 +1,21 @@
 /* Fonts.
-   Archivo Variable = UI chrome; IBM Plex Mono = values/scripts/console — the
-   same two workhorse families as the website, so engine and site read as one
-   product. Bricolage Grotesque Variable is loaded here too but used ONLY for
-   brand moments (--font-display): dialog titles and panel empty-state
-   headings. It is never the chrome font. */
-@import '@fontsource-variable/archivo/wdth.css';
-@import '@fontsource/ibm-plex-mono/400.css';
-@import '@fontsource/ibm-plex-mono/500.css';
-@import '@fontsource/ibm-plex-mono/600.css';
-@import '@fontsource-variable/bricolage-grotesque/index.css';
+
+   Mona Sans = every piece of UI chrome AND the brand moments; Commit Mono =
+   values, paths, ids, scripts and console. Two families, one job each. The
+   website loads the same two, so engine and site read as one product.
+
+   `wght.css` rather than `index.css` on purpose: Mona Sans ships a width axis
+   as well, and nothing in this app varies width. Loading the wdth range would
+   pull a larger file to serve an axis no rule sets.
+
+   There is no third family. The display face used to be Bricolage Grotesque,
+   loaded in full to set four headings; it is folded into Mona Sans at a
+   heavier weight and tighter tracking now (see --font-display in tokens.css).
+   A separate display family bought a look Mona Sans already has at weight 760,
+   and it cost a whole webfont to buy it.
+
+   Commit Mono is loaded at the three weights the app actually sets. */
+@import '@fontsource-variable/mona-sans/wght.css';
+@import '@fontsource/commit-mono/400.css';
+@import '@fontsource/commit-mono/500.css';
+@import '@fontsource/commit-mono/600.css';

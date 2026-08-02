@@ -139,6 +139,13 @@ const FONT_DEF_FILES = new Set(['tokens.css', 'fonts.css']);
  * rule from the design spec.
  */
 const BRAND_MOMENT_SELECTORS = new Set<string>([
+  // The named role for the brand voice (styles/primitives.css). The display
+  // face is no longer a separate FAMILY — it is the UI family at --fw-display
+  // with --track-tight — so what this gate now protects is the treatment
+  // rather than the webfont. That is still worth protecting: the whole point
+  // of a brand moment is that there are four of them, and a heaviest-tightest
+  // treatment applied to a fifth thing makes all five ordinary.
+  '.t-display',
   '.modal-title', // modal / dialog titles
   '.empty-state > span:not(.empty-icon):not(.hint)', // panel empty-state headings
   '.chat-empty-lead', // conversation empty state — the app's first sentence
@@ -211,15 +218,41 @@ describe('style gates', () => {
     expect(fs.existsSync(STYLES_DIR)).toBe(true);
   });
 
-  it('keeps the narrow dev-team header controls reachable without horizontal overflow', () => {
+  /**
+   * The failure this guards is a real one: at a narrow width the dev-team
+   * console used to push its controls past the right edge, so Pause and Stop
+   * became unreachable on exactly the runs a person most wants to stop.
+   *
+   * Written against the INTENT rather than the markup. The previous version
+   * asserted `flex-wrap: wrap` on `.devteam-phase`, a selector that no longer
+   * exists, and it would have failed the moment the header strip became a
+   * column even though the overflow it was written about was fixed rather than
+   * reintroduced. What has to stay true is: the run's own column stops being a
+   * fixed track, the controls stop being a full-width stack, and the plan wraps
+   * rather than scrolling sideways.
+   */
+  it('keeps the narrow dev-team controls reachable without horizontal overflow', () => {
     const css = fs.readFileSync(path.join(STYLES_DIR, 'app/devteam.css'), 'utf8');
     const start = css.indexOf('@media (max-width: 680px)');
     const end = css.indexOf('@media (prefers-reduced-motion: reduce)', start);
+    expect(start).toBeGreaterThan(-1);
     const narrow = css.slice(start, end);
-    expect(narrow).toMatch(/\.devteam-phase\s*\{[^}]*flex-wrap:\s*wrap/);
-    expect(narrow).toMatch(/\.devteam-controls\s*\{[^}]*width:\s*100%/);
+
+    // The two-column console collapses to one track.
+    expect(narrow).toMatch(/\.devteam-console\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/);
+    // The controls lay out along the row and keep their natural width, rather
+    // than staying a column of full-width buttons in a horizontal strip.
+    expect(narrow).toMatch(/\.devteam-controls\s*\{[^}]*flex-direction:\s*row/);
+    expect(narrow).toMatch(/\.devteam-controls \.btn\s*\{[^}]*width:\s*auto/);
+    // The plan wraps; it must never become a sideways scroller.
     expect(narrow).toMatch(/\.devteam-milestones\s*\{[^}]*flex-wrap:\s*wrap/);
     expect(narrow).not.toMatch(/\.devteam-milestones\s*\{[^}]*overflow-x:\s*auto/);
+
+    // The same collapse has to happen when the app measures itself narrow with
+    // a wide viewport, which is the case the media query alone never sees.
+    expect(css).toMatch(
+      /\.app-shell\.is-narrow \.devteam-console\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/,
+    );
   });
 
   it('Gate A: every font-size under styles/ (and the styles.css manifest) uses a --text-* token', () => {

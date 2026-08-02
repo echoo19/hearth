@@ -59,7 +59,7 @@
 }
 
 /* The empty-state heading (the primary one-line message; the icon and the
-   optional .hint detail are excluded). Brand moment: Bricolage display face.
+   optional .hint detail are excluded). Brand moment: the display treatment (--font-display).
    Same 52ch measure cap as .hint — the block now spans wide containers. */
 .empty-state > span:not(.empty-icon):not(.hint) {
   font-family: var(--font-display);

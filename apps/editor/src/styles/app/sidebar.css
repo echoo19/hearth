@@ -124,7 +124,7 @@
   color: var(--ink);
   font-family: inherit;
   font-size: var(--text-md);
-  font-weight: 500;
+  font-weight: var(--fw-label);
   text-align: left;
   cursor: pointer;
   transition: background var(--t-fast) var(--ease-out);
@@ -242,12 +242,19 @@
 
 /* Sentence case, not a tracked all-caps eyebrow: it names a list, it isn't a
    heading anyone reads twice. */
+/* The name of a list, not an entry in one. It used to be 12px in the same
+   weight and nearly the same ink as the rows under it, so "Projects" read as a
+   project and "Chats" read as a conversation. Tracked caps take it out of the
+   list entirely: you stop reading it as soon as you have registered it, which
+   is exactly what a section heading is for. */
 .sidebar-section-title {
   margin: 0;
-  padding: 6px 8px;
-  font-size: var(--text-xs);
-  font-weight: 500;
-  color: var(--ink-mute);
+  padding: 8px 8px 4px;
+  font-size: var(--text-3xs);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  color: var(--ink-faint);
   white-space: nowrap;
 }
 
@@ -328,15 +335,19 @@
   font-size: var(--text-sm);
   /* Stated, not inherited: the projects above are bold on purpose, and a
      conversation picking that up would flatten the two lists back together. */
-  font-weight: 400;
+  font-weight: var(--fw-regular);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* A machine-reported value, so it wears the value face. Tabular figures keep
+   a column of them aligned down the rail instead of ragging by digit width. */
 .chat-when {
   flex: none;
+  font-family: var(--font-mono);
   font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
   color: var(--ink-faint);
   white-space: nowrap;
   /* Yields to the overflow control on hover rather than reflowing the row. */
@@ -497,7 +508,7 @@
 .project-name {
   flex: 1;
   min-width: 0;
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -860,7 +871,7 @@
   background: var(--accent);
   color: var(--accent-ink);
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
 }
 
 .account-text {

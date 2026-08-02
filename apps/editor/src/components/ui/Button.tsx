@@ -15,13 +15,24 @@ import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { Icon } from '../ui';
 import { Tooltip, type TooltipSide } from './Tooltip';
 
-export type ButtonVariant = 'default' | 'primary' | 'danger' | 'ghost';
+/**
+ * The five rungs of the ladder documented at the top of primitives.css.
+ *
+ * `quiet` is the one that was missing, and its absence is why text-only
+ * actions spread: anything that should not shout got `ghost`, which draws
+ * nothing at rest, so the control became indistinguishable from the labels
+ * around it. Reach for `quiet` for an action in a strip that has to stay calm,
+ * and keep `ghost` for icon-only controls and for text inside a container that
+ * already draws its own boundary.
+ */
+export type ButtonVariant = 'default' | 'primary' | 'danger' | 'quiet' | 'ghost';
 export type ButtonSize = 'sm' | 'md';
 
 const VARIANT_CLASS: Record<ButtonVariant, string> = {
   default: '',
   primary: 'btn-primary',
   danger: 'btn-danger',
+  quiet: 'btn-quiet',
   ghost: 'btn-ghost',
 };
 

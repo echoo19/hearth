@@ -40,7 +40,7 @@
 .skills-heading {
   margin: 0;
   font-size: var(--text-3xl);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   letter-spacing: -0.025em;
   color: var(--ink);
 }
@@ -150,7 +150,7 @@
   margin: 0 0 6px;
   padding: 0 10px;
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   color: var(--ink-mute);
 }
 
@@ -204,7 +204,7 @@
   background: var(--accent-soft);
   color: var(--accent);
   font-size: var(--text-md);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   line-height: 1;
 }
 

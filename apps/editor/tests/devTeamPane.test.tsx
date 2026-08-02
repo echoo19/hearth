@@ -157,10 +157,13 @@ describe('DevTeamPane', () => {
   it('renders a lead-first calm board with milestone and engineer status', () => {
     render(<DevTeamPane />);
 
-    // The lit step IS the phase readout while they agree; the name beside it
-    // only speaks up for the phases that share a step (review, wrap, paused).
+    // The lit step IS the phase readout while they agree, so there is nothing
+    // for a phase line to add and it is not rendered at all. It used to render
+    // as an empty element, which is a different way of saying the same thing
+    // and a worse one: an element that exists to say nothing still takes a
+    // place in the reading order.
     expect(screen.getByRole('listitem', { current: 'step' }).textContent).toContain('Build');
-    expect(screen.getByRole('status', { name: 'Dev team phase' }).textContent).toBe('');
+    expect(screen.queryByRole('status', { name: 'Dev team phase' })).toBeNull();
     const lanes = screen.getAllByRole('button', { name: /lane/i });
     expect(lanes[0].textContent).toContain('Lead');
     expect(screen.getByText('Playable loop')).toBeTruthy();
@@ -172,6 +175,22 @@ describe('DevTeamPane', () => {
     expect(screen.getAllByText('Waiting for you').length).toBeGreaterThan(0);
     expect(screen.getByText(/Ask mode pauses engineers/)).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'Tell the team' }).getAttribute('placeholder')).toBe('Tell the team…');
+  });
+
+  it('names the phase on the lit step when the two do not already agree', () => {
+    // Reviewing, wrapping, paused and interrupted all sit on the Build step,
+    // and the phase name is the only thing that says which of them it is. It
+    // hangs off the step it belongs to rather than sitting beside the whole
+    // column, so there is exactly one place in the rail worth looking at.
+    cleanup();
+    act(() => useApp.setState({ devTeam: snapshot({ phase: 'reviewing' }) } as never));
+    render(<DevTeamPane />);
+
+    const step = screen.getByRole('listitem', { current: 'step' });
+    expect(step.textContent).toContain('Build');
+    const phase = screen.getByRole('status', { name: 'Dev team phase' });
+    expect(phase.textContent).toBe(devTeamPhaseLabel('reviewing'));
+    expect(step.contains(phase)).toBe(true);
   });
 
   it('opens a blocked lane on its own and routes asks to that engineer only', () => {
@@ -394,7 +413,11 @@ describe('DevTeamPane', () => {
     render(<DevTeamPane />);
 
     const lanes = screen.getAllByRole('button', { name: /lane/i }).map((lane) => lane.getAttribute('aria-label'));
-    expect(lanes).toContain('Build controls lane, Gameplay builder, Working, Working');
+    // "Working, Working" until the lane stopped reporting its own status as if
+    // it were an observation. A lane with no prose to show falls back to its
+    // status for the tail, and that is the word the activity column is already
+    // showing, so the fallback said nothing twice.
+    expect(lanes).toContain('Build controls lane, Gameplay builder, Working');
     expect(lanes).toContain('Tune the camera lane, Gameplay builder, Finished, Finished two sprites.');
   });
 

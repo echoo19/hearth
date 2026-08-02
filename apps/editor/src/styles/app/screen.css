@@ -44,7 +44,7 @@
 .screen-head-title {
   margin: 0;
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: var(--fw-label);
   color: var(--ink-mute);
   white-space: nowrap;
 }

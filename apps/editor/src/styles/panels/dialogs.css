@@ -77,7 +77,7 @@ dialog.modal[open]::backdrop {
   align-items: center;
   gap: 12px;
   padding: 18px 22px 14px;
-  /* Brand moment: Bricolage display face. */
+  /* Brand moment: the display treatment (--font-display). */
   font-family: var(--font-display);
   font-size: var(--text-lg);
   font-weight: 600;

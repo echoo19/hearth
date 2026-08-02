@@ -64,7 +64,7 @@
   background: transparent;
   font: inherit;
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: var(--fw-label);
   color: var(--accent);
   cursor: pointer;
   transition: background var(--t-fast) var(--ease-out);

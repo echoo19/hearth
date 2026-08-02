@@ -9,12 +9,20 @@ import {
 } from '../../chat/devteam';
 import { useApp } from '../../store';
 import type { ChatMessage, DevTeamCompletedRun, DevTeamSnapshot, DevTeamTaskRecord } from '../../types';
+import { Icon } from '../ui';
 import { Button } from '../ui/Button';
 import { Composer } from './Composer';
 import { Markdown } from './Markdown';
 import { MessageList, MessageTurns } from './MessageList';
 
-const STEPS = ['Interview', 'Spec', 'Build', 'Done'] as const;
+/**
+ * The four handshakes a run passes through, in the order it passes them.
+ *
+ * "Specification" rather than "Spec" because the rail is a column with room
+ * for the word, and the abbreviation only ever existed to fit a horizontal
+ * strip that no longer exists.
+ */
+const STEPS = ['Interview', 'Specification', 'Build', 'Done'] as const;
 
 /**
  * Which step is lit.
@@ -37,7 +45,23 @@ function stepIndex(state: Pick<DevTeamSnapshot, 'phase' | 'spec' | 'plan'> | nul
   return 2;
 }
 
-function PhaseHeader({ state }: { state: DevTeamSnapshot | null }) {
+/**
+ * The run's own column: how far it has got, what it is doing, and the two
+ * controls that govern it.
+ *
+ * It was a horizontal strip above the board, and that strip was the reason the
+ * board never read as a place where work is being managed. Four dotted words
+ * in a row say "here is a progress bar"; a numbered column with the finished
+ * steps ticked off says "here is a job, and here is where it is up to". The
+ * horizontal version also had nowhere to put the phase name except beside the
+ * steps, where it printed a fifth word in the same treatment as the four.
+ *
+ * The steps are numbered because a run has an ORDER that matters (you cannot
+ * build before a spec is approved), and numbers state an order that four dots
+ * only imply. A finished step trades its number for a tick, which is the one
+ * moment the count stops being the useful fact about it.
+ */
+function RunRail({ state }: { state: DevTeamSnapshot | null }) {
   const pause = useApp((s) => s.pauseDevTeam);
   const resume = useApp((s) => s.resumeDevTeam);
   const stop = useApp((s) => s.stopDevTeam);
@@ -52,33 +76,61 @@ function PhaseHeader({ state }: { state: DevTeamSnapshot | null }) {
   // run that can strand. The runtime already accepts stop from every phase and
   // only ignores it when there is nothing running (see DevTeamRuntime.stop).
   const canStop = phase !== 'idle' && phase !== 'done';
+  // Reviewing, wrapping, paused and interrupted all sit on the Build step, so
+  // the phase name is the only thing that says which. When it merely repeats
+  // the step it is attached to, it is printing the same word twice.
+  const detail = devTeamPhaseLabel(phase) === STEPS[active] ? '' : devTeamPhaseLabel(phase);
+  const finished = state?.tasks.filter((task) => task.status === 'done').length ?? 0;
 
   return (
-    <header className="devteam-phase">
+    <aside className="devteam-rail" aria-label="Run status">
       <ol className="devteam-steps" aria-label="Dev team progress">
-        {STEPS.map((step, index) => (
-          <li
-            key={step}
-            data-state={index < active ? 'done' : index === active ? 'current' : 'upcoming'}
-            aria-current={index === active ? 'step' : undefined}
-          >
-            <span className="devteam-step-mark" aria-hidden="true" />
-            <span>{step}</span>
-          </li>
-        ))}
+        {STEPS.map((step, index) => {
+          const stepState = index < active ? 'done' : index === active ? 'current' : 'upcoming';
+          return (
+            <li key={step} data-state={stepState} aria-current={index === active ? 'step' : undefined}>
+              <span className="devteam-step-mark" aria-hidden="true">
+                {stepState === 'done' ? <Icon name="check" size={11} /> : index + 1}
+              </span>
+              <span className="devteam-step-body">
+                <span className="devteam-step-name">{step}</span>
+                {/* Only the step actually being worked carries a detail line,
+                    so the column has exactly one place worth looking at. */}
+                {stepState === 'current' && detail && (
+                  <span className="devteam-step-detail" role="status" aria-label="Dev team phase">
+                    {detail}
+                  </span>
+                )}
+              </span>
+            </li>
+          );
+        })}
       </ol>
-      {/* Reviewing, wrapping, paused and interrupted all sit on the Build step,
-          so the phase name is the only thing that says which. When it merely
-          repeats the lit step it is printing the same word twice. */}
-      <span className="devteam-phase-name" role="status" aria-label="Dev team phase">
-        {devTeamPhaseLabel(phase) === STEPS[active] ? '' : devTeamPhaseLabel(phase)}
-      </span>
-      <div className="devteam-controls">
-        {canPause && <Button size="sm" variant="ghost" aria-label="Pause dev team" onClick={pause}>Pause</Button>}
-        {canResume && <Button size="sm" variant="primary" aria-label="Resume dev team" onClick={resume}>Resume</Button>}
-        {canStop && <Button size="sm" variant="ghost" aria-label="Stop dev team" onClick={stop}>Stop</Button>}
-      </div>
-    </header>
+      {state && state.tasks.length > 0 && (
+        <p className="devteam-rail-count">
+          {finished} of {state.tasks.length} {state.tasks.length === 1 ? 'task' : 'tasks'} finished
+        </p>
+      )}
+      {(canPause || canResume || canStop) && (
+        <div className="devteam-controls">
+          {canPause && (
+            <Button size="sm" variant="quiet" icon="pause" aria-label="Pause dev team" onClick={pause}>
+              Pause
+            </Button>
+          )}
+          {canResume && (
+            <Button size="sm" variant="primary" icon="play" aria-label="Resume dev team" onClick={resume}>
+              Resume
+            </Button>
+          )}
+          {canStop && (
+            <Button size="sm" variant="danger" icon="stop" aria-label="Stop dev team" onClick={stop}>
+              Stop
+            </Button>
+          )}
+        </div>
+      )}
+    </aside>
   );
 }
 
@@ -154,7 +206,11 @@ function Lane({
   const activity = engineerId
     ? devTeamActivity(messages, record?.status)
     : devTeamLeadActivity(messages, phase);
-  const tail = laneTail(messages, record);
+  // A lane with no prose to report falls back to its own status, which is the
+  // word the activity column is already showing: "QUEUED   Queued". Two columns
+  // saying one thing reads as two facts and is worth less than one.
+  const observed = laneTail(messages, record);
+  const tail = observed === activity ? '' : observed;
   const waiting = asks.count > 0
     ? `, ${asks.count} waiting ${asks.count === 1 ? 'question' : 'questions'}`
     : '';
@@ -178,7 +234,17 @@ function Lane({
         aria-label={`${name} lane${focus ? `, ${focus}` : ''}, ${activity}${tail ? `, ${tail}` : ''}${waiting}`}
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="devteam-lane-dot" aria-hidden="true" />
+        {/* Who this lane is, as a glyph, tinted by how it is doing. One mark
+            carries both facts: the shape says lead or engineer and the colour
+            says running, waiting, finished or failed, so a column of lanes can
+            be scanned without reading a word of it. It replaced a 7px dot that
+            only ever carried the second half. */}
+        <span className="devteam-lane-mark" aria-hidden="true">
+          {/* Keyed off the task record, not the engineer id: a task that is
+              planned but not yet dispatched has an empty engineer id and is
+              still an engineer's lane. Only the lead has no record at all. */}
+          <Icon name={record ? 'bot' : 'review'} size={13} />
+        </span>
         <span className="devteam-lane-who">
           <strong>{name}</strong>
           {focus && <span>{focus}</span>}
@@ -208,6 +274,18 @@ function Lane({
   );
 }
 
+/**
+ * The glyph a settled task wears in the plan. Only the outcomes that a person
+ * would want to spot while scanning are here; `pending` and `running` are
+ * deliberately absent, and fall back to the neutral dot the mark draws itself.
+ */
+const TASK_GLYPH: Partial<Record<DevTeamTaskRecord['status'], string>> = {
+  done: 'check',
+  error: 'hazard',
+  interrupted: 'stop',
+  waiting: 'warning',
+};
+
 function Milestones({ state }: { state: Pick<DevTeamSnapshot, 'plan' | 'tasks' | 'currentMilestone'> }) {
   if (!state.plan) return <p className="devteam-board-note">The lead is preparing the plan.</p>;
   const records = new Map(state.tasks.map((task) => [task.taskId, task]));
@@ -222,7 +300,13 @@ function Milestones({ state }: { state: Pick<DevTeamSnapshot, 'plan' | 'tasks' |
               const status = records.get(task.id)?.status ?? 'pending';
               return (
                 <li key={task.id} data-status={status} title={task.detail}>
-                  <span className="devteam-task-mark" aria-hidden="true" />
+                  {/* A settled task says so with a glyph, which reads at a
+                      glance down a list; one still to come keeps the neutral
+                      dot, because "nothing has happened yet" is exactly what a
+                      dot means and an icon would overstate it. */}
+                  <span className="devteam-task-mark" aria-hidden="true">
+                    {TASK_GLYPH[status] ? <Icon name={TASK_GLYPH[status]} size={10} /> : null}
+                  </span>
                   <span>{task.title}</span>
                   <span>{devTeamTaskLabel(status)}</span>
                 </li>
@@ -246,7 +330,19 @@ function TeamBoard({ state }: { state: DevTeamSnapshot }) {
 
   return (
     <div className="devteam-board">
+      {/* Two named regions rather than two unlabelled lists. A console says
+          what you are looking at before it shows it to you, and these two are
+          genuinely different things: one is what was agreed, the other is what
+          is happening. */}
+      <h2 className="devteam-section">
+        <Icon name="checkpoint" size={11} />
+        Plan
+      </h2>
       <Milestones state={state} />
+      <h2 className="devteam-section">
+        <Icon name="team" size={11} />
+        Team
+      </h2>
       <div className="devteam-lanes" aria-label="Team activity">
         <Lane
           name="Lead"
@@ -326,8 +422,21 @@ export function DevTeamPane() {
 
   return (
     <div className="devteam-pane">
-      <PhaseHeader state={state} />
-      <div className="devteam-scroll">
+      {/* Two columns, and only two. The run's state and its controls live in a
+          fixed column on the left; everything the team produced lives in one
+          scrolling column on the right, sharing a single left edge.
+
+          The old shape was a full-width header strip over a two-column board
+          whose LEFT column held the milestones. When there was no plan yet
+          that column held one sentence, vertically centred against a lane list
+          of one row, with the approved-specification fold floating above both
+          on a third alignment — three things, three left edges, none of them
+          agreeing, and a large empty area under all of it. Nothing was
+          mis-positioned; there was just no column structure for anything to be
+          positioned against. */}
+      <div className="devteam-console">
+        <RunRail state={state} />
+        <div className="devteam-main">
         {state && state.steering.length > 0 && (
           <p className="devteam-steering-note" role="status">
             {state.steering.length === 1
@@ -347,7 +456,10 @@ export function DevTeamPane() {
         )}
         {state && approvedSpec && board && (
           <details className="devteam-spec-record">
-            <summary>Approved specification v{state.specVersion}</summary>
+            <summary>
+              <Icon name="script" size={11} />
+              Approved specification v{state.specVersion}
+            </summary>
             <div className="devteam-spec-record-body">
               <Markdown text={state.spec ?? ''} live={false} />
             </div>
@@ -369,6 +481,7 @@ export function DevTeamPane() {
         ) : (
           <MessageList />
         )}
+        </div>
       </div>
       <Composer
         label={copy.label}

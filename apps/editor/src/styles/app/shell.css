@@ -105,7 +105,7 @@
 
 .topbar-name {
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: var(--fw-label);
   color: var(--ink);
   max-width: 34ch;
   overflow: hidden;

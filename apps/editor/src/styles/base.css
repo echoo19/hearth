@@ -35,13 +35,20 @@ textarea {
 
 h1, h2, h3, h4 {
   margin: 0;
-  font-weight: 600;
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-snug);
   text-wrap: balance;
 }
 
+/* Mono is the app's second voice, and it is for VALUES: paths, ids, model
+   names, durations, counts, console output. Tabular figures are part of that
+   job — a duration that climbs 1s, 2s, 3s must not shift the text beside it
+   every tick, and it did, because proportional digits are different widths.
+   Set here rather than at each site so nothing has to remember. */
 code, .mono {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Keyboard a11y: one consistent focus ring on every interactive element. */

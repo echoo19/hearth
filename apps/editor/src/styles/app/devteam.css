@@ -13,26 +13,51 @@
 }
 
 .devteam-pane {
+  /* One measure for everything in the working column. The blocks in it used to
+     centre themselves independently — .devteam-steering-note and
+     .devteam-ask-warning at `margin: 0 auto` inside 58rem, .devteam-spec-record
+     inside var(--chat-measure), and the board itself in a two-track grid that
+     started somewhere else again. Three centred measures and a grid is four
+     left edges, which is why the pane read as unaligned: it WAS unaligned, and
+     no single rule was wrong. */
+  --devteam-rail-w: 196px;
+  --devteam-measure: 62rem;
+
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
 }
 
-.devteam-phase {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+/* The console: a fixed column that says where the run is, and a scrolling
+   column that holds what it produced. */
+.devteam-console {
+  display: grid;
+  grid-template-columns: var(--devteam-rail-w) minmax(0, 1fr);
   min-width: 0;
-  padding: 8px var(--chat-gutter);
-  border-bottom: 1px solid var(--border);
+  min-height: 0;
 }
+
+.devteam-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  padding: 20px 16px 18px;
+  border-right: 1px solid var(--border);
+  /* A shade back from the working column. The rail is chrome about the work;
+     the work itself should be the lit surface. */
+  background: var(--bg-0);
+  overflow-y: auto;
+}
+
+/* --- The numbered step column -------------------------------------------- */
 
 .devteam-steps {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -40,64 +65,168 @@
 }
 
 .devteam-steps li {
-  display: inline-flex;
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
   align-items: center;
-  gap: 5px;
-  color: var(--ink-faint);
-  font-size: var(--text-xs);
-  white-space: nowrap;
+  gap: 10px;
+  min-height: 34px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
 }
 
-.devteam-steps li[data-state='current'] {
-  color: var(--ink);
+/* The thread between the marks, which is what makes four rows read as one
+   sequence rather than four unrelated rows. Drawn from the row above so the
+   first step has nothing dangling over it. */
+.devteam-steps li + li::before {
+  content: '';
+  position: absolute;
+  left: 18px;
+  top: -8px;
+  width: 1px;
+  height: 14px;
+  background: var(--border);
 }
 
-.devteam-steps li[data-state='done'] {
-  color: var(--ink-mute);
-}
-
-.devteam-step-mark,
-.devteam-task-mark {
-  width: 7px;
-  height: 7px;
+.devteam-step-mark {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
   flex: none;
   border: 1px solid var(--border-strong);
   border-radius: 50%;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-3xs);
+  font-weight: var(--fw-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.devteam-step-body {
+  min-width: 0;
+}
+
+.devteam-step-name {
+  display: block;
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--track-snug);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What the current step is actually doing right now: planning, reviewing,
+   wrapping, paused. Tracked caps in the accent, so the one live fact in the
+   column is the one thing that looks live. */
+.devteam-step-detail {
+  display: block;
+  margin-top: 1px;
+  overflow: hidden;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-3xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.devteam-steps li[data-state='done'] .devteam-step-mark {
+  border-color: transparent;
+  background: var(--ok);
+  /* Dark ink on the tick, not white: --ok is a light green and white on it
+     measures under 2:1. */
+  color: oklch(0.16 0.03 150);
+}
+
+.devteam-steps li[data-state='done'] .devteam-step-name {
+  color: var(--ink-mute);
+}
+
+.devteam-steps li[data-state='current'] {
+  background: var(--accent-faint);
 }
 
 .devteam-steps li[data-state='current'] .devteam-step-mark {
   border-color: var(--accent);
   background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: var(--fw-strong);
 }
 
-.devteam-steps li[data-state='done'] .devteam-step-mark {
-  border-color: var(--ink-faint);
-  background: var(--ink-faint);
+.devteam-steps li[data-state='current'] .devteam-step-name {
+  color: var(--ink);
+  font-weight: var(--fw-strong);
 }
 
-.devteam-phase-name {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink-mute);
-  font-size: var(--text-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.devteam-rail-count {
+  margin: 0;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
 }
 
+/* Governing the run, at the foot of the column that describes it. Full width
+   so two controls read as a pair of decisions rather than a toolbar. */
 .devteam-controls {
   display: flex;
-  gap: 4px;
-  margin-left: auto;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: auto;
 }
 
-.devteam-scroll {
+.devteam-controls .btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+/* Sized to the glyph it may hold. When it holds none it collapses back to the
+   old 7px dot via the ::before, so a pending task still reads as a bullet
+   rather than as an empty box. */
+.devteam-task-mark {
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  flex: none;
+  color: var(--ink-faint);
+}
+
+.devteam-task-mark:empty::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+}
+
+/* --- The working column --------------------------------------------------- */
+
+.devteam-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   min-width: 0;
   min-height: 0;
+  padding: 20px var(--chat-gutter) 24px;
   overflow-y: auto;
-  padding: 18px var(--chat-gutter);
 }
 
-.devteam-scroll > .chat-scroll,
+/* Everything in the column starts at the same left edge and stops at the same
+   right one. This single rule is what the alignment complaint was about. */
+.devteam-main > * {
+  width: 100%;
+  max-width: var(--devteam-measure);
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.devteam-main > .chat-scroll,
 .devteam-flow > .chat-scroll {
   min-height: auto;
   overflow: visible;
@@ -109,8 +238,9 @@
   flex-direction: column;
   gap: 20px;
   width: 100%;
+  /* Reading measure, capped by the column's own measure above. Not centred:
+     the working column has one left edge and this is on it. */
   max-width: var(--chat-measure);
-  margin: 0 auto;
 }
 
 .devteam-flow .chat-turns {
@@ -151,13 +281,31 @@
   border-top: 1px solid var(--border);
 }
 
+/* The plan and the team, stacked, both starting at the working column's left
+   edge. The plan used to be a narrow left track beside the lanes, which is what
+   put a single sentence ("The lead is preparing the plan.") floating in the
+   middle of an empty column whenever a run had not been planned yet. A plan is
+   an overview and the lanes are the work; one reads before the other rather
+   than beside it. */
 .devteam-board {
-  display: grid;
-  grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr);
-  gap: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
   width: 100%;
-  max-width: 58rem;
-  margin: 0 auto;
+}
+
+/* The name of a region of the console. Quiet on purpose: it labels the thing
+   under it and must never compete with it. */
+.devteam-section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 -8px;
+  color: var(--ink-faint);
+  font-size: var(--text-3xs);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
 }
 
 .devteam-board-note,
@@ -182,7 +330,7 @@
   margin: 0 0 10px;
   color: var(--ink-mute);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   text-wrap: balance;
 }
 
@@ -225,25 +373,28 @@
   font-size: var(--text-2xs);
 }
 
+/* The status colours the glyph, and the dot fallback when there is no glyph,
+   so both forms of the mark answer to the same four states. */
 .devteam-milestone li[data-status='running'] .devteam-task-mark {
+  color: var(--accent);
+}
+
+.devteam-milestone li[data-status='running'] .devteam-task-mark:empty::before {
   border-color: var(--accent);
   background: var(--accent);
 }
 
 .devteam-milestone li[data-status='done'] .devteam-task-mark {
-  border-color: var(--ok);
-  background: var(--ok);
+  color: var(--ok);
 }
 
 .devteam-milestone li[data-status='error'] .devteam-task-mark,
 .devteam-milestone li[data-status='interrupted'] .devteam-task-mark {
-  border-color: var(--err);
-  background: var(--err);
+  color: var(--err);
 }
 
 .devteam-milestone li[data-status='waiting'] .devteam-task-mark {
-  border-color: var(--warn);
-  background: var(--warn);
+  color: var(--warn);
 }
 
 .devteam-lanes {
@@ -256,13 +407,20 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* A row in a console: who, then how far along, then the last thing observed,
+   then whether it needs you. The name takes the slack and everything after it
+   sits against the right edge, so a column of lanes lines its states up under
+   one another and can be read down rather than across.
+
+   It used to give the name a capped 16rem track and let the TAIL take the
+   slack, which put the state word floating somewhere in the middle of the row
+   at a position set by the length of the title beside it. Nothing lined up
+   with anything in the row above. */
 .devteam-lane-head {
   display: grid;
-  /* The name column carries a task title now, so it is capped rather than
-     max-content: a long title ellipsizes instead of pushing the activity out. */
-  grid-template-columns: auto minmax(8rem, 16rem) auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, auto) auto auto;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   min-height: var(--ctl-h);
   padding: 9px 8px;
@@ -281,28 +439,48 @@
   color: var(--ink);
 }
 
-.devteam-lane-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ink-faint);
+/* A tile rather than a dot: it has to hold a glyph, and a bounded tile is what
+   makes a column of them line up as an index down the left of the board. The
+   tint is the status, so the mark answers "who" and "how is it going" at once. */
+.devteam-lane-mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--ink-faint);
 }
 
-.devteam-lane[data-status='running'] .devteam-lane-dot {
-  background: var(--accent);
+.devteam-lane[data-status='lead'] .devteam-lane-mark {
+  color: var(--ink-mute);
 }
 
-.devteam-lane[data-status='done'] .devteam-lane-dot {
-  background: var(--ok);
+.devteam-lane[data-status='running'] .devteam-lane-mark {
+  border-color: var(--accent-soft);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
-.devteam-lane[data-status='waiting'] .devteam-lane-dot {
-  background: var(--warn);
+.devteam-lane[data-status='done'] .devteam-lane-mark {
+  border-color: var(--ok-soft);
+  background: var(--ok-soft);
+  color: var(--ok);
 }
 
-.devteam-lane[data-status='error'] .devteam-lane-dot,
-.devteam-lane[data-status='interrupted'] .devteam-lane-dot {
-  background: var(--err);
+.devteam-lane[data-status='waiting'] .devteam-lane-mark {
+  border-color: var(--warn-soft);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.devteam-lane[data-status='error'] .devteam-lane-mark,
+.devteam-lane[data-status='interrupted'] .devteam-lane-mark {
+  border-color: var(--err-soft);
+  background: var(--err-soft);
+  color: var(--err);
 }
 
 .devteam-lane-who {
@@ -315,13 +493,13 @@
   overflow: hidden;
   color: var(--ink);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-snug);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .devteam-lane-who span,
-.devteam-lane-activity,
 .devteam-lane-tail {
   overflow: hidden;
   color: var(--ink-faint);
@@ -330,8 +508,45 @@
   white-space: nowrap;
 }
 
+/* The last thing this lane was observed doing. A value the machine reported,
+   so it is set in the value face: a path, a file count, a sentence fragment
+   from the agent. Mono is what stops it reading as a second title. */
+.devteam-lane-tail {
+  font-family: var(--font-mono);
+  max-width: 26rem;
+}
+
+/* How far along, as a status word rather than a caption. Tracked caps read as
+   a state at a glance, and a column of them lines up down the board. */
 .devteam-lane-activity {
+  overflow: hidden;
   color: var(--ink-mute);
+  font-size: var(--text-3xs);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The state colours the word, so the board can be read down the status column
+   without reading any of the names. Muted is the resting case (queued, done
+   without incident); the three that want attention take their semantic hue. */
+.devteam-lane[data-status='running'] .devteam-lane-activity {
+  color: var(--accent);
+}
+
+.devteam-lane[data-status='waiting'] .devteam-lane-activity {
+  color: var(--warn);
+}
+
+.devteam-lane[data-status='error'] .devteam-lane-activity,
+.devteam-lane[data-status='interrupted'] .devteam-lane-activity {
+  color: var(--err);
+}
+
+.devteam-lane[data-status='done'] .devteam-lane-activity {
+  color: var(--ok);
 }
 
 .devteam-ask-badge {
@@ -372,24 +587,17 @@
   font-size: var(--text-sm);
 }
 
+/* The measure and the margins come from `.devteam-main > *`; these rules carry
+   only what makes a notice a notice. They each used to restate a width and an
+   `auto` margin of their own, and no two of them agreed. */
 .devteam-ask-warning,
 .devteam-error {
-  width: 100%;
-  max-width: 58rem;
-  margin: 0 auto 14px;
   padding: 9px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--warn-soft);
   color: var(--ink-mute);
   font-size: var(--text-xs);
-}
-
-.devteam-history,
-.devteam-spec-record {
-  width: 100%;
-  max-width: var(--chat-measure);
-  margin: 0 auto 14px;
 }
 
 .devteam-history {
@@ -406,10 +614,22 @@
 }
 
 .devteam-spec-record > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   min-height: var(--ctl-h-xs);
   cursor: pointer;
-  list-style-position: inside;
   transition: color var(--t-fast) var(--ease-out);
+}
+
+/* The default marker sits outside the flex row and knocks the icon out of
+   alignment; the icon IS the affordance here, so the marker goes. */
+.devteam-spec-record > summary::-webkit-details-marker {
+  display: none;
+}
+
+.devteam-spec-record > summary::marker {
+  content: '';
 }
 
 .devteam-spec-record > summary:hover {
@@ -426,16 +646,12 @@
 /* A note the person typed has left the composer but not yet reached the lead.
    Say so once, quietly, above whatever the run is showing. */
 .devteam-steering-note {
-  width: 100%;
-  max-width: 58rem;
-  margin: 0 auto 12px;
+  margin: 0;
   color: var(--ink-mute);
   font-size: var(--text-xs);
 }
 
 .devteam-error {
-  grid-column: 1 / -1;
-  margin-bottom: 0;
   background: var(--err-soft);
   color: var(--ink);
 }
@@ -515,30 +731,100 @@
 
 /* Narrow mode still includes the project rail, so the conversation region can
    be much smaller than the viewport-wide media query below suggests. Let the
-   board follow the app's measured mode instead of forcing two cramped tracks. */
-.app-shell.is-narrow .devteam-board {
+   console follow the app's measured mode instead of holding a fixed 196px
+   track that leaves the work in a sliver. */
+.app-shell.is-narrow .devteam-console {
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.app-shell.is-narrow .devteam-rail {
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  border-right: 0;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.app-shell.is-narrow .devteam-steps {
+  flex-direction: row;
+  align-items: center;
+}
+
+.app-shell.is-narrow .devteam-steps li + li::before {
+  left: -6px;
+  top: 50%;
+  width: 10px;
+  height: 1px;
+}
+
+.app-shell.is-narrow .devteam-rail-count {
+  display: none;
+}
+
+/* The controls stop being a foot-of-column pair and become a trailing cluster,
+   but they stay full-size and reachable: this is the layout the pane used to
+   overflow at, and losing Stop off the right edge is the one failure this
+   whole media block exists to prevent. */
+.app-shell.is-narrow .devteam-controls {
+  flex-direction: row;
+  margin-top: 0;
+  margin-left: auto;
+}
+
+.app-shell.is-narrow .devteam-controls .btn {
+  width: auto;
 }
 
 @media (max-width: 680px) {
-  .devteam-phase {
+  .devteam-console {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .devteam-rail {
+    flex-direction: row;
+    align-items: center;
     flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px var(--chat-gutter);
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
   }
 
-  .devteam-controls {
-    width: 100%;
-    margin-left: 0;
-    justify-content: flex-end;
+  .devteam-steps {
+    flex-direction: row;
+    align-items: center;
+    min-width: 0;
   }
 
-  .devteam-steps li:not([data-state='current']) span:last-child,
-  .devteam-phase-name,
+  .devteam-steps li + li::before {
+    left: -5px;
+    top: 50%;
+    width: 8px;
+    height: 1px;
+  }
+
+  /* Only the live step keeps its words; the rest keep their numbers, which is
+     the whole reason the marks are numbered. */
+  .devteam-steps li:not([data-state='current']) .devteam-step-body,
+  .devteam-rail-count,
   .devteam-lane-tail {
     display: none;
   }
 
-  .devteam-board {
-    grid-template-columns: minmax(0, 1fr);
+  .devteam-controls {
+    flex-direction: row;
+    width: 100%;
+    margin-top: 0;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+
+  .devteam-controls .btn {
+    width: auto;
   }
 
   .devteam-milestones {

@@ -233,7 +233,7 @@
 .game-empty-lead {
   margin: 0;
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   letter-spacing: -0.01em;
   font-size: var(--text-xl);
   color: var(--ink-mute);
@@ -385,7 +385,7 @@
   color: var(--accent-ink);
   font-family: inherit;
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   letter-spacing: 0.01em;
   box-shadow: var(--shadow-1), 0 0 0 1px var(--accent-soft);
   cursor: pointer;

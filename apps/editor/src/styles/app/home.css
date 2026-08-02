@@ -28,7 +28,7 @@
   gap: 12px;
   margin: 0;
   font-size: var(--text-2xl);
-  font-weight: 500;
+  font-weight: var(--fw-label);
   letter-spacing: -0.015em;
   line-height: 1.25;
   color: var(--ink);

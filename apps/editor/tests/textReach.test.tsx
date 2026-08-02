@@ -101,19 +101,29 @@ describe('the head label that says who is answering', () => {
   });
 
   it('never abbreviates the one word the app chose itself', () => {
-    // "Chat" and "Terminal" wear .conversation-provider too, and they are the
-    // app's own words, already the shortest thing in the strip. "Ter..." would
-    // be the head reporting a squeeze rather than stating a fact.
+    // "Chat", "Terminal" and "Dev team" are the app's own words, already the
+    // shortest thing in the strip. "Ter..." would be the head reporting a
+    // squeeze rather than stating a fact.
     //
-    // Two classes rather than source order: both selectors are one class deep,
-    // so a bare `.conversation-kind` rule wins or loses purely on where in the
-    // file it sits, and this rule sits ABOVE the one it has to beat.
+    // This used to be checked by requiring every rule to be written as the
+    // compound `.conversation-provider.conversation-kind`, because the mode
+    // BORROWED the provider's class and needed the extra specificity to beat
+    // its shrink rule. It does not borrow it any more: a mode and an agent name
+    // are opposite kinds of thing, and sharing one class is precisely what made
+    // them render identically. With nothing to override, the compound selector
+    // is no longer the mechanism, so what is checked here is the outcome it
+    // existed to produce.
     const kind = rulesUsingClass(chat, 'conversation-kind');
     expect(kind.length).toBeGreaterThan(0);
+    // Nothing may re-couple the two, which would drag the shrink back with it.
     for (const rule of kind) {
-      expect(rule.selector).toBe('.conversation-provider.conversation-kind');
+      expect(rule.selector, 'the mode must not borrow the provider treatment').not.toMatch(
+        /\.conversation-provider\b/,
+      );
     }
+    // It never gives up width, and it never ellipsizes.
     pinned(chat, 'conversation-kind', 'flex', /^none$/);
+    expect(stated(chat, 'conversation-kind', 'text-overflow')).toHaveLength(0);
   });
 });
 

@@ -25,7 +25,112 @@
    -------------------------------------------------------------------------- */
 
 /* --------------------------------------------------------------------------
+   Type roles
+
+   A piece of text in this app is one of six things, and until these existed it
+   had no way to say which: 89% of every string on screen rendered at 11-13px,
+   weight 400-500, in one of three inks, with no tracking and no case change.
+   The scale was not the problem. The absence of ROLES was.
+
+   Use the class when the markup is chrome the app owns. Long-form content (the
+   transcript, rendered markdown) is deliberately not on this list: it is set by
+   the reading rules in chat.css and must not inherit a chrome treatment.
+
+     .t-display   brand moments. Heaviest, tightest, largest.
+     .t-title     the name of a thing you are looking at or acting on.
+     .t-nav       a place you can go. Full ink, because it is a destination.
+     .t-label     the app's working weight: buttons, controls, field labels.
+     .t-meta      secondary fact attached to something else.
+     .t-caps      a symbol more than a word: status, badge, section marker.
+     .t-value     a value the machine produced: path, id, model, duration.
+
+   .t-caps and .t-value are the two that carry the most weight in practice,
+   because they are the two the app had no equivalent of at all. A status word
+   set in tracked caps and a file path set in mono are instantly not-prose, and
+   that is most of what "this reads as a real tool" turns out to mean.
+   -------------------------------------------------------------------------- */
+
+.t-display {
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: var(--fw-display);
+  letter-spacing: var(--track-tight);
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.t-title {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-snug);
+  color: var(--ink);
+}
+
+.t-nav {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-label);
+  letter-spacing: var(--track-snug);
+  color: var(--ink);
+}
+
+.t-label {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-label);
+  letter-spacing: var(--track-snug);
+  color: var(--ink-mute);
+}
+
+.t-meta {
+  font-size: var(--text-xs);
+  font-weight: var(--fw-regular);
+  letter-spacing: var(--track-normal);
+  color: var(--ink-faint);
+}
+
+/* Caps at 10px is legible where 10px lowercase is not: there are no
+   descenders to collide and no x-height to lose, and the tracking does the
+   separating that word shapes normally do. It is still a symbol, not a
+   sentence, and a full sentence must never be set in it. */
+.t-caps {
+  font-size: var(--text-3xs);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.t-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-regular);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+}
+
+/* --------------------------------------------------------------------------
    Controls
+   -------------------------------------------------------------------------- */
+
+/* --------------------------------------------------------------------------
+   The button ladder
+
+   Five rungs, and the reason there are five is that there used to be
+   effectively two. `primary` was an ember fill and `ghost` was bare text with
+   no border and no background, and everything that was neither shouted nor
+   silent got `ghost` by default. That is how the conversation header ended up
+   printing Pause and Stop in exactly the typeface, size, weight and colour it
+   printed the agent's name in: a destructive action rendered as a caption.
+
+   The rule the ladder encodes: an action a person can take must have a visible
+   boundary at rest, or be an icon in a place icons live. Text alone is a
+   read-out. `ghost` is therefore reserved for icon-only controls and for text
+   inside a container that already draws the boundary (a menu, a row).
+
+     primary   ember fill        the one act a screen is FOR
+     default   filled + border   ordinary acts
+     quiet     border only       acts in a strip that must stay calm
+     danger    red border only   acts that end or destroy something
+     ghost     nothing at rest   icon controls; text inside a bounded container
    -------------------------------------------------------------------------- */
 
 /* The default button: comfortable, hairline-bordered, generously rounded.
@@ -42,7 +147,8 @@
   background: var(--bg-2);
   color: var(--ink);
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: var(--fw-label);
+  letter-spacing: var(--track-snug);
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
@@ -71,7 +177,7 @@
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -95,8 +201,30 @@
   border-color: var(--err);
 }
 
+/* Quiet: the rung between an ordinary button and no button at all. Keeps the
+   border so it still reads as pressable, drops the fill so a strip of them
+   does not turn a header into a toolbar. This is what a header action wants,
+   and it is what Pause, Continue in CLI and the terminal's Start/Stop wore as
+   `ghost` before the ladder existed. */
+.btn-quiet {
+  background: transparent;
+  color: var(--ink-mute);
+}
+
+.btn-quiet:hover:not(:disabled) {
+  background: var(--bg-2);
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+
+.btn-quiet:active:not(:disabled) {
+  background: var(--bg-1);
+}
+
 /* Ghost: the default for icon-only controls. Transparent until hovered, so a
-   row of them reads as one quiet cluster rather than a toolbar of boxes. */
+   row of them reads as one quiet cluster rather than a toolbar of boxes.
+
+   Text-only actions do NOT belong here; see the ladder note above. */
 .btn-ghost {
   border-color: transparent;
   background: transparent;

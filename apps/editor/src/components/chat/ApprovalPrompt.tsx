@@ -100,7 +100,14 @@ export function ApprovalPrompt({ part, active: activeProp, onRespond }: Approval
             <Button
               key={choice.id}
               ref={choice.id === focusedChoiceId ? allowRef : undefined}
-              variant={choice.tone === 'allow' ? 'primary' : undefined}
+              // Exactly one ember fill per decision, and it is the choice that
+              // already has the keyboard. Providers routinely offer more than
+              // one allow ("Allow once", "Allow and remember"), and giving the
+              // fill to `tone === 'allow'` gave it to both: two identical loud
+              // buttons side by side, which is the same as having no
+              // recommendation at all. The others are still allows and still
+              // one click away; they are just not the one being suggested.
+              variant={choice.id === focusedChoiceId ? 'primary' : undefined}
               onClick={() => respond(part.id, choice.tone === 'allow' ? 'allow' : 'deny', choice.id)}
             >
               {choice.label}

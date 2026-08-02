@@ -62,7 +62,7 @@
   min-width: 0;
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  font-weight: 500;
+  font-weight: var(--fw-label);
   color: var(--ink-mute);
   overflow: hidden;
   text-overflow: ellipsis;

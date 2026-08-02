@@ -50,11 +50,25 @@
    sidebar. Borderless in chat mode on purpose — the top bar already draws a
    hairline above, and a second one would turn the column's opening into a
    stack of chrome. */
+/* Three registers, and that is the whole point of this strip.
+
+   It used to have one. `.conversation-back-name`, `.conversation-kind` and
+   `.conversation-provider` compiled to byte-identical declarations — 12px,
+   weight 400, --ink-mute, no tracking — so a way OUT, a fact ABOUT the
+   conversation and the name of WHO answers were three interchangeable words in
+   a row, and the actions beside them were bare text with no border, which made
+   a destructive Stop look like a fourth word. Nothing was wrong with any one
+   rule; there was simply no rule saying these are different kinds of thing.
+
+   Now: the way out is a destination (full ink, medium weight, an icon, a hover
+   surface). The mode is a symbol (tracked caps in a bounded chip). The agent is
+   a value the machine knows (mono, faint). The actions are controls with
+   borders. Four registers, told apart at a glance and without reading. */
 .conversation-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 40px;
+  gap: 8px;
+  height: 44px;
   padding: 0 var(--chat-gutter);
   flex: none;
 }
@@ -87,13 +101,25 @@
 .conversation-back {
   flex: 0 1 auto;
   min-width: 0;
-  gap: 4px;
-  padding: 4px 8px 4px 6px;
-  font-size: var(--text-xs);
+  gap: 5px;
+  height: var(--ctl-h-sm);
+  padding: 0 10px 0 7px;
+  border-radius: var(--radius-sm);
+  /* A destination, so it is the one thing here in full ink: everything else in
+     the strip is a fact, and a fact should never outrank the way out. */
+  font-size: var(--text-sm);
+  font-weight: var(--fw-label);
+  letter-spacing: var(--track-snug);
+  color: var(--ink);
+}
+
+.conversation-back:hover {
+  background: var(--bg-2);
 }
 
 .conversation-back svg {
   flex: none;
+  opacity: 0.65;
   transform: rotate(180deg);
 }
 
@@ -116,8 +142,37 @@
    and "Ter..." would be the head reporting a squeeze rather than a fact. Two
    classes rather than source order, so the rule holds wherever it is moved
    to. */
-.conversation-provider.conversation-kind {
+/* The mode, as a symbol rather than a word. Tracked caps inside a bounded chip
+   is read before it is spelled out, which is what you want from a fact that
+   never changes for the life of a conversation and only has to be confirmed at
+   a glance.
+
+   Deliberately NOT ember. The accent is reserved for actions and selection
+   (DESIGN.md), and a mode is neither; it earns its distinctness from case and
+   shape, which cost the accent nothing. */
+.conversation-kind {
+  display: inline-flex;
+  align-items: center;
   flex: none;
+  height: 21px;
+  max-width: none;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-2);
+  font-size: var(--text-3xs);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+/* Actions live at the far end, away from the read-outs, so the strip reads
+   left to right as: where you came from, what this is, who answers — then, at
+   the other margin, what you can do about it. */
+.conversation-act {
+  flex: none;
+  margin-left: auto;
 }
 
 /* --- Which project the next message lands in ------------------------------
@@ -206,8 +261,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--text-xs);
-  color: var(--ink-mute);
+  /* Mono, because this is a VALUE the machine reported rather than a word the
+     app chose: a provider name, or a model id read out of a binary's own
+     catalogue. Setting it in the chrome face was what made it look like a
+     third label; setting it in the value face makes it obvious at a glance
+     that it is a setting, without needing a label to say so. */
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
 }
 
 /* --- Mode layers ---------------------------------------------------------- */
@@ -389,7 +451,7 @@
 .md-heading {
   margin: 0;
   color: var(--ink);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   line-height: 1.4;
   text-wrap: balance;
   overflow-wrap: anywhere;
@@ -1755,13 +1817,23 @@
   overflow-wrap: anywhere;
 }
 
+/* Wraps, because a provider can offer three choices and the card is as narrow
+   as the conversation column gets. Without this the row stayed on one line and
+   pushed the keyboard hint out through the card's own edge, where it stacked
+   one word per line down the page beside the prompt it belongs to. */
 .approval-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
+/* The hint follows the buttons rather than being pinned beside them: on a
+   narrow card it takes its own line, which is the one place it can go without
+   either shrinking a decision or leaving the box. */
 .approval-hint {
+  flex: 0 1 auto;
+  min-width: 0;
   color: var(--ink-mute);
   font-size: var(--text-2xs);
 }
@@ -1814,7 +1886,7 @@
 .input-title {
   color: var(--ink);
   font-size: var(--text-md);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
 }
 
 .input-description {
@@ -1843,7 +1915,7 @@
   margin-bottom: 7px;
   padding: 0;
   color: var(--ink);
-  font-weight: 500;
+  font-weight: var(--fw-label);
 }
 
 .input-question-field {
@@ -1851,7 +1923,7 @@
   flex-direction: column;
   gap: 6px;
   color: var(--ink);
-  font-weight: 500;
+  font-weight: var(--fw-label);
 }
 
 .input-control {
@@ -1864,7 +1936,7 @@
   background: var(--bg-0);
   color: var(--ink);
   font: inherit;
-  font-weight: 400;
+  font-weight: var(--fw-regular);
   transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
 }
 
@@ -1957,7 +2029,7 @@
 
 .input-external-action {
   color: var(--accent);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   text-decoration: none;
 }
 
@@ -2021,7 +2093,7 @@
      the app wears (game.css .game-empty-lead, panels/common.css) — this one
      had drifted onto the UI font. */
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: var(--fw-strong);
   letter-spacing: -0.01em;
   font-size: var(--text-xl);
   color: var(--ink);

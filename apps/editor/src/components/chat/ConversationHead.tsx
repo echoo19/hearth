@@ -94,12 +94,15 @@ function TerminalContext() {
         </span>
       </Tooltip>
       {status && <span className="terminal-cwd-status">{status}</span>}
+      {/* Ending a live shell and starting a dead one are different acts and get
+          different rungs of the ladder: stopping is destructive, starting is
+          ordinary. Both carry a border, because both are acts. */}
       {live ? (
-        <Button size="sm" variant="ghost" onClick={stop}>
+        <Button className="conversation-act" size="sm" variant="danger" onClick={stop}>
           Stop
         </Button>
       ) : (
-        <Button size="sm" variant="ghost" disabled={!connected} onClick={() => start()}>
+        <Button className="conversation-act" size="sm" variant="quiet" disabled={!connected} onClick={() => start()}>
           Start
         </Button>
       )}
@@ -187,15 +190,18 @@ export function ConversationHead() {
     <div className="conversation-head">
       {/* Leaving first, on the left, the way it reads on every screen. */}
       <BackToProject />
-      {/* Wears the same quiet label treatment as the read-outs beside it —
-          this strip has one register, and everything in it is either a fact or
-          a way out. */}
-      <span className="conversation-provider conversation-kind">{conversationKindLabel(mode)}</span>
+      {/* A chip in tracked caps: read as a symbol, not as a third word in a row
+          of words. It no longer borrows .conversation-provider, because the two
+          are opposite kinds of thing and sharing a class is what made them
+          identical in the first place. */}
+      <span className="conversation-kind">{conversationKindLabel(mode)}</span>
       {/* Chat mode's other read-out: which agent would answer. */}
       {mode !== 'terminal' && <span className="conversation-provider">{providerLabel(providers, driver, choice)}</span>}
       {mode !== 'terminal' && canContinueInCli && (
         <Tooltip content="Resume this provider session in its full CLI">
-          <Button size="sm" variant="ghost" onClick={continueInCli} disabled={chatBusy}>
+          {/* `quiet`, not `ghost`: this is an act, and an act in this strip has
+              to carry a border or it reads as one more read-out. */}
+          <Button className="conversation-act" size="sm" variant="quiet" onClick={continueInCli} disabled={chatBusy}>
             Continue in CLI
           </Button>
         </Tooltip>

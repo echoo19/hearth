@@ -122,18 +122,54 @@
      is the app performing rather than responding. */
   --t-slow: 220ms;
 
-  --font-ui: 'Archivo Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-ui: 'Mona Sans Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'Commit Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
-  /* Brand display face — Bricolage Grotesque, for brand moments ONLY (dialog
-     titles, empty-state headings). Falls back to the UI font so nothing loses
-     legibility if the webfont fails. */
-  --font-display: 'Bricolage Grotesque Variable', var(--font-ui);
+  /* Brand display moments (dialog titles, empty-state headings) are the UI
+     family at --fw-display with --track-tight, not a family of their own. The
+     token stays because the gate in tests/styleGates.test.ts keeps the list of
+     places allowed to have a brand voice short and deliberate, and that is
+     worth keeping whether or not the face differs. */
+  --font-display: var(--font-ui);
+
+  /* ---- The three axes hierarchy is actually built from ---------------------
+
+     The app used to have one: size. Everything landed on 12px or 13px in one
+     of three inks, which is why a way out, a read-out and a destructive action
+     were indistinguishable in the conversation header — they were, to the
+     pixel, the same declaration. Weight and tracking are named here so a
+     surface can say what a piece of text IS rather than only how big it is.
+
+     Mona Sans is a variable face, so the in-between weights are real: 550 is a
+     genuine step between medium and semibold, and it is the one UI labels and
+     buttons want. Do not round these to 500/600 because the numbers look
+     unusual. */
+
+  --fw-regular: 400; /* body and long prose */
+  --fw-medium: 500; /* secondary rows, quiet metadata that still needs presence */
+  --fw-label: 550; /* UI labels, buttons, nav targets: the app's working weight */
+  --fw-strong: 620; /* row titles, section headings, the lit step */
+  --fw-display: 760; /* brand moments only */
+
+  /* Tracking. Negative as text gets larger (Mona Sans sets loose by default at
+     display sizes), positive and generous for uppercase micro-labels, where
+     caps have no ascender rhythm to separate them and tracking is the only
+     thing keeping them legible at 10px. */
+  --track-tight: -0.014em; /* display headings */
+  --track-snug: -0.006em; /* UI labels, buttons, titles */
+  --track-normal: 0;
+  --track-caps: 0.075em; /* uppercase micro-labels and badges */
 
   /* Type scale: one ramp for the whole app, sized for a modern desktop app
      rather than an IDE — --text-md is the 15px reading size the conversation
      is set in. Every font-size references a token below; no ad-hoc literals
-     (enforced by tests/styleGates.test.ts). */
+     (enforced by tests/styleGates.test.ts).
+
+     --text-3xs is for UPPERCASE micro-labels only (badges, status words, the
+     kind of thing that is read as a symbol rather than a word). It is below
+     the app's readable floor in lowercase and must never be used for a
+     sentence. */
+  --text-3xs: 10px;
   --text-2xs: 11px;
   --text-xs: 12px;
   --text-sm: 13px;
