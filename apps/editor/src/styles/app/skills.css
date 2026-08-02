@@ -146,12 +146,18 @@
 /* "Installed" and "Created by me" — and a heading only exists while its group
    does, so a library with nothing installed shows no heading at all rather
    than one heading over everything. */
+/* The name of a list, in the app's one treatment for that (the .t-caps role in
+   primitives.css). It was 12px semibold in --ink-mute, which is within a
+   rounding error of the skill names underneath it, so the heading read as the
+   first row of the list it was heading. */
 .skills-group-title {
-  margin: 0 0 6px;
+  margin: 0 0 8px;
   padding: 0 10px;
-  font-size: var(--text-xs);
+  font-size: var(--text-3xs);
   font-weight: var(--fw-strong);
-  color: var(--ink-mute);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  color: var(--ink-faint);
 }
 
 .skills-rows {
@@ -215,12 +221,18 @@
   min-width: 0;
 }
 
+/* The name of the thing, and the row's own title. It sat at the same weight as
+   the sentence under it, so a row read as two lines of prose rather than a
+   name with a description attached. A skill's name is also an identifier the
+   agent is told, which is why the tracking pulls in rather than out. */
 .skills-item-name {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
   font-size: var(--text-sm);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-snug);
   color: var(--ink);
 }
 

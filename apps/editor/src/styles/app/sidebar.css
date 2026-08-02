@@ -341,11 +341,12 @@
   white-space: nowrap;
 }
 
-/* A machine-reported value, so it wears the value face. Tabular figures keep
-   a column of them aligned down the rail instead of ragging by digit width. */
+/* Tabular figures so a column of these lines up down the rail, but the UI face
+   rather than the value face. "2h ago" is prose with a number in it, not a
+   value: set in mono it gains the wide inter-word space and reads as "2h  ago",
+   which is the mono voice being used for something it is not for. */
 .chat-when {
   flex: none;
-  font-family: var(--font-mono);
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
   color: var(--ink-faint);

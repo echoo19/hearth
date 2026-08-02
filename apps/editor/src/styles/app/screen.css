@@ -41,11 +41,17 @@
   min-width: 0;
 }
 
+/* The screen's own name. It was 13px, --ink-mute, one weight step off the way
+   back beside it, which is the same collapse the conversation header had: a
+   destination and a title rendering as the same kind of word. A title is the
+   one thing on this strip that is not a control, so it takes the strongest
+   treatment and lets the controls be quieter than it. */
 .screen-head-title {
   margin: 0;
   font-size: var(--text-sm);
-  font-weight: var(--fw-label);
-  color: var(--ink-mute);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-snug);
+  color: var(--ink);
   white-space: nowrap;
 }
 
@@ -73,8 +79,13 @@
   border-radius: var(--radius);
   background: transparent;
   font: inherit;
+  /* A destination, in the same treatment as the conversation's way back
+     (.conversation-back, chat.css): the app has one back affordance and it
+     reads the same wherever it appears. */
   font-size: var(--text-sm);
-  color: var(--ink-mute);
+  font-weight: var(--fw-label);
+  letter-spacing: var(--track-snug);
+  color: var(--ink);
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;

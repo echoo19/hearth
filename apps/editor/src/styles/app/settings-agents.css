@@ -356,12 +356,17 @@
   gap: 12px;
 }
 
+/* The .t-caps role (primitives.css). It was already reaching for this — 11px,
+   semibold, a touch of tracking — but at a size and tracking of its own, which
+   is how the app ended up with four nearly-identical section labels that no two
+   surfaces agreed on. */
 .set-agent-section-title {
   margin: 0;
-  font-size: var(--text-2xs);
+  font-size: var(--text-3xs);
   font-weight: var(--fw-strong);
-  letter-spacing: 0.02em;
-  color: var(--ink-mute);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  color: var(--ink-faint);
 }
 
 /* "3 of 4 offered". The one number on this pane, and it answers the question
