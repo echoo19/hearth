@@ -9,7 +9,7 @@ import { createProjectServerContext } from '../server/projectServer';
 import { attachWebSocket, type WsFrame } from '../server/ws';
 import { getChat, readTranscript } from '../server/chatStore';
 import { buildInterviewPrompt } from '../server/devTeamRuntime';
-import { readDevTeamState } from '../server/devTeamStore';
+import { readDevTeamState, writeDevTeamState } from '../server/devTeamStore';
 import { writePermissionMode, type PermissionMode } from '../server/permissionMode';
 import type { PtyBackend, PtyHandle } from '../server/ptyManager';
 
@@ -680,6 +680,195 @@ describe('dev team websocket integration', () => {
     const eventIndex = second.frames.findIndex((frame) => frame.type === 'devteam-event');
     expect([openedIndex, stateIndex, eventIndex]).toEqual([0, 1, 2]);
     second.socket.close();
+    inbox.socket.close();
+  });
+
+  it('acknowledges a steering note and stays silent for a send that reaches the driver', async () => {
+    const harness = await makeHarness();
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'build the thing' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    await until(() => harness.drivers[0].sent.length === 1);
+    // The opening request became the interview prompt, so a turn really is
+    // running and the window must keep waiting on it.
+    expect(inbox.frames.filter((frame) => frame.type === 'devteam-steering-accepted')).toEqual([]);
+
+    await fsp.mkdir(path.join(harness.root, '.hearth', 'devteam', chatId), { recursive: true });
+    await fsp.writeFile(path.join(harness.root, '.hearth', 'devteam', chatId, 'spec.md'), '# Spec\nBuild it.\n');
+    harness.drivers[0].emit({ type: 'turn-complete' });
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'spec-review');
+    inbox.socket.send(JSON.stringify({ type: 'devteam-approve-spec' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'planning');
+    await until(() => harness.drivers[0].sent.length === 2);
+
+    const leadSends = harness.drivers[0].sent.length;
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'Keep the interface quiet.' }));
+    const ack = await inbox.next((frame) => frame.type === 'devteam-steering-accepted');
+    expect(ack).toEqual({ type: 'devteam-steering-accepted', chatId });
+    expect((await readDevTeamState(harness.root, chatId)).steering.map((item) => item.text)).toEqual([
+      'Keep the interface quiet.',
+    ]);
+    expect(harness.drivers[0].sent).toHaveLength(leadSends);
+    // The note is still in the transcript: the ack ends the turn, it does not
+    // undo the send.
+    expect((await readTranscript(harness.root, chatId)).some(
+      (record) => record.role === 'user' && record.text === 'Keep the interface quiet.',
+    )).toBe(true);
+
+    // A second note lands the same way rather than waiting on a turn end.
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'And keep it small.' }));
+    await inbox.next((frame) => frame.type === 'devteam-steering-accepted');
+    expect((await readDevTeamState(harness.root, chatId)).steering.map((item) => item.text)).toEqual([
+      'Keep the interface quiet.',
+      'And keep it small.',
+    ]);
+    inbox.socket.close();
+  });
+
+  it('does not acknowledge a spec revision, which starts a real lead turn', async () => {
+    const harness = await makeHarness();
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'build the thing' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    await until(() => harness.drivers[0].sent.length === 1);
+    await fsp.mkdir(path.join(harness.root, '.hearth', 'devteam', chatId), { recursive: true });
+    await fsp.writeFile(path.join(harness.root, '.hearth', 'devteam', chatId, 'spec.md'), '# Spec\nBuild it.\n');
+    harness.drivers[0].emit({ type: 'turn-complete' });
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'spec-review');
+
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'Cut the multiplayer part.' }));
+    await until(() => harness.drivers[0].sent.length === 2);
+    expect(harness.drivers[0].sent[1].text).toContain('Cut the multiplayer part.');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(inbox.frames.filter((frame) => frame.type === 'devteam-steering-accepted')).toEqual([]);
+    inbox.socket.close();
+  });
+
+  it('answers a send into a conversation that is being deleted instead of dropping it', async () => {
+    const harness = await makeHarness(undefined, { teardownFlushMs: 30 });
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'start it' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    await until(() => harness.drivers[0].sent.length === 1);
+    harness.drivers[0].holdStop = true;
+
+    const blocked = await harness.ctx.deleteProjectChat(harness.root, chatId);
+    expect(blocked.status).toBe(409);
+
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'typed into a closing chat' }));
+    const refusal = await inbox.next(
+      (frame) => frame.type === 'chat-event' && frame.chatId === chatId && frame.event.type === 'error',
+    );
+    expect(refusal.type === 'chat-event' && refusal.event.type === 'error' && refusal.event.message).toBe(
+      'This conversation is being deleted. Its agent is still stopping.',
+    );
+    expect((await readTranscript(harness.root, chatId)).some(
+      (record) => record.role === 'user' && record.text === 'typed into a closing chat',
+    )).toBe(false);
+    harness.drivers[0].releaseStop();
+    await harness.drivers[0].closed;
+    inbox.socket.close();
+  });
+
+  it('leaves a refused delete on a resumable run and says so', async () => {
+    const harness = await makeHarness(undefined, { teardownFlushMs: 30 });
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'start it' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    await until(() => harness.drivers[0].sent.length === 1);
+    // A provider whose close never settles is the whole reason the delete is
+    // refused.
+    harness.drivers[0].holdStop = true;
+
+    const blocked = await harness.ctx.deleteProjectChat(harness.root, chatId);
+
+    expect(blocked).toMatchObject({
+      status: 409,
+      body: {
+        ok: false,
+        error:
+          'The conversation was not deleted because an agent provider did not stop in time. Its run was interrupted; reopen it to resume or try deleting again.',
+      },
+    });
+    expect(await getChat(harness.root, chatId)).not.toBeNull();
+    await until(async () => (await readDevTeamState(harness.root, chatId)).phase === 'interrupted');
+    expect(await readDevTeamState(harness.root, chatId)).toMatchObject({
+      phase: 'interrupted',
+      resumePhase: 'interviewing',
+    });
+    harness.drivers[0].releaseStop();
+    await harness.drivers[0].closed;
+    inbox.socket.close();
+  });
+
+  it('does not gate an ordinary conversation on a provider that is still working', async () => {
+    const harness = await makeHarness(undefined, { teardownFlushMs: 30 });
+    const inbox = await harness.connect();
+    inbox.socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await inbox.next((frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('expected chat-opened');
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'answer slowly' }));
+    await until(() => harness.drivers.length === 1 && harness.drivers[0].sent.length === 1);
+    harness.drivers[0].holdStop = true;
+
+    const deleted = await harness.ctx.deleteProjectChat(harness.root, opened.chat.id);
+
+    expect(deleted.status).toBe(200);
+    expect(await getChat(harness.root, opened.chat.id)).toBeNull();
+    harness.drivers[0].releaseStop();
+    inbox.socket.close();
+  });
+
+  it('replays the tail of a long engineer lane and says where the rest is', async () => {
+    const harness = await makeHarness();
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    const engineerId = 'engineer-long';
+    const runDir = path.join(harness.root, '.hearth', 'devteam', chatId);
+    await fsp.mkdir(path.join(runDir, 'engineers'), { recursive: true });
+    const lines: string[] = [];
+    for (let index = 0; index < 3000; index += 1) {
+      lines.push(JSON.stringify({
+        role: 'agent',
+        ts: '2026-07-31T00:00:00.000Z',
+        event: { type: 'message-delta', text: `line ${index}` },
+      }));
+    }
+    await fsp.writeFile(path.join(runDir, 'engineers', `${engineerId}.jsonl`), `${lines.join('\n')}\n`);
+    const stored = await readDevTeamState(harness.root, chatId);
+    await writeDevTeamState(harness.root, chatId, {
+      ...stored,
+      runId: 'run-long',
+      phase: 'done',
+      tasks: [{ taskId: 't1', engineerId, status: 'done' }],
+    });
+
+    const reader = await harness.connect();
+    reader.socket.send(JSON.stringify({ type: 'chat-open', chatId }));
+    await reader.next((frame) => frame.type === 'devteam-state');
+    await until(() => reader.frames.filter((frame) => frame.type === 'devteam-event').length >= 2001);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    const events = reader.frames.filter((frame) => frame.type === 'devteam-event');
+    expect(events).toHaveLength(2001);
+    expect(events[0]).toEqual({
+      type: 'devteam-event',
+      chatId,
+      engineerId,
+      event: {
+        type: 'message-delta',
+        text: `…earlier activity in this lane is in .hearth/devteam/${chatId}/engineers/${engineerId}.jsonl\n`,
+      },
+    });
+    const last = events[events.length - 1];
+    expect(last.type === 'devteam-event' && last.event.type === 'message-delta' && last.event.text).toBe('line 2999');
+    const first = events[1];
+    expect(first.type === 'devteam-event' && first.event.type === 'message-delta' && first.event.text).toBe('line 1000');
+    reader.socket.close();
     inbox.socket.close();
   });
 

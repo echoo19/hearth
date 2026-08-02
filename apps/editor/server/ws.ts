@@ -351,6 +351,23 @@ const DRIVER_GONE_MESSAGE = 'The agent stopped answering. Your next message star
  */
 const TEARDOWN_FLUSH_MS = 2000;
 
+/**
+ * How many stored engineer records one lane replays when a window opens the
+ * conversation. Reading the whole file blocks the run's own lane, so a window
+ * gets the recent tail and a pointer to the file for the rest.
+ */
+const DEVTEAM_REPLAY_EVENT_CAP = 2000;
+
+/**
+ * How long shutdown waits for already-queued conversation work to finish.
+ *
+ * Engineer consumers append while they close, so the drain can be handed new
+ * work as fast as it retires the old. The app is quitting with its window
+ * already gone by this point: a bounded wait loses at worst the tail of a
+ * transcript, an unbounded one hangs the quit.
+ */
+const SHUTDOWN_DRAIN_MS = 5000;
+
 /** What a window is told when the conversation it is in no longer exists. */
 const DELETED_CHAT_MESSAGE =
   'This conversation was deleted, so nothing more can be saved to it. Start a new chat to keep going.';
@@ -939,13 +956,13 @@ export function attachWebSocket(
     return Promise.all([session.driver?.closed ?? Promise.resolve(), session.drained]);
   }
 
-  async function settlesWithin(work: Promise<unknown>): Promise<boolean> {
+  async function settlesWithin(work: Promise<unknown>, withinMs = teardownFlushMs): Promise<boolean> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
         work.then(() => true, () => false),
         new Promise<boolean>((resolve) => {
-          timer = setTimeout(() => resolve(false), teardownFlushMs);
+          timer = setTimeout(() => resolve(false), withinMs);
         }),
       ]);
     } finally {
@@ -953,16 +970,54 @@ export function attachWebSocket(
     }
   }
 
+  let drainBoundReported = false;
+
   async function drainQueuedWork(): Promise<void> {
+    const deadline = Date.now() + SHUTDOWN_DRAIN_MS;
     for (;;) {
       const pending = [...chatOpTails, ...chatLanes.values(), ...devTeamLanes.values()];
       if (pending.length === 0) return;
-      await Promise.allSettled(pending);
+      const remaining = deadline - Date.now();
+      if (remaining <= 0 || !(await settlesWithin(Promise.allSettled(pending), remaining))) {
+        if (!drainBoundReported) {
+          drainBoundReported = true;
+          console.error(
+            `[hearth] shutdown: queued conversation work did not finish within ${SHUTDOWN_DRAIN_MS}ms; quitting anyway.`,
+          );
+        }
+        return;
+      }
       await Promise.resolve();
     }
   }
 
+  /**
+   * Put a run back where reopening it resumes, after a delete was refused.
+   *
+   * The refusal already retired the lead and disposed the runtime, so a
+   * conversation left on an active phase reopens into a run nothing is driving.
+   * Only the phase moves; no user decision is invented here.
+   */
+  async function markRunInterrupted(root: string, chatId: string): Promise<void> {
+    await enqueueDevTeamLane(chatKey(root, chatId), async () => {
+      const state = await readDevTeamState(root, chatId);
+      if (state.unreadable === true) return;
+      if (state.phase === 'idle' || state.phase === 'done' || state.phase === 'interrupted') return;
+      const next = {
+        ...state,
+        phase: 'interrupted' as const,
+        resumePhase: state.phase === 'paused' ? state.resumePhase : state.phase,
+      };
+      await writeDevTeamState(root, chatId, next);
+      broadcastDevTeamState(root, chatId, publicDevTeamSnapshot(next));
+    });
+  }
+
   const unsubscribeBeforeChatDelete = ctx.onBeforeChatDelete(async (root, chatId) => {
+    // Only a dev team run has a provider this gate is allowed to wait on.
+    // Without this, deleting any busy ordinary conversation could be refused
+    // for a reason that has nothing to do with it.
+    if ((await getChat(root, chatId))?.kind !== 'devteam') return;
     const key = chatKey(root, chatId);
     const stopped = await enqueueChatLane(key, async () => {
       const runtime = devTeamRuntimes.get(key);
@@ -986,13 +1041,17 @@ export function attachWebSocket(
       };
       if (!(await settlesWithin(closed))) {
         void closed.then(cleanUp, () => undefined);
+        // Kept, but with its lead retired and its runtime disposed. Say on disk
+        // what is now true, so reopening offers Resume instead of a run with
+        // nobody driving it.
+        await settlesWithin(markRunInterrupted(root, chatId));
         return false;
       }
       cleanUp();
       return true;
     });
     if (stopped) return;
-    return 'The conversation was not deleted because an agent provider did not stop in time.';
+    return 'The conversation was not deleted because an agent provider did not stop in time. Its run was interrupted; reopen it to resume or try deleting again.';
   });
 
   function providerHandoff(chatId: string, text: string): string {
@@ -1086,6 +1145,18 @@ export function attachWebSocket(
   function broadcastDevTeamState(root: string, chatId: string, state: DevTeamSnapshot): void {
     const sockets = watchersOf(root, chatId).filter((socket) => !isOpeningChat(socket, chatId));
     broadcast(new Set(sockets), { type: 'devteam-state', chatId, state });
+  }
+
+  /**
+   * Tell the windows in this conversation that a steering note was taken.
+   *
+   * It is the receipt for the one send that deliberately never reaches a
+   * driver, and the only thing that ends the turn a window optimistically
+   * started for it.
+   */
+  function broadcastDevTeamSteeringAccepted(root: string, chatId: string): void {
+    const sockets = watchersOf(root, chatId).filter((socket) => !isOpeningChat(socket, chatId));
+    broadcast(new Set(sockets), { type: 'devteam-steering-accepted', chatId });
   }
 
   function broadcastDevTeamEvent(root: string, chatId: string, engineerId: string, event: ChatEvent): void {
@@ -1197,9 +1268,24 @@ export function attachWebSocket(
       const replay: Array<{ engineerId: string; event: ChatEvent }> = [];
       const engineerIds = [...new Set(state.tasks.map((task) => task.engineerId).filter(Boolean))];
       for (const engineerId of engineerIds) {
-        const records = runtime
+        const all = runtime
           ? await runtime.engineerReplay(engineerId)
           : await readEngineerRecords(root, chatId, engineerId);
+        // A long-running engineer writes tens of thousands of events, and this
+        // read shares its lane with the scheduler's state writes — so replaying
+        // every one of them into a second window stalls the run for as long as
+        // it takes. The tail is what a person opening the pane is looking for;
+        // the rest stays on disk, and the notice says where.
+        const records = all.length > DEVTEAM_REPLAY_EVENT_CAP ? all.slice(-DEVTEAM_REPLAY_EVENT_CAP) : all;
+        if (records.length < all.length) {
+          replay.push({
+            engineerId,
+            event: {
+              type: 'message-delta',
+              text: `…earlier activity in this lane is in .hearth/devteam/${chatId}/engineers/${engineerId}.jsonl\n`,
+            },
+          });
+        }
         for (const record of records) {
           if (record.role === 'agent') replay.push({ engineerId, event: record.event });
         }
@@ -1932,7 +2018,22 @@ export function attachWebSocket(
                 detach(
                   enqueueChatLane(chatKey(root, target), async () => {
                     const key = chatKey(root, target);
-                    if (closing || closingSessions.has(key)) return;
+                    // The server going down says nothing, because the window is
+                    // going with it. A conversation being deleted is different:
+                    // it is still on screen, and swallowing what someone typed
+                    // into it leaves no transcript entry and no explanation.
+                    if (closing) return;
+                    if (closingSessions.has(key)) {
+                      send(ws, {
+                        type: 'chat-event',
+                        chatId: target,
+                        event: {
+                          type: 'error',
+                          message: 'This conversation is being deleted. Its agent is still stopping.',
+                        },
+                      });
+                      return;
+                    }
                     if (cliOwnedChats.has(key)) {
                       send(ws, {
                         type: 'chat-event',
@@ -2012,6 +2113,14 @@ export function attachWebSocket(
                         const runtime = await ensureDevTeamRuntime(root, target, session);
                         if (closing) return;
                         if (attachments.length > 0) devTeamLeadAttachments.set(key, attachments);
+                        // Counted, not assumed. `handleUserMessage` answers true
+                        // both for a note it queued and for a message it turned
+                        // into a lead turn of its own (the first request, and a
+                        // revision asked for during spec review) — and those two
+                        // want opposite things from the window. A note that
+                        // reached the steering queue is the one send in this app
+                        // that no turn will ever end.
+                        const steeringBefore = runtime?.snapshot().steering.length ?? 0;
                         let handled: boolean | undefined;
                         try {
                           handled = await runtime?.handleUserMessage(text);
@@ -2022,6 +2131,14 @@ export function attachWebSocket(
                         if (!handled) {
                           session.turnActive = true;
                           session.driver.send(delivered, agent ?? undefined, attachments);
+                        } else if ((runtime?.snapshot().steering.length ?? 0) > steeringBefore) {
+                          // Nothing was sent to the driver, so no turn-ending
+                          // event is coming. Say so out loud: without this the
+                          // window keeps its optimistic "the agent is working"
+                          // state forever, the composer shows Stop with nothing
+                          // to stop, and every further note queues in the client
+                          // and is never sent at all.
+                          broadcastDevTeamSteeringAccepted(root, target);
                         }
                       } else {
                         // A real StubDriver is the connect-an-agent refusal for

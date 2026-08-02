@@ -1878,6 +1878,29 @@ export const useApp = create<AppState>((set, get) => {
         }));
         return;
       }
+      case 'devteam-steering-accepted': {
+        // A steering note is folded into the lead's next turn instead of
+        // starting one, so the turn this window optimistically began is never
+        // going to end on its own. This is that ending: without it the composer
+        // keeps a Stop button for a turn that does not exist, and everything
+        // typed afterwards queues locally and is never sent.
+        //
+        // The user's own words stay — the server wrote them to the transcript
+        // before answering — and only the empty agent bubble goes.
+        if (frame.chatId !== get().activeChatId) return;
+        set((state) => {
+          const last = state.messages[state.messages.length - 1];
+          return {
+            chatBusy: false,
+            messages:
+              last && last.role === 'agent' && last.parts.length === 0
+                ? state.messages.slice(0, -1)
+                : state.messages,
+          };
+        });
+        drainQueue();
+        return;
+      }
       case 'devteam-event':
         if (
           frame.chatId !== get().activeChatId ||

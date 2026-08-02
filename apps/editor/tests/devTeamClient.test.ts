@@ -145,6 +145,71 @@ describe('dev team frame folding', () => {
     expect(messages[0]).toMatchObject({ role: 'user', orchestration: true });
   });
 
+  it('ends the optimistic turn a steering note never started', () => {
+    const sendFrame = useApp.getState().sendFrame as ReturnType<typeof vi.fn>;
+    useApp.setState({ wsStatus: 'connected' });
+    receive({ type: 'devteam-state', chatId: 'team-chat', state: SNAPSHOT });
+
+    expect(useApp.getState().sendChat('Keep the interface quiet.')).toBe(true);
+    expect(useApp.getState().chatBusy).toBe(true);
+    expect(useApp.getState().messages).toHaveLength(2);
+
+    receive({ type: 'devteam-steering-accepted', chatId: 'team-chat' });
+
+    expect(useApp.getState().chatBusy).toBe(false);
+    // The user's own words stay; only the bubble for a turn that never began goes.
+    expect(stripMessageIds(useApp.getState().messages)).toEqual([
+      expect.objectContaining({ role: 'user', parts: [{ kind: 'text', text: 'Keep the interface quiet.' }] }),
+    ]);
+
+    expect(useApp.getState().sendChat('And keep it quick.')).toBe(true);
+    expect(useApp.getState().queued).toEqual([]);
+    expect(sendFrame.mock.calls.filter(([frame]) => frame.type === 'chat-send').map(([frame]) => frame.text)).toEqual([
+      'Keep the interface quiet.',
+      'And keep it quick.',
+    ]);
+  });
+
+  it('sends the note queued behind an unacknowledged one as soon as the ack lands', () => {
+    const sendFrame = useApp.getState().sendFrame as ReturnType<typeof vi.fn>;
+    useApp.setState({ wsStatus: 'connected' });
+    receive({ type: 'devteam-state', chatId: 'team-chat', state: SNAPSHOT });
+
+    useApp.getState().sendChat('first note');
+    useApp.getState().sendChat('second note');
+    expect(useApp.getState().queued.map((message) => message.text)).toEqual(['second note']);
+
+    receive({ type: 'devteam-steering-accepted', chatId: 'team-chat' });
+
+    expect(useApp.getState().queued).toEqual([]);
+    expect(sendFrame.mock.calls.filter(([frame]) => frame.type === 'chat-send').map(([frame]) => frame.text)).toEqual([
+      'first note',
+      'second note',
+    ]);
+  });
+
+  it('ignores a steering ack addressed to another conversation', () => {
+    useApp.setState({ wsStatus: 'connected' });
+    useApp.getState().sendChat('mine');
+
+    receive({ type: 'devteam-steering-accepted', chatId: 'other-chat' });
+
+    expect(useApp.getState().chatBusy).toBe(true);
+    expect(useApp.getState().messages).toHaveLength(2);
+  });
+
+  it('keeps a streaming agent bubble that already has content', () => {
+    useApp.setState({ wsStatus: 'connected' });
+    useApp.getState().sendChat('a note');
+    receive({ type: 'chat-event', chatId: 'team-chat', event: { type: 'message-delta', text: 'the lead is talking' } });
+
+    receive({ type: 'devteam-steering-accepted', chatId: 'team-chat' });
+
+    expect(useApp.getState().chatBusy).toBe(false);
+    expect(useApp.getState().messages).toHaveLength(2);
+    expect(useApp.getState().messages[1].parts).toEqual([{ kind: 'text', text: 'the lead is talking' }]);
+  });
+
   it('drops a stale team cache entry when that id opens as a terminal', () => {
     useApp.setState({ devTeamByChat: { 'team-chat': SNAPSHOT } });
 
