@@ -120,10 +120,13 @@ interface LeadOperation {
   steeringCount: number;
 }
 
+// Phases with driver work of our own in flight, which is what makes them worth
+// interrupting on reopen and worth pausing. Interviewing and spec review are
+// deliberately absent: both are ordinary back-and-forth with the person, they
+// survive a restart untouched, and rewriting them as interrupted only forced a
+// Resume click before someone could answer the question they were just asked.
 const ACTIVE_PHASES = new Set<DevTeamPhase>([
-  'interviewing',
   'drafting-spec',
-  'spec-review',
   'planning',
   'building',
   'reviewing',
@@ -160,12 +163,24 @@ function digest(plan: DevTeamPlan): string {
   return createHash('sha256').update(JSON.stringify(plan)).digest('hex');
 }
 
-function engineerIdentity(chatId: string, taskId: string): string {
-  return `devteam-${createHash('sha256').update(`${chatId}\0${taskId}`).digest('hex')}`;
+/**
+ * The engineer id is also the session id and the transcript file name, so two
+ * runs of the same chat that happen to reuse a task id would otherwise append
+ * to one another's history and resume a stranger's continuation. The run id is
+ * in the hash for exactly that reason.
+ */
+export function engineerIdentity(chatId: string, runId: string, taskId: string): string {
+  return `devteam-${createHash('sha256').update(`${chatId}\0${runId}\0${taskId}`).digest('hex')}`;
 }
 
 function terminal(status: DevTeamTaskRecord['status']): boolean {
   return status === 'done' || status === 'error' || status === 'interrupted';
+}
+
+/** A task blocked on an approval still owns a live turn, so it is swept, held
+ *  and interrupted everywhere a running one is. */
+function inFlight(status: DevTeamTaskRecord['status']): boolean {
+  return status === 'running' || status === 'waiting';
 }
 
 function completedRun(state: DevTeamState, completedAt: string): DevTeamCompletedRun {
@@ -258,7 +273,6 @@ export class DevTeamRuntime {
     await this.load();
     const message = text.trim();
     if (!message) return false;
-    if (this.state.phase === 'done' && this.state.error?.startsWith(DEV_TEAM_STOPPED)) return false;
     if (this.state.phase === 'idle' || this.state.phase === 'done') {
       await this.start(message);
       return true;
@@ -362,9 +376,11 @@ export class DevTeamRuntime {
         return;
       }
       if (turn === 'review' && phase === 'reviewing') {
+        const priorDigest = this.state.planDigest;
         if (!(await this.applyReviewPlan(paused, operation, phase))) return;
         if (!this.leadCompletionCurrent(operation, paused, phase)) return;
         this.state.summary = finalProse || null;
+        if (await this.repairMilestone(paused, priorDigest)) return;
         if (this.state.plan && this.state.currentMilestone + 1 < this.state.plan.milestones.length) {
           this.state.currentMilestone += 1;
           if (paused) this.state.resumePhase = 'building';
@@ -379,18 +395,26 @@ export class DevTeamRuntime {
             const next = this.beginLead('wrap');
             this.state.phase = 'wrapping';
             await this.persist();
-            await this.sendLeadWithSteering((steering) => buildWrapPrompt(this.state.plan!, steering), next);
+            await this.sendLeadWithSteering(
+              (steering) => buildWrapPrompt(this.state.plan!, steering, this.state.tasks),
+              next,
+            );
           }
         }
         return;
       }
       if (turn === 'wrap' && phase === 'wrapping') {
+        // Its siblings re-check ownership after their own await; this branch had
+        // none of its own and inherited the persist inside acknowledgeSteering,
+        // so a Stop landing in that window used to be overwritten by a closing
+        // handoff for a run that was no longer happening.
+        if (!this.leadCompletionCurrent(operation, paused, phase)) return;
         this.state.wrap = finalProse || null;
         if (this.state.steering.length > 0 && this.state.plan) {
           const next = this.beginLead('wrap');
           await this.persist();
           await this.sendLeadWithSteering(
-            (steering) => buildWrapPrompt(this.state.plan!, steering),
+            (steering) => buildWrapPrompt(this.state.plan!, steering, this.state.tasks),
             next,
           );
           return;
@@ -540,7 +564,10 @@ export class DevTeamRuntime {
         );
       } else await this.beginReview(operation!);
     } else if (phase === 'wrapping' && this.state.plan) {
-      await this.sendLeadWithSteering((steering) => buildWrapPrompt(this.state.plan!, steering), operation!);
+      await this.sendLeadWithSteering(
+        (steering) => buildWrapPrompt(this.state.plan!, steering, this.state.tasks),
+        operation!,
+      );
     }
   }
 
@@ -605,7 +632,7 @@ export class DevTeamRuntime {
       this.state.resumePhase = prior;
       this.state.error = 'The dev team run was interrupted and needs to be resumed.';
       for (const record of this.state.tasks) {
-        if (record.status === 'running') {
+        if (inFlight(record.status)) {
           record.status = 'interrupted';
           record.endedAt = this.now();
         }
@@ -614,7 +641,7 @@ export class DevTeamRuntime {
     } else if (this.state.phase === 'paused') {
       let changed = false;
       for (const record of this.state.tasks) {
-        if (record.status !== 'running') continue;
+        if (!inFlight(record.status)) continue;
         record.status = 'interrupted';
         record.endedAt = this.now();
         changed = true;
@@ -811,8 +838,15 @@ export class DevTeamRuntime {
     }
     this.state.plan = result.plan;
     this.state.planDigest = digest(result.plan);
+    // The id is derived, not allocated, so it can be settled now rather than at
+    // dispatch. A record that carries it from 'pending' onward gives the board
+    // a stable lane key instead of every unstarted task sharing the empty one.
     this.state.tasks = result.plan.milestones.flatMap((milestone) =>
-      milestone.tasks.map((task) => ({ taskId: task.id, engineerId: '', status: 'pending' as const })),
+      milestone.tasks.map((task) => ({
+        taskId: task.id,
+        engineerId: engineerIdentity(this.options.chatId, this.state.runId, task.id),
+        status: 'pending' as const,
+      })),
     );
     this.state.currentMilestone = 0;
     this.state.retryCount = 0;
@@ -838,7 +872,8 @@ export class DevTeamRuntime {
       return true;
     }
     const old = this.state.plan;
-    const locked = old.milestones.slice(0, this.state.currentMilestone + 1);
+    const locked = old.milestones.slice(0, this.state.currentMilestone + 1)
+      .map((milestone, index) => this.withRepairTasks(milestone, index, candidate));
     const lockedIds = new Set(locked.map((milestone) => milestone.id));
     const future = candidate.milestones.filter((milestone) => !lockedIds.has(milestone.id));
     const merged: DevTeamPlan = {
@@ -852,16 +887,107 @@ export class DevTeamRuntime {
     const existing = new Map(this.state.tasks.map((record) => [record.taskId, record]));
     const wanted = new Set(merged.milestones.flatMap((milestone) => milestone.tasks.map((task) => task.id)));
     const records = merged.milestones.flatMap((milestone) =>
-      milestone.tasks.map((task) => existing.get(task.id) ?? { taskId: task.id, engineerId: '', status: 'pending' as const }),
+      milestone.tasks.map(
+        (task) =>
+          existing.get(task.id) ?? {
+            taskId: task.id,
+            engineerId: engineerIdentity(this.options.chatId, this.state.runId, task.id),
+            status: 'pending' as const,
+          },
+      ),
     );
     for (const record of this.state.tasks) {
-      if (!wanted.has(record.taskId) && (record.status === 'done' || record.status === 'running')) records.push(record);
+      if (!wanted.has(record.taskId) && (record.status === 'done' || inFlight(record.status))) records.push(record);
     }
     this.state.plan = validated.data;
     this.state.planDigest = digest(candidate);
     this.state.tasks = records;
     this.state.retryCount = 0;
     this.state.error = null;
+    return true;
+  }
+
+  /**
+   * Milestones up to and including the one under review are locked, because a
+   * review must not be able to rewrite work that already ran. The one exception
+   * is the repair round we asked for: there the lead may APPEND remediation
+   * tasks to the milestone it just reviewed. Existing tasks keep their identity
+   * and their records either way — only ids the plan has never seen are taken.
+   */
+  private withRepairTasks(
+    milestone: DevTeamPlan['milestones'][number],
+    index: number,
+    candidate: DevTeamPlan,
+  ): DevTeamPlan['milestones'][number] {
+    if (index !== this.state.currentMilestone) return milestone;
+    if ((this.state.milestoneRepairs[milestone.id] ?? 0) !== 1) return milestone;
+    const amended = candidate.milestones.find((item) => item.id === milestone.id);
+    if (!amended) return milestone;
+    const known = new Set(milestone.tasks.map((task) => task.id));
+    const added = amended.tasks.filter((task) => !known.has(task.id));
+    return added.length ? { ...milestone, tasks: [...milestone.tasks, ...added] } : milestone;
+  }
+
+  /**
+   * A milestone whose tasks failed used to be reviewed and then marched past,
+   * so a broken foundation was built on for the rest of the run and the wrap
+   * called it finished. The lead gets exactly one chance per milestone to add
+   * repair work; if it declines, or the repair round also fails, the failure is
+   * carried in `error` so the wrap has to account for it.
+   *
+   * Returns true when it has taken over the turn.
+   */
+  private async repairMilestone(paused: boolean, priorDigest: string | null): Promise<boolean> {
+    const milestone = this.state.plan?.milestones[this.state.currentMilestone];
+    if (!milestone) return false;
+    const failed = milestone.tasks
+      .map((task) => this.taskRecord(task.id))
+      .filter((record): record is DevTeamTaskRecord => record?.status === 'error')
+      .map((record) => record.taskId);
+    if (failed.length === 0) return false;
+    const named = `Some tasks in this milestone failed: ${failed.join(', ')}.`;
+    const attempts = this.state.milestoneRepairs[milestone.id] ?? 0;
+
+    if (attempts === 0) {
+      this.state.milestoneRepairs[milestone.id] = 1;
+      this.state.error = `${named} The lead was asked to add repair work.`;
+      if (paused) {
+        // Resume re-enters 'reviewing' and sends the review turn itself.
+        this.state.resumePhase = 'reviewing';
+        await this.persist();
+        return true;
+      }
+      const next = this.beginLead('review');
+      this.state.phase = 'reviewing';
+      await this.persist();
+      await this.sendLeadWithSteering(
+        (steering) => buildReviewPrompt(this.state.plan!, this.state.currentMilestone, this.state.tasks, steering),
+        next,
+      );
+      return true;
+    }
+
+    if (attempts > 1) {
+      this.state.error = named;
+      return false;
+    }
+    this.state.milestoneRepairs[milestone.id] = 2;
+    const repaired =
+      this.state.planDigest !== priorDigest &&
+      milestone.tasks.some((task) => this.taskRecord(task.id)?.status === 'pending');
+    if (!repaired) {
+      this.state.error = named;
+      return false;
+    }
+    this.state.error = null;
+    if (paused) {
+      this.state.resumePhase = 'building';
+      await this.persist();
+      return true;
+    }
+    this.state.phase = 'building';
+    await this.persist();
+    await this.schedule();
     return true;
   }
 
@@ -914,7 +1040,10 @@ export class DevTeamRuntime {
       const operation = this.beginLead('wrap');
       this.state.phase = 'wrapping';
       await this.persist();
-      await this.sendLeadWithSteering((steering) => buildWrapPrompt(this.state.plan!, steering), operation);
+      await this.sendLeadWithSteering(
+        (steering) => buildWrapPrompt(this.state.plan!, steering, this.state.tasks),
+        operation,
+      );
       return;
     }
 
@@ -980,8 +1109,9 @@ export class DevTeamRuntime {
 
   private async dispatch(task: DevTeamTask, record: DevTeamTaskRecord): Promise<void> {
     const role = this.state.plan!.roles.find((candidate) => candidate.id === task.roleId)!;
-    const engineerId = record.engineerId || engineerIdentity(this.options.chatId, task.id);
-    record.engineerId = engineerId;
+    // Plan time already assigned this; the fallback is only for a record
+    // written by an older build, and it recomputes the same value.
+    const engineerId = record.engineerId || engineerIdentity(this.options.chatId, this.state.runId, task.id);
     record.status = 'running';
     record.startedAt = this.now();
     delete record.endedAt;
@@ -1082,7 +1212,7 @@ export class DevTeamRuntime {
   private dispatchOwned(taskId: string, token: symbol, record: DevTeamTaskRecord): boolean {
     const phaseOwnsBuild =
       this.state.phase === 'building' || (this.state.phase === 'paused' && this.state.resumePhase === 'building');
-    return !this.disposed && phaseOwnsBuild && record.status === 'running' && this.dispatches.get(taskId) === token;
+    return !this.disposed && phaseOwnsBuild && inFlight(record.status) && this.dispatches.get(taskId) === token;
   }
 
   private trackEngineerClosure(driver: ChatDriver): void {
@@ -1109,11 +1239,19 @@ export class DevTeamRuntime {
           active.currentProse = '';
         } else if (event.type === 'file-change') {
           for (const file of event.files) active.files.add(file.path);
-        } else if (event.type === 'approval-request') active.approvals.add(event.approvalId);
-        else if (event.type === 'approval-resolved') active.approvals.delete(event.approvalId);
-        else if (event.type === 'input-request') active.inputs.add(event.inputId);
-        else if (event.type === 'input-resolved') active.inputs.delete(event.inputId);
-        else if (event.type === 'error') active.finalProse = event.message;
+        } else if (event.type === 'approval-request') {
+          active.approvals.add(event.approvalId);
+          await this.syncWaiting(active);
+        } else if (event.type === 'approval-resolved') {
+          active.approvals.delete(event.approvalId);
+          await this.syncWaiting(active);
+        } else if (event.type === 'input-request') {
+          active.inputs.add(event.inputId);
+          await this.syncWaiting(active);
+        } else if (event.type === 'input-resolved') {
+          active.inputs.delete(event.inputId);
+          await this.syncWaiting(active);
+        } else if (event.type === 'error') active.finalProse = event.message;
         // Attribution must be routable before a watcher can answer the frame.
         this.options.emitEngineerEvent(engineerId, event);
         if (event.type === 'turn-complete') {
@@ -1133,6 +1271,21 @@ export class DevTeamRuntime {
       active.finalProse = `Engineer transcript failed: ${(error as Error).message}`;
       await this.finishEngineer(engineerId, active, 'error');
     }
+  }
+
+  /**
+   * A lane blocked on an approval looked identical to one that was working, so
+   * a run could sit still for an hour with the board reporting progress. The
+   * record says 'waiting' for exactly as long as an ask is outstanding.
+   */
+  private async syncWaiting(active: ActiveEngineer): Promise<void> {
+    const record = this.taskRecord(active.task.id);
+    if (!record) return;
+    const blocked = active.approvals.size > 0 || active.inputs.size > 0;
+    if (blocked && record.status === 'running') record.status = 'waiting';
+    else if (!blocked && record.status === 'waiting') record.status = 'running';
+    else return;
+    await this.persist();
   }
 
   private async finishEngineer(
@@ -1232,7 +1385,10 @@ export class DevTeamRuntime {
     this.invalidateLead();
     this.dispatches.clear();
     const phase = this.state.phase;
-    const resumePhase = phase === 'paused' ? this.state.resumePhase : phase;
+    // Stopping something already parked keeps the phase it was parked at,
+    // otherwise a second Stop would set 'paused' or 'interrupted' as the thing
+    // to resume into and Resume would have nowhere to go.
+    const resumePhase = phase === 'paused' || phase === 'interrupted' ? this.state.resumePhase : phase;
     const withdrawalErrors: string[] = [];
     for (const [engineerId, active] of [...this.active]) {
       const withdrawalError = await this.withdrawEngineerAsksBestEffort(engineerId, active);
@@ -1247,13 +1403,16 @@ export class DevTeamRuntime {
       }
     }
     for (const record of this.state.tasks) {
-      if (record.status !== 'running') continue;
+      if (!inFlight(record.status)) continue;
       record.status = 'interrupted';
       record.endedAt = this.now();
     }
-    const stopped = error === DEV_TEAM_STOPPED;
-    this.state.phase = stopped ? 'done' : 'interrupted';
-    this.state.resumePhase = stopped ? null : resumePhase;
+    // Stop used to end the run outright, which threw away a plan, a spec and
+    // every engineer transcript because someone wanted the machines to stop
+    // for a minute. It parks the run instead: whatever phase it was in is the
+    // phase Resume returns to.
+    this.state.phase = 'interrupted';
+    this.state.resumePhase = resumePhase;
     this.state.error = [error, ...withdrawalErrors].filter(Boolean).join(' ') || null;
     await this.persist();
   }
