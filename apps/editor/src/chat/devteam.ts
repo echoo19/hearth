@@ -55,6 +55,17 @@ export function devTeamActivity(
   return 'Working';
 }
 
+/** The lead's own lane. It has no task record, so "Available" would be a lie
+ *  while a milestone is being built — the lead is watching it. */
+export function devTeamLeadActivity(
+  messages: readonly ChatMessage[],
+  phase?: DevTeamPhase,
+): string {
+  if (messages.some((message) => message.streaming)) return 'Working';
+  if (phase && isTeamBoardPhase(phase)) return 'Supervising';
+  return 'Available';
+}
+
 export function pendingLaneAsk(messages: readonly ChatMessage[]): {
   active: { kind: 'approval' | 'input'; id: string } | null;
   count: number;

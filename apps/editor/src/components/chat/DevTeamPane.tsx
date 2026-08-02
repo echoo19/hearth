@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   devTeamActivity,
+  devTeamLeadActivity,
   devTeamPhaseLabel,
   devTeamTaskLabel,
   isTeamBoardPhase,
@@ -80,7 +81,10 @@ function SpecReview({ state }: { state: DevTeamSnapshot }) {
 function laneTail(messages: readonly ChatMessage[], record?: DevTeamTaskRecord): string {
   if (record?.summary) return record.summary;
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
-    const parts = messages[messageIndex].parts;
+    const message = messages[messageIndex];
+    // A steering note the person typed is not the lane's own activity.
+    if (message.role !== 'agent') continue;
+    const parts = message.parts;
     for (let partIndex = parts.length - 1; partIndex >= 0; partIndex -= 1) {
       const part = parts[partIndex];
       if (part.kind === 'text' && part.text.trim()) {
@@ -90,7 +94,8 @@ function laneTail(messages: readonly ChatMessage[], record?: DevTeamTaskRecord):
       if (part.kind === 'file-change') return `Changed ${part.files.length} ${part.files.length === 1 ? 'file' : 'files'}`;
     }
   }
-  return devTeamTaskLabel(record?.status ?? 'pending');
+  // The lead has no task record, so there is no status to fall back to.
+  return record ? devTeamTaskLabel(record.status) : '';
 }
 
 function Lane({
@@ -99,6 +104,7 @@ function Lane({
   messages,
   record,
   engineerId,
+  phase,
   initiallyOpen = false,
   keyboardActive = false,
 }: {
@@ -107,23 +113,36 @@ function Lane({
   messages: readonly ChatMessage[];
   record?: DevTeamTaskRecord;
   engineerId?: string;
+  /** Lead lane only: what the phase says the lead is doing between turns. */
+  phase?: DevTeamSnapshot['phase'];
   initiallyOpen?: boolean;
   /** Only one ask across the whole board may own Enter/Escape and focus. */
   keyboardActive?: boolean;
 }) {
-  const [open, setOpen] = useState(initiallyOpen);
   const approve = useApp((s) => s.approveEngineer);
   const answer = useApp((s) => s.answerEngineerInput);
   const asks = pendingLaneAsk(messages);
-  const activity = engineerId ? devTeamActivity(messages, record?.status) : (messages.some((message) => message.streaming) ? 'Working' : 'Available');
+  // A lane that cannot proceed without an answer is the whole board's business,
+  // so it opens itself and stays open until the ask is settled.
+  const blocked = asks.count > 0;
+  const [open, setOpen] = useState(initiallyOpen || blocked);
+  const blockedRef = useRef(blocked);
+  blockedRef.current = blocked;
+  const activity = engineerId
+    ? devTeamActivity(messages, record?.status)
+    : devTeamLeadActivity(messages, phase);
   const tail = laneTail(messages, record);
   const waiting = asks.count > 0
     ? `, ${asks.count} waiting ${asks.count === 1 ? 'question' : 'questions'}`
     : '';
-  const id = `devteam-lane-${engineerId ?? 'lead'}`;
+  const id = `devteam-lane-${record?.taskId ?? engineerId ?? 'lead'}`;
 
   useEffect(() => {
-    setOpen(initiallyOpen);
+    if (blocked) setOpen(true);
+  }, [blocked]);
+
+  useEffect(() => {
+    setOpen(initiallyOpen || blockedRef.current);
   }, [initiallyOpen]);
 
   return (
@@ -133,7 +152,7 @@ function Lane({
         className="devteam-lane-head"
         aria-expanded={open}
         aria-controls={id}
-        aria-label={`${name} lane${focus ? `, ${focus}` : ''}, ${activity}, ${tail}${waiting}`}
+        aria-label={`${name} lane${focus ? `, ${focus}` : ''}, ${activity}${tail ? `, ${tail}` : ''}${waiting}`}
         onClick={() => setOpen((value) => !value)}
       >
         <span className="devteam-lane-dot" aria-hidden="true" />
@@ -174,11 +193,12 @@ function Milestones({ state }: { state: Pick<DevTeamSnapshot, 'plan' | 'tasks' |
       {state.plan.milestones.map((milestone, milestoneIndex) => (
         <section key={milestone.id} className="devteam-milestone" aria-current={milestoneIndex === state.currentMilestone ? 'step' : undefined}>
           <h3>{milestone.title}</h3>
+          {milestone.goal && <p className="devteam-milestone-goal">{milestone.goal}</p>}
           <ul>
             {milestone.tasks.map((task) => {
               const status = records.get(task.id)?.status ?? 'pending';
               return (
-                <li key={task.id} data-status={status}>
+                <li key={task.id} data-status={status} title={task.detail}>
                   <span className="devteam-task-mark" aria-hidden="true" />
                   <span>{task.title}</span>
                   <span>{devTeamTaskLabel(status)}</span>
@@ -205,15 +225,24 @@ function TeamBoard({ state }: { state: DevTeamSnapshot }) {
     <div className="devteam-board">
       <Milestones state={state} />
       <div className="devteam-lanes" aria-label="Team activity">
-        <Lane name="Lead" focus="Plan and review" messages={messages} initiallyOpen={state.phase === 'reviewing' || state.phase === 'wrapping'} />
+        <Lane
+          name="Lead"
+          focus="Plan and review"
+          messages={messages}
+          phase={state.phase}
+          initiallyOpen={state.phase === 'reviewing' || state.phase === 'wrapping'}
+        />
         {state.tasks.map((record) => {
           const task = tasks.get(record.taskId);
           const role = task ? roles.get(task.roleId) : undefined;
           return (
             <Lane
-              key={record.engineerId}
-              name={role?.name ?? task?.title ?? 'Engineer'}
-              focus={task?.title ?? role?.focus}
+              // Two pending tasks share an empty engineer id, and an engineer id
+              // only exists once the task is dispatched. The task id is unique
+              // by schema and stable for the life of the run.
+              key={record.taskId}
+              name={task?.title ?? role?.name ?? 'Engineer'}
+              focus={role?.name ?? role?.focus}
               messages={lanes[record.engineerId] ?? []}
               record={record}
               engineerId={record.engineerId}
@@ -235,7 +264,9 @@ function RunRecord(props: RunRecordProps) {
   const { state } = props;
   const finished = state.tasks.filter((task) => task.status === 'done').length;
   return (
-    <details className="devteam-run-record">
+    // The run that just finished leads with the lead's handoff; a run from
+    // earlier in the conversation stays folded away.
+    <details className="devteam-run-record" open={!props.historical}>
       <summary>
         <span className="devteam-run-chevron" aria-hidden="true">›</span>
         <span>Run complete</span>
@@ -271,6 +302,13 @@ export function DevTeamPane() {
     <div className="devteam-pane">
       <PhaseHeader state={state} />
       <div className="devteam-scroll">
+        {state && state.steering.length > 0 && (
+          <p className="devteam-steering-note" role="status">
+            {state.steering.length === 1
+              ? 'One note is queued for the lead. It is folded in at the next review.'
+              : `${state.steering.length} notes are queued for the lead. They are folded in at the next review.`}
+          </p>
+        )}
         {permissionMode === 'ask' && board && (
           <p className="devteam-ask-warning" role="status">
             Ask mode pauses engineers for each command and file change. Automatic mode is smoother for team runs.
@@ -282,7 +320,12 @@ export function DevTeamPane() {
           </div>
         )}
         {state && approvedSpec && board && (
-          <p className="devteam-spec-record">Approved specification v{state.specVersion}</p>
+          <details className="devteam-spec-record">
+            <summary>Approved specification v{state.specVersion}</summary>
+            <div className="devteam-spec-record-body">
+              <Markdown text={state.spec ?? ''} live={false} />
+            </div>
+          </details>
         )}
         {state?.phase === 'spec-review' ? (
           <div className="devteam-flow">
@@ -303,7 +346,7 @@ export function DevTeamPane() {
       <Composer
         label={copy.label}
         placeholder={copy.placeholder}
-        attachmentDisabledReason={done ? undefined : 'Dev team steering is text-only. Files are available when the run is done.'}
+        attachmentDisabledReason={done ? undefined : 'Steering is text-only while the team is running.'}
       />
     </div>
   );

@@ -190,6 +190,17 @@
   color: var(--ink);
 }
 
+.devteam-milestone h3:has(+ .devteam-milestone-goal) {
+  margin-bottom: 3px;
+}
+
+.devteam-milestone-goal {
+  margin: 0 0 10px;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  text-wrap: pretty;
+}
+
 .devteam-milestone ul {
   display: flex;
   flex-direction: column;
@@ -247,7 +258,9 @@
 
 .devteam-lane-head {
   display: grid;
-  grid-template-columns: auto minmax(8rem, auto) auto minmax(0, 1fr) auto auto;
+  /* The name column carries a task title now, so it is capped rather than
+     max-content: a long title ellipsizes instead of pushing the activity out. */
+  grid-template-columns: auto minmax(8rem, 16rem) auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   width: 100%;
@@ -385,8 +398,38 @@
   gap: 8px;
 }
 
+/* The approved spec is the run's brief. It settles to one quiet line, but it
+   stays readable — the same fold the transcript uses for orchestration. */
 .devteam-spec-record {
   color: var(--ink-faint);
+  font-size: var(--text-xs);
+}
+
+.devteam-spec-record > summary {
+  min-height: var(--ctl-h-xs);
+  cursor: pointer;
+  list-style-position: inside;
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.devteam-spec-record > summary:hover {
+  color: var(--ink-mute);
+}
+
+.devteam-spec-record-body {
+  max-width: 72ch;
+  padding: 6px 0 2px 18px;
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+}
+
+/* A note the person typed has left the composer but not yet reached the lead.
+   Say so once, quietly, above whatever the run is showing. */
+.devteam-steering-note {
+  width: 100%;
+  max-width: 58rem;
+  margin: 0 auto 12px;
+  color: var(--ink-mute);
   font-size: var(--text-xs);
 }
 
@@ -522,7 +565,8 @@
 @media (prefers-reduced-motion: reduce) {
   .devteam-lane-head,
   .devteam-lane-chevron,
-  .devteam-run-chevron {
+  .devteam-run-chevron,
+  .devteam-spec-record > summary {
     transition: none;
   }
 }
