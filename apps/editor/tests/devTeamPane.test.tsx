@@ -136,6 +136,24 @@ describe('dev team presentation helpers', () => {
 });
 
 describe('DevTeamPane', () => {
+  it('offers Stop for the whole life of a run, including the interview', () => {
+    // A lead turn can hang with nothing but a climbing counter to show for it,
+    // and the interview is exactly where that happened. Deriving Stop from the
+    // pausable phases left that run with no control at all.
+    for (const phase of ['interviewing', 'drafting-spec', 'spec-review', 'building', 'paused', 'interrupted'] as const) {
+      cleanup();
+      act(() => useApp.setState({ devTeam: snapshot({ phase }) } as never));
+      render(<DevTeamPane />);
+      expect(screen.queryByRole('button', { name: 'Stop dev team' }), phase).toBeTruthy();
+    }
+    for (const phase of ['idle', 'done'] as const) {
+      cleanup();
+      act(() => useApp.setState({ devTeam: snapshot({ phase }) } as never));
+      render(<DevTeamPane />);
+      expect(screen.queryByRole('button', { name: 'Stop dev team' }), phase).toBeNull();
+    }
+  });
+
   it('renders a lead-first calm board with milestone and engineer status', () => {
     render(<DevTeamPane />);
 

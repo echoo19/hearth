@@ -16,10 +16,24 @@ import { MessageList, MessageTurns } from './MessageList';
 
 const STEPS = ['Interview', 'Spec', 'Build', 'Done'] as const;
 
-function stepIndex(phase: DevTeamSnapshot['phase']): number {
+/**
+ * Which step is lit.
+ *
+ * `paused` and `interrupted` do not say where the run got to, and defaulting
+ * them to Build told a run that hung during its INTERVIEW that it had reached
+ * the build. What the snapshot does carry is how far the handshakes got: no
+ * spec means the interview never finished, a spec with no plan means it was
+ * waiting on the plan.
+ */
+function stepIndex(state: Pick<DevTeamSnapshot, 'phase' | 'spec' | 'plan'> | null): number {
+  const phase = state?.phase ?? 'idle';
   if (phase === 'idle' || phase === 'interviewing' || phase === 'drafting-spec') return 0;
   if (phase === 'spec-review') return 1;
   if (phase === 'done') return 3;
+  if (phase === 'paused' || phase === 'interrupted') {
+    if (!state?.spec) return 0;
+    if (!state.plan) return 1;
+  }
   return 2;
 }
 
@@ -28,10 +42,16 @@ function PhaseHeader({ state }: { state: DevTeamSnapshot | null }) {
   const resume = useApp((s) => s.resumeDevTeam);
   const stop = useApp((s) => s.stopDevTeam);
   const phase = state?.phase ?? 'idle';
-  const active = stepIndex(phase);
+  const active = stepIndex(state);
   const canPause = ['planning', 'building', 'reviewing', 'wrapping'].includes(phase);
   const canResume = phase === 'paused' || phase === 'interrupted';
-  const canStop = canPause || canResume;
+  // Stop is offered for the whole life of a run, not just the phases that can
+  // be paused. It used to be derived from those, which left an interview with
+  // no control at all — and an interview is exactly where a lead turn can hang
+  // with the board saying "Working" and climbing. A run you cannot stop is a
+  // run that can strand. The runtime already accepts stop from every phase and
+  // only ignores it when there is nothing running (see DevTeamRuntime.stop).
+  const canStop = phase !== 'idle' && phase !== 'done';
 
   return (
     <header className="devteam-phase">
