@@ -20,31 +20,33 @@
  * WHAT MAKES FIRE READ AS ALIVE IS THAT IT NEVER REPEATS. A single looped
  * channel cannot do that at any amplitude: one track always returns to the
  * same beat, and the eye finds the beat in about four seconds and then reads
- * it as a spinner. So `burn` moves three things on three periods that share no
- * noticeable common multiple (1.3s, 1.7s, 2.3s recombine only every ~8.5
- * minutes, longer than any turn anyone waits through), and the irregularity is
- * in their drift against each other rather than inside any one of them:
+ * it as a spinner. So `burn` moves four things on four periods that share no
+ * noticeable common multiple (0.9s, 1.3s, 1.7s and 2.3s recombine only every
+ * ~2.5 hours), and the irregularity is in their drift against each other
+ * rather than inside any one of them:
  *
  *   reach: the body stretching up off the base and settling
- *   lean:  a small lateral tilt, pivoting on that same base
+ *   lean:  a lateral tilt, pivoting on that same base
  *   glow:  brightness, which in fire moves fastest and least evenly
+ *   heat:  colour, from the UI accent up to the brand's hotter orange
  *
  * They animate the individual `scale` / `rotate` properties rather than
  * `transform` on purpose. Two animations both writing `transform` clobber each
  * other, which would force reach and lean into one keyframe track sharing one
- * duration, collapsing the three periods back down to two and putting the beat
- * right back.
+ * duration, collapsing four periods into three and putting the beat right back.
  *
  * The durations sit outside the --t-* set on the same licence as the
  * field-reject shake in primitives.css and the sign-in breath in
  * settings-agents.css: those tokens size a response to an action, and nothing
  * here is responding to anything. Here there is a second reason, which is that
  * the durations must be unequal and non-harmonic. That difference IS the
- * effect; a token set of three fixed values cannot express it.
+ * effect; a token set of fixed values cannot express it.
  *
- * Amplitudes are deliberately tiny (under 8% on scale, under 2.5deg of lean,
- * never dimmer than 0.74). These run for minutes beside text being read: they
- * have to be findable in peripheral vision and ignorable in foveal.
+ * Amplitudes are held where a 12px glyph can carry them: up to 18% of stretch,
+ * 5.5deg of lean, and down to 0.62 opacity at the bottom of a flicker. This
+ * runs for minutes beside text being read, so the rule is that it must be
+ * findable in peripheral vision and ignorable in foveal — visible movement,
+ * never a jitter that pulls the eye off the sentence.
  *
  * RESTING STATE IS THE VISIBLE STATE. No fill mode, no `both`, no `forwards`:
  * with the animations never running at all (hidden tab, headless render,
@@ -77,9 +79,13 @@
   will-change: transform, opacity;
 }
 
+/* Four channels, four periods, no two of them harmonic (0.9s, 1.3s, 1.7s and
+   2.3s recombine only every ~2.5 hours). The fourth is heat: real fire is not
+   one colour, and a mark that only changes size and opacity reads as a shape
+   being animated rather than something burning. */
 .flame-mark[data-flame='burn'] {
-  animation-name: flame-reach, flame-lean, flame-glow;
-  animation-duration: 1700ms, 2300ms, 1300ms;
+  animation-name: flame-reach, flame-lean, flame-glow, flame-heat;
+  animation-duration: 1700ms, 2300ms, 1300ms, 900ms;
 }
 
 /* Thinking. A banked fire: the fuel is there and nothing is coming off it yet,
@@ -91,6 +97,21 @@
 .flame-mark[data-flame='smoulder'] {
   animation-name: flame-bank, flame-breathe;
   animation-duration: 2900ms, 2100ms;
+}
+
+/* A board of them must not march in step.
+ *
+ * Six engineers burning on identical phases reads as one animation drawn six
+ * times, which is the machine showing through. Negative delays start each group
+ * partway into its own loop, so they are the same fire at different moments —
+ * and because the delays are not multiples of each other either, the groups
+ * never re-converge. */
+.devteam-lanes .devteam-card:nth-child(3n + 2) .flame-mark {
+  animation-delay: -640ms, -1370ms, -430ms, -310ms;
+}
+
+.devteam-lanes .devteam-card:nth-child(3n) .flame-mark {
+  animation-delay: -1230ms, -520ms, -910ms, -170ms;
 }
 
 /* Parked. Alight and still: no animation at all, dimmed to sit below the live
@@ -110,23 +131,23 @@
   0% {
     scale: 1 1;
   }
-  17% {
-    scale: 0.97 1.06;
+  13% {
+    scale: 0.94 1.13;
   }
-  31% {
-    scale: 1.03 0.95;
+  27% {
+    scale: 1.07 0.9;
   }
-  48% {
-    scale: 0.98 1.04;
+  41% {
+    scale: 0.96 1.09;
   }
-  59% {
-    scale: 1.02 0.99;
+  55% {
+    scale: 1.05 0.96;
   }
-  76% {
-    scale: 0.96 1.08;
+  72% {
+    scale: 0.91 1.18;
   }
-  88% {
-    scale: 1.02 0.97;
+  86% {
+    scale: 1.06 0.93;
   }
   100% {
     scale: 1 1;
@@ -141,20 +162,20 @@
   0% {
     rotate: 0deg;
   }
-  21% {
-    rotate: -1.8deg;
+  18% {
+    rotate: -4.5deg;
   }
-  39% {
-    rotate: 0.9deg;
+  33% {
+    rotate: 2.2deg;
   }
-  55% {
-    rotate: 2.4deg;
+  49% {
+    rotate: 5.5deg;
   }
-  68% {
-    rotate: -0.5deg;
+  63% {
+    rotate: -1.4deg;
   }
-  84% {
-    rotate: -2.1deg;
+  81% {
+    rotate: -5deg;
   }
   100% {
     rotate: 0deg;
@@ -163,33 +184,49 @@
 
 /* Glow. Fire brightens faster than it dims, so the climbs get short gaps
    between stops and the falls get long ones; the asymmetry is in the spacing,
-   not in the easing, which stays the same curve as the other two. The floor is
-   0.74 rather than something lower because below roughly that the mark stops
-   reading as ember against --ink-mute and starts reading as a glitch. */
+   not in the easing, which stays the same curve as the others. The floor is
+   0.62: deep enough that the flicker is unmistakable, and not so deep that the
+   mark blinks out and reads as a glitch rather than as fire. */
 @keyframes flame-glow {
   0% {
-    opacity: 0.92;
+    opacity: 0.9;
   }
-  12% {
+  9% {
     opacity: 1;
   }
-  34% {
-    opacity: 0.78;
+  31% {
+    opacity: 0.66;
   }
-  46% {
-    opacity: 0.97;
+  44% {
+    opacity: 0.98;
   }
-  63% {
-    opacity: 0.84;
-  }
-  71% {
-    opacity: 1;
-  }
-  89% {
+  61% {
     opacity: 0.74;
   }
+  69% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 0.62;
+  }
   100% {
-    opacity: 0.92;
+    opacity: 0.9;
+  }
+}
+
+/* Heat. The fastest channel and the shortest: colour is what a fire changes
+   most and slowest to notice, so it runs on its own quick period and spends
+   most of the loop at the UI accent, licking up to the brand's hotter orange
+   at the top of a lick. Kept to two stops so it never reads as a hue cycle. */
+@keyframes flame-heat {
+  0% {
+    color: var(--accent);
+  }
+  38% {
+    color: var(--flame-brand);
+  }
+  100% {
+    color: var(--accent);
   }
 }
 
@@ -198,19 +235,19 @@
    than returning to full height, so the body sits down while it works. */
 @keyframes flame-bank {
   0% {
-    scale: 1 0.96;
+    scale: 1 0.92;
   }
   29% {
-    scale: 0.99 1.02;
+    scale: 0.97 1.04;
   }
   52% {
-    scale: 1.01 0.95;
+    scale: 1.03 0.9;
   }
   74% {
-    scale: 0.99 1;
+    scale: 0.98 1.01;
   }
   100% {
-    scale: 1 0.96;
+    scale: 1 0.92;
   }
 }
 
@@ -219,13 +256,13 @@
    from the corner of the eye while its body is nearly still. */
 @keyframes flame-breathe {
   0% {
-    opacity: 0.58;
+    opacity: 0.42;
   }
   44% {
     opacity: 1;
   }
   100% {
-    opacity: 0.58;
+    opacity: 0.42;
   }
 }
 
@@ -241,6 +278,7 @@
     scale: 1;
     rotate: 0deg;
     opacity: 1;
+    color: var(--accent);
   }
 
   .flame-mark[data-flame='ember'] {

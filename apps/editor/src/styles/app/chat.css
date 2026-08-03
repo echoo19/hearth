@@ -529,6 +529,73 @@
   color: var(--ink-faint);
 }
 
+/* A table is scanned, not read, so it is built to be scannable: one hairline
+   between rows and nothing else, header ink dimmed and tracked so it reads as
+   a label rather than a first row, and figures in tabular numerals so columns
+   of numbers line up on the digit.
+ *
+ * It scrolls inside its own box. A spec's cast table is nine columns wide and
+ * the column it is read in is not, and a table allowed to widen its parent
+ * pushes every paragraph around it off the screen. */
+.md-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  /* Momentum scrolling inside a page that also scrolls, without the bounce
+     dragging the transcript with it. */
+  overscroll-behavior-x: contain;
+}
+
+.md-table {
+  border-collapse: collapse;
+  /* Not 100%: a two-column table stretched across the measure puts its own
+     halves a reading-width apart. It takes the width its content needs. */
+  width: auto;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.md-table th,
+.md-table td {
+  padding: 6px 14px 6px 0;
+  text-align: left;
+  vertical-align: top;
+  /* `break-word`, never `anywhere`. `anywhere` gives every cell a min-content
+     width of one character, so the layout is free to squeeze a column until
+     `900` wraps to `90` and `0` on the line below — measured, in a cast table
+     with six columns. This breaks a word only when it cannot fit on a line of
+     its own, which is what keeps numbers and identifiers whole; anything that
+     genuinely will not fit widens the table, and the table scrolls. */
+  overflow-wrap: break-word;
+}
+
+.md-table th:last-child,
+.md-table td:last-child {
+  padding-right: 0;
+}
+
+.md-table th {
+  padding-top: 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--ink-mute);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.md-table tbody tr + tr td {
+  border-top: 1px solid var(--guide);
+}
+
+.md-table td {
+  color: var(--ink);
+}
+
+.md-table [data-align='center'] { text-align: center; }
+.md-table [data-align='right'] { text-align: right; }
+
 /* Inline code sits inside a sentence, so it takes a tint rather than a box:
    a border on every backticked word turns a paragraph into a fence. */
 .md-code-span {
