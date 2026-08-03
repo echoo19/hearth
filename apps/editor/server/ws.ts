@@ -235,7 +235,13 @@ export type WsFrame =
   // this the composer waits forever for a turn that was never begun.
   | { type: 'devteam-steering-accepted'; chatId: string }
   | { type: 'devteam-event'; chatId: string; engineerId: string; event: ChatEvent }
-  | { type: 'chat-opened'; chat: ChatSummary; records: ChatRecord[] }
+  // `turnActive` says the agent is mid-turn RIGHT NOW, so the window rebuilds
+  // the tail of the transcript as live rather than as history. Without it a
+  // reload closed out a running turn's open rows — including a question the
+  // agent was waiting on, which the replay marked withdrawn and left
+  // unanswerable while the run waited forever. Optional so a client that
+  // predates it is unaffected.
+  | { type: 'chat-opened'; chat: ChatSummary; records: ChatRecord[]; turnActive?: boolean }
   | { type: 'chat-list'; chats: ChatSummary[] }
   // Provider auth moved (a key was saved, a ChatGPT sign-in completed in a
   // browser tab). Broadcast so Settings updates itself.
@@ -1457,7 +1463,7 @@ export function attachWebSocket(
         live.lingerTimer = undefined;
         live.sockets.add(socket);
       }
-      send(socket, { type: 'chat-opened', chat, records });
+      send(socket, { type: 'chat-opened', chat, records, turnActive: live?.turnActive === true });
       if (chat.kind === 'devteam') await replayDevTeam(root, id, socket);
       if (live?.driver) send(socket, { type: 'chat-ready', driver: live.driver.kind });
     });

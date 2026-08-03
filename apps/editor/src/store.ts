@@ -1495,7 +1495,30 @@ export function replayAttachments(
   }));
 }
 
-export function replayTranscript(records: readonly ChatRecord[], project = ''): ChatMessage[] {
+/**
+ * Rebuild a conversation from what is on disk.
+ *
+ * `live` is not a detail. A transcript read back is normally a finished thing,
+ * so every row is closed out: running commands become stopped, and a question
+ * nobody answered becomes withdrawn. Do that to a conversation whose turn is
+ * STILL RUNNING on the server and the window quietly destroys it — the agent
+ * is sitting on an AskUserQuestion, the replay marks it withdrawn, the prompt
+ * that would have answered it never renders, and the run waits on an answer
+ * that now has no way to be given. Worse, `applyChatEvent` drops events whose
+ * last message is not streaming, so every delta after the reload lands nowhere
+ * and the transcript freezes with the pane still saying Working.
+ *
+ * That is exactly what happened: a dev team interview sat at 19 minutes with
+ * an unanswered question invisible on screen, and nothing the person pressed
+ * could reach it. So when the server says the turn is still going, the tail of
+ * the transcript is left exactly as it was found: streaming, with its asks
+ * open, ready for the events still to come.
+ */
+export function replayTranscript(
+  records: readonly ChatRecord[],
+  project = '',
+  { live = false }: { live?: boolean } = {},
+): ChatMessage[] {
   let messages: ChatMessage[] = [];
   for (const record of records) {
     if (record.role === 'user') {
@@ -1509,7 +1532,17 @@ export function replayTranscript(records: readonly ChatRecord[], project = ''): 
     if (!last || last.role !== 'agent' || !last.streaming) messages = [...messages, makeAgentMessage()];
     messages = applyChatEvent(messages, record.event);
   }
-  return messages.map(settleMessage);
+  // A turn that is running has produced nothing yet when the last thing on
+  // disk is what the person said, so the bubble it will stream into has to
+  // exist — the same one `sendChat` opens optimistically.
+  if (live && (messages.length === 0 || messages[messages.length - 1].role === 'user')) {
+    messages = [...messages, makeAgentMessage()];
+  }
+  const settled = messages.map(settleMessage);
+  if (!live || messages.length === 0) return settled;
+  // Only the tail. Everything before it belongs to turns that really did end.
+  settled[settled.length - 1] = messages[messages.length - 1];
+  return settled;
 }
 
 // ---------------------------------------------------------------------------
@@ -1841,9 +1874,12 @@ export const useApp = create<AppState>((set, get) => {
         // rule "a conversation has a kind": whatever the window was showing a
         // moment ago, it now shows the thing that was opened.
         applyConversationMode(conversationKind(frame.chat));
+        // A turn the server is still running belongs to whoever opens the
+        // conversation next, not only to the window that started it.
+        const turnActive = frame.turnActive === true;
         set((state) => ({
           activeChatId: frame.chat.id,
-          messages: replayTranscript(frame.records, state.projectPath ?? ''),
+          messages: replayTranscript(frame.records, state.projectPath ?? '', { live: turnActive }),
           devTeam: null,
           devTeamLanes: {},
           // A non-team record is authoritative too: it cannot retain a stale
@@ -1851,7 +1887,12 @@ export const useApp = create<AppState>((set, get) => {
           devTeamByChat: conversationKind(frame.chat) === 'devteam'
             ? state.devTeamByChat
             : withoutKey(state.devTeamByChat, frame.chat.id),
-          chatBusy: false,
+          // Busy only where busy means "queue what I type": a dev team run
+          // spends its life in turns the runtime starts, and a note typed
+          // during one has to reach the runtime as steering rather than sit in
+          // a client queue behind a turn nobody here started. That pane offers
+          // Stop from the run's own phase instead.
+          chatBusy: turnActive && conversationKind(frame.chat) !== 'devteam',
           chatDriver: null,
           slashCommands: [],
           chatError: null,

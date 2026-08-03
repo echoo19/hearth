@@ -501,6 +501,43 @@ describe('chat channel', () => {
     socket.close();
   });
 
+  it('tells a window opening a conversation that its turn is still running', async () => {
+    // A replay is normally history, and a window closes history out: running
+    // rows stop, and an ask nobody answered is withdrawn. Doing that to a turn
+    // that is genuinely mid-flight destroyed it — the agent sat on a question
+    // whose prompt no longer existed anywhere, and the run waited forever on an
+    // answer with no way to give one. The window can only tell the difference
+    // if this frame says so.
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'hi' }));
+    const done = await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    const chatId = done.type === 'chat-event' ? done.chatId ?? '' : '';
+
+    // A second turn that goes to work and does not come back, which is what
+    // every turn looks like for as long as it is running.
+    drivers[0].silent = true;
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'ask me something' }));
+    await until(() => drivers[0].sent.length === 2);
+
+    const watcher = await connect();
+    watcher.send(JSON.stringify({ type: 'chat-open', chatId }));
+    const midTurn = await nextFrame(watcher, (frame) => frame.type === 'chat-opened');
+    expect(midTurn.type === 'chat-opened' && midTurn.turnActive).toBe(true);
+
+    drivers[0].queue.push({ type: 'done' });
+    await nextFrame(watcher, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+
+    const after = await connect();
+    after.send(JSON.stringify({ type: 'chat-open', chatId }));
+    const finished = await nextFrame(after, (frame) => frame.type === 'chat-opened');
+    expect(finished.type === 'chat-opened' && finished.turnActive).toBe(false);
+
+    socket.close();
+    watcher.close();
+    after.close();
+  });
+
   it('keeps the driver alive across a socket drop, reattaches it, then expires it', async () => {
     drivers = [];
     const socket = await connect();

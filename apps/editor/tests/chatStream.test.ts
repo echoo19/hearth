@@ -191,6 +191,53 @@ describe('replayTranscript', () => {
     expect(messages[1].streaming).toBe(false);
     expect(messages[1].parts[0]).toMatchObject({ kind: 'command', state: 'stopped' });
   });
+
+  it('leaves a turn the server is still running alone, question and all', () => {
+    // The bug this pins cost a dev team run nineteen minutes and could not be
+    // recovered from at all. The agent asked a question, the window reloaded,
+    // the replay closed the transcript out as history — which withdraws an
+    // unanswered ask — and the prompt that would have answered it never
+    // rendered again. The run waited forever on an answer with no way to give
+    // one, while the pane said Working.
+    const records = [
+      { role: 'user', ts: TS, text: 'make a tower defense game' },
+      { role: 'agent', ts: TS, event: { type: 'text-delta', text: 'Four decisions first.' } },
+      {
+        role: 'agent',
+        ts: TS,
+        event: {
+          type: 'input-request',
+          inputId: 'i2',
+          title: 'Claude needs your input',
+          questions: [{ id: 'q0', label: 'Does that cast work?', type: 'text' }],
+          allowCancel: false,
+        },
+      },
+    ] as const;
+
+    const live = replayTranscript(records as never, '', { live: true });
+    expect(live[1].streaming).toBe(true);
+    expect(live[1].parts[1]).toMatchObject({ kind: 'input', resolution: null });
+    // ...and because it is still streaming, what the turn does next lands in it
+    // rather than being dropped on the floor.
+    expect(textOf(applyChatEvent(live, { type: 'text-delta', text: ' Locked.' })[1])).toContain('Locked.');
+
+    // The same records read back as history close the ask, which is right:
+    // nothing is coming, and a question that can never be answered should not
+    // sit there looking answerable.
+    const done = replayTranscript(records as never);
+    expect(done[1].streaming).toBe(false);
+    expect(done[1].parts[1]).toMatchObject({ kind: 'input', resolution: 'withdrawn' });
+  });
+
+  it('opens the bubble a running turn has not written into yet', () => {
+    // Reopening between "sent" and the first token: there is nothing on disk
+    // from the agent, so without this the events that follow have no streaming
+    // message to land in and the reply never appears.
+    const live = replayTranscript([{ role: 'user', ts: TS, text: 'hello' }] as never, '', { live: true });
+    expect(live).toHaveLength(2);
+    expect(live[1]).toMatchObject({ role: 'agent', streaming: true, parts: [] });
+  });
 });
 
 describe('a row whose turn ended before it reported back', () => {
