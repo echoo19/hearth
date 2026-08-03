@@ -447,6 +447,23 @@ function MemberView({
 }
 
 /**
+ * Where a member sits on the board.
+ *
+ * Reading order is what is left to do, then what went wrong, then what is
+ * done: a question you have to answer is the only thing on the screen that
+ * stops the run, work in flight is what you came to watch, a failure is worth
+ * finding, and a finished engineer is a record. Nothing here is hidden — the
+ * board's job is to say how EVERY agent is doing — but the order says which of
+ * them still wants something from you.
+ */
+function boardRank(member: Member): number {
+  if (member.asks.count > 0 || member.status === 'waiting') return 0;
+  if (member.status === 'running') return 1;
+  if (member.status === 'error' || member.status === 'interrupted') return 2;
+  return 3;
+}
+
+/**
  * The board's own state, in a line.
  *
  * "3 on the job, 0 working" was what a run with three failed engineers said,
@@ -524,6 +541,12 @@ function TeamStage({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number
         asks: pendingLaneAsk(own),
       };
     });
+
+  // Live work first, history after. Plan order put three finished cards in
+  // among two live ones, so reading the board meant reading every card to find
+  // the two that were doing anything. Ties keep plan order — Array.sort is
+  // stable — so nobody shuffles except when their own state actually changes.
+  crew.sort((a, b) => boardRank(a) - boardRank(b));
 
   const blockedId = crew.find((member) => member.asks.count > 0)?.id ?? null;
   const members = [lead, ...crew];

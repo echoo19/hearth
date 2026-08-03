@@ -299,6 +299,48 @@ describe('DevTeamPane', () => {
     expect(screen.getByRole('textbox', { name: 'Message the lead' })).toBeTruthy();
   });
 
+  it('reads live work first and finished work last', () => {
+    // Plan order interleaved them: three finished cards sat among two live
+    // ones, so finding what was actually happening meant reading every card.
+    cleanup();
+    act(() => useApp.setState({
+      devTeam: snapshot({
+        plan: {
+          ...plan,
+          milestones: [{
+            ...plan.milestones[0],
+            tasks: [
+              { id: 'a', title: 'Done first', roleId: 'build', detail: 'x' },
+              { id: 'b', title: 'Still going', roleId: 'build', detail: 'x' },
+              { id: 'c', title: 'Done second', roleId: 'build', detail: 'x' },
+              { id: 'd', title: 'Failed one', roleId: 'build', detail: 'x' },
+              { id: 'e', title: 'Also going', roleId: 'build', detail: 'x' },
+              { id: 'f', title: 'Asking you', roleId: 'build', detail: 'x' },
+            ],
+          }],
+        },
+        tasks: [
+          { taskId: 'a', engineerId: 'e-a', status: 'done' },
+          { taskId: 'b', engineerId: 'e-b', status: 'running' },
+          { taskId: 'c', engineerId: 'e-c', status: 'done' },
+          { taskId: 'd', engineerId: 'e-d', status: 'error' },
+          { taskId: 'e', engineerId: 'e-e', status: 'running' },
+          { taskId: 'f', engineerId: 'e-f', status: 'waiting' },
+        ],
+      }),
+      devTeamLanes: {},
+    } as never));
+    render(<DevTeamPane />);
+
+    const order = [...document.querySelectorAll('.devteam-lanes .devteam-card')].map(
+      (card) => card.querySelector('.devteam-card-task')?.textContent,
+    );
+    // A question you have to answer stops the run, so it leads; then the work
+    // in flight; then what went wrong; then the record. Within each group the
+    // plan's own order survives, so nobody shuffles for a reason of their own.
+    expect(order).toEqual(['Asking you', 'Still going', 'Also going', 'Failed one', 'Done first', 'Done second']);
+  });
+
   it('puts the lead above its team in the same card everyone else wears', () => {
     render(<DevTeamPane />);
 
