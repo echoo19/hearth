@@ -410,6 +410,21 @@ export function useFollowTail(
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
   }, [ref]);
+
+  // The store is no longer the only thing that grows the column. Text is paced
+  // onto the screen a few characters at a time (useSmoothStream), a fold opens,
+  // an image finishes loading — all of which push the newest line under the
+  // fold with no state change to hang a scroll on. Watching the content box
+  // itself catches every one of them, and costs nothing when nothing moves.
+  useEffect(() => {
+    const el = scrollportOf(ref.current);
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (followRef.current) el.scrollTop = el.scrollHeight;
+    });
+    for (const child of el.children) observer.observe(child);
+    return () => observer.disconnect();
+  }, [ref, messages.length]);
 }
 
 export function MessageList() {

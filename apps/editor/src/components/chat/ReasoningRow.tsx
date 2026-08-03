@@ -15,6 +15,7 @@ import { formatDuration, formatElapsed } from '../../chat/duration';
 // The flame and the label share the working line's classes on purpose — one
 // "still going" idiom in the app. Styles live in styles/app/chat.css.
 import { FlameMark, Icon } from '../ui';
+import { useSmoothStream } from './useSmoothStream';
 
 /**
  * What the fold is called. Pure, because this is the whole rule: present tense
@@ -36,6 +37,9 @@ export function ReasoningRow({ part, live = false }: { part: ChatReasoningPart; 
   // still being had is being WATCHED, so it waits a few seconds before saying
   // anything and then counts whole seconds like the flame beside it.
   const spent = live ? formatElapsed(part.durationMs ?? 0) : null;
+  // Paced like the prose it is written beside; a thought arrives in the same
+  // lumps and is read the same way.
+  const body = useSmoothStream(part.text, live && open);
 
   return (
     <div className="reasoning-row" data-open={open} data-live={live || undefined}>
@@ -52,7 +56,7 @@ export function ReasoningRow({ part, live = false }: { part: ChatReasoningPart; 
             rather than needing a clock of its own. */}
         {spent && <span className="working-elapsed">{spent}</span>}
       </button>
-      {open && <p className="reasoning-body">{part.text}</p>}
+      {open && <p className="reasoning-body">{body}</p>}
     </div>
   );
 }

@@ -26,6 +26,7 @@ import { hearthNative } from '../../native';
 import { useCopy } from '../../useCopy';
 import { Icon } from '../ui';
 import { Tooltip } from '../ui/Tooltip';
+import { useSmoothStream } from './useSmoothStream';
 import { isPlainProse, parseMarkdown, type MdBlock, type MdList, type MdSpan, type MdTable } from '../../chat/markdown';
 
 /** Windows writes separators the other way; comparing depth should not care. */
@@ -250,13 +251,18 @@ function Block({ block, live }: { block: MdBlock; live: boolean }) {
 }
 
 export function Markdown({ text, live }: { text: string; live: boolean }) {
-  const blocks = useMemo(() => parseMarkdown(text, live), [text, live]);
+  // Paced while the turn is being written, whole the moment it is not. The
+  // parse runs on what is SHOWN rather than on what has arrived, so a
+  // half-delivered marker is judged by the same rule as a half-typed one and
+  // the tail cannot flicker through bold and back as the delimiters land.
+  const shown = useSmoothStream(text, live);
+  const blocks = useMemo(() => parseMarkdown(shown, live), [shown, live]);
 
   // The overwhelmingly common message is one run of prose. It takes the old
   // path outright rather than an equivalent one, so there is no way for this
   // to drift into rendering plain text differently from how it always was.
-  if (isPlainProse(blocks, text)) {
-    return <p className="msg-text">{text}</p>;
+  if (isPlainProse(blocks, shown)) {
+    return <p className="msg-text">{shown}</p>;
   }
 
   // Nothing to draw is not a thing to draw. An empty `.md` still takes its

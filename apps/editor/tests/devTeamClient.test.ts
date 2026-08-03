@@ -146,12 +146,19 @@ describe('dev team frame folding', () => {
       { type: 'devteam-event', chatId: 'team-chat', engineerId: 'engineer-1', event: { type: 'message-delta', text: 'three files.' } },
       { type: 'devteam-event', chatId: 'team-chat', engineerId: 'engineer-1', event: { type: 'turn-complete' } },
     ];
+    // Ids and start times are per-fold by construction: a bubble opened for an
+    // arriving event is stamped with the moment it was opened (see bubbleFor),
+    // so two folds a millisecond apart carry two clocks. What has to match is
+    // everything that came off the wire.
+    const strip = (messages: readonly ChatMessage[]) =>
+      stripMessageIds(messages).map(({ startedAt: _startedAt, ...rest }) => rest);
+
     frames.forEach(receive);
-    const live = stripMessageIds(useApp.getState().devTeamLanes['engineer-1']);
+    const live = strip(useApp.getState().devTeamLanes['engineer-1']);
 
     useApp.setState({ devTeam: null, devTeamLanes: {} });
     frames.forEach(receive);
-    expect(stripMessageIds(useApp.getState().devTeamLanes['engineer-1'])).toEqual(live);
+    expect(strip(useApp.getState().devTeamLanes['engineer-1'])).toEqual(live);
   });
 
   it('keeps orchestration records marked during lead transcript replay', () => {
