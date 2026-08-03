@@ -105,7 +105,27 @@ export interface MdFence {
   closed: boolean;
 }
 
-export type MdBlock = MdParagraph | MdHeading | MdList | MdFence;
+/**
+ * A pipe table, as agents actually write them.
+ *
+ * Only the GitHub form: a header row, a delimiter row that says how many
+ * columns there are and how each is aligned, and body rows. Every cell's
+ * content is inline markdown, so bold and code inside a cell work the way they
+ * do everywhere else.
+ *
+ * Rows are ragged in the wild — a row with too few cells is padded and a row
+ * with too many is cut, because the alternative is a table that refuses to
+ * draw at all over one missing pipe. The delimiter row is the authority on
+ * column count, exactly as it is in the spec.
+ */
+export interface MdTable {
+  kind: 'table';
+  head: MdSpan[][];
+  rows: MdSpan[][][];
+  align: ('left' | 'center' | 'right' | null)[];
+}
+
+export type MdBlock = MdParagraph | MdHeading | MdList | MdFence | MdTable;
 
 /**
  * True when the parse changed nothing at all: the common case, and the one
@@ -185,6 +205,85 @@ function listMarker(line: string): { indent: number; ordered: boolean; start: nu
  * partial marker can be sitting. Pass it false for a finished message so a
  * message that genuinely ends on ```` ``` ```` still opens its block.
  */
+/**
+ * Split one table row into raw cells.
+ *
+ * The outer pipes are optional in the spec and universal in practice, so a
+ * leading or trailing empty cell created by one is dropped. `\|` is an escaped
+ * pipe and belongs to the cell.
+ */
+function tableCells(line: string): string[] {
+  const cells: string[] = [];
+  let current = '';
+  for (let index = 0; index < line.length; index += 1) {
+    const ch = line[index];
+    if (ch === '\\' && line[index + 1] === '|') {
+      current += '|';
+      index += 1;
+      continue;
+    }
+    if (ch === '|') {
+      cells.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  cells.push(current);
+  if (cells.length > 1 && cells[0].trim() === '') cells.shift();
+  if (cells.length > 1 && cells[cells.length - 1].trim() === '') cells.pop();
+  return cells.map((cell) => cell.trim());
+}
+
+/** The `|---|:--:|` line, and what it says about each column's alignment. */
+function tableAlignment(line: string): ('left' | 'center' | 'right' | null)[] | null {
+  if (!line.includes('|') && !line.includes('-')) return null;
+  const cells = tableCells(line);
+  if (cells.length === 0) return null;
+  const align: ('left' | 'center' | 'right' | null)[] = [];
+  for (const cell of cells) {
+    if (!/^:?-{1,}:?$/.test(cell)) return null;
+    const left = cell.startsWith(':');
+    const right = cell.endsWith(':');
+    align.push(left && right ? 'center' : right ? 'right' : left ? 'left' : null);
+  }
+  return align;
+}
+
+/**
+ * A table starts where a header line is followed by a delimiter line.
+ *
+ * Both lines are required before anything is drawn — the file's rule that a
+ * half-written marker is not a marker. A header row alone is a paragraph of
+ * pipes, which is exactly what it looks like, and it becomes a table the moment
+ * the line under it arrives.
+ */
+function tableAt(lines: string[], from: number, partialTail: number): number | null {
+  if (from + 1 >= lines.length || from + 1 === partialTail) return null;
+  if (!lines[from].includes('|')) return null;
+  const align = tableAlignment(lines[from + 1]);
+  if (!align || align.length === 0) return null;
+  return align.length;
+}
+
+function readTable(lines: string[], from: number, partialTail: number): [MdTable, number] {
+  const align = tableAlignment(lines[from + 1]) ?? [];
+  const width = align.length;
+  const cellsOf = (line: string): MdSpan[][] => {
+    const raw = tableCells(line).slice(0, width);
+    while (raw.length < width) raw.push('');
+    return raw.map((cell) => parseInline(cell));
+  };
+  const head = cellsOf(lines[from]);
+  const rows: MdSpan[][][] = [];
+  let i = from + 2;
+  while (i < lines.length && lines[i].trim() !== '' && lines[i].includes('|') && i !== partialTail) {
+    rows.push(cellsOf(lines[i]));
+    i += 1;
+  }
+  return [{ kind: 'table', head, rows, align }, i];
+}
+
 export function parseMarkdown(source: string, live = false): MdBlock[] {
   const lines = source.split('\n');
   // Only the final line can be mid-keystroke, and only when no newline has
@@ -196,7 +295,8 @@ export function parseMarkdown(source: string, live = false): MdBlock[] {
   const startsBlock = (index: number): boolean =>
     (index !== partialTail && fenceOpen(lines[index]) !== null) ||
     HEADING.test(lines[index]) ||
-    listMarker(lines[index]) !== null;
+    listMarker(lines[index]) !== null ||
+    tableAt(lines, index, partialTail) !== null;
 
   while (i < lines.length) {
     if (lines[i].trim() === '') {
@@ -227,6 +327,13 @@ export function parseMarkdown(source: string, live = false): MdBlock[] {
     if (heading) {
       blocks.push({ kind: 'heading', level: heading[1].length, spans: parseInline(heading[2]) });
       i += 1;
+      continue;
+    }
+
+    if (tableAt(lines, i, partialTail) !== null) {
+      const [table, next] = readTable(lines, i, partialTail);
+      blocks.push(table);
+      i = next;
       continue;
     }
 

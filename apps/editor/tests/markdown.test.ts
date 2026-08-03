@@ -285,3 +285,55 @@ describe('absolute paths, with no link syntax around them', () => {
     ]);
   });
 });
+
+describe('pipe tables', () => {
+  const table = (source: string) => parseMarkdown(source).find((block) => block.kind === 'table');
+
+  it('reads a header, its alignment row and its body', () => {
+    // What a spec sheet is full of, and what the transcript used to print as
+    // raw pipes and dashes.
+    const found = table('| # | Character | Cost |\n|---|:---------:|-----:|\n| 1 | Mochi | 50 |\n| 2 | Ittetsu | 50 |\n');
+    expect(found).toBeTruthy();
+    if (found?.kind !== 'table') throw new Error('not a table');
+    expect(found.align).toEqual([null, 'center', 'right']);
+    expect(found.head.map((cell) => flatten(cell))).toEqual(['#', 'Character', 'Cost']);
+    expect(found.rows).toHaveLength(2);
+    expect(found.rows[1].map((cell) => flatten(cell))).toEqual(['2', 'Ittetsu', '50']);
+  });
+
+  it('parses each cell as inline markdown', () => {
+    const found = table('| Who | Note |\n|---|---|\n| **Mochi** | `50` energy |\n');
+    if (found?.kind !== 'table') throw new Error('not a table');
+    expect(found.rows[0][0][0]).toMatchObject({ kind: 'strong' });
+    expect(found.rows[0][1][0]).toMatchObject({ kind: 'code', text: '50' });
+  });
+
+  it('survives a ragged row rather than refusing to draw', () => {
+    // Agents miss a pipe. The delimiter row is the authority on how many
+    // columns there are, exactly as it is in the spec.
+    const found = table('| A | B | C |\n|---|---|---|\n| 1 | 2 |\n| 1 | 2 | 3 | 4 |\n');
+    if (found?.kind !== 'table') throw new Error('not a table');
+    expect(found.rows[0]).toHaveLength(3);
+    expect(flatten(found.rows[0][2])).toBe('');
+    expect(found.rows[1]).toHaveLength(3);
+  });
+
+  it('is not a table until the row that says it is one has arrived', () => {
+    // The file's rule: a half-written marker is not a marker. A header line on
+    // its own is a paragraph of pipes, which is what it looks like.
+    expect(parseMarkdown('| # | Character |', true)[0].kind).toBe('paragraph');
+    expect(parseMarkdown('| # | Character |\n|---|---|', true)[0].kind).toBe('paragraph');
+    expect(parseMarkdown('| # | Character |\n|---|---|\n', true)[0].kind).toBe('table');
+  });
+
+  it('leaves an escaped pipe inside its cell', () => {
+    const found = table('| Keys |\n|---|\n| a \\| b |\n');
+    if (found?.kind !== 'table') throw new Error('not a table');
+    expect(flatten(found.rows[0][0])).toBe('a | b');
+  });
+
+  it('ends a paragraph that runs into one', () => {
+    const blocks = parseMarkdown('Here is the cast:\n| # | Who |\n|---|---|\n| 1 | Mochi |\n');
+    expect(blocks.map((block) => block.kind)).toEqual(['paragraph', 'table']);
+  });
+});

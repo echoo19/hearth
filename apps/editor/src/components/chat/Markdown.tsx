@@ -26,7 +26,7 @@ import { hearthNative } from '../../native';
 import { useCopy } from '../../useCopy';
 import { Icon } from '../ui';
 import { Tooltip } from '../ui/Tooltip';
-import { isPlainProse, parseMarkdown, type MdBlock, type MdList, type MdSpan } from '../../chat/markdown';
+import { isPlainProse, parseMarkdown, type MdBlock, type MdList, type MdSpan, type MdTable } from '../../chat/markdown';
 
 /** Windows writes separators the other way; comparing depth should not care. */
 function normalizeSeparators(value: string): string {
@@ -187,6 +187,43 @@ function CodeBlock({ lang, text, pending }: { lang: string; text: string; pendin
   );
 }
 
+/**
+ * A pipe table.
+ *
+ * Wrapped in its own scroller: a spec's cast table is nine columns wide and the
+ * column it is read in is not, and a table that widens the page pushes every
+ * paragraph around it off the screen. Alignment rides on a data attribute
+ * rather than an inline style, so the whole look stays in the stylesheet.
+ */
+function Table({ table }: { table: MdTable }) {
+  return (
+    <div className="md-table-scroll md-block">
+      <table className="md-table">
+        <thead>
+          <tr>
+            {table.head.map((cell, index) => (
+              <th key={index} data-align={table.align[index] ?? undefined} scope="col">
+                <Spans spans={cell} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {table.rows.map((row, rowIndex) => (
+            <tr key={rowIndex}>
+              {row.map((cell, index) => (
+                <td key={index} data-align={table.align[index] ?? undefined}>
+                  <Spans spans={cell} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function Block({ block, live }: { block: MdBlock; live: boolean }) {
   switch (block.kind) {
     case 'paragraph':
@@ -205,6 +242,8 @@ function Block({ block, live }: { block: MdBlock; live: boolean }) {
     }
     case 'list':
       return <List list={block} />;
+    case 'table':
+      return <Table table={block} />;
     default:
       return <CodeBlock lang={block.lang} text={block.text} pending={live && !block.closed} />;
   }
