@@ -260,9 +260,20 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Centred under the lead, and in the lead's own card width.
+ *
+ * `auto-fill` with a `1fr` cap did two wrong things at once: it kept the empty
+ * tracks, so three engineers packed into the left 60% of the board with four
+ * hundred pixels of nothing beside them under a lead card centred over the
+ * whole width; and it stretched the cards to whatever was left over, so the
+ * team wore a different sized card from the lead depending on how many of them
+ * there were. `auto-fit` drops the empty tracks and the fixed cap holds the
+ * card at 12rem, which is the width the lead slot sets, so `justify-content`
+ * has something real to centre. */
 .devteam-lanes {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 12rem));
+  justify-content: center;
   gap: 10px;
   min-width: 0;
 }
@@ -650,11 +661,19 @@
   min-height: 0;
 }
 
+/* The rule spans the pane; what is written on it does not.
+ *
+ * This head belongs to the conversation under it, so it sits on the
+ * conversation's axis: the name lines up with the first word of the transcript
+ * and the status with its right edge. Held at the gutter it was the only thing
+ * in the view pressed against the left, which reads as a second column that
+ * is not there. `max()` keeps the gutter as the floor, so a narrow pane where
+ * the measure no longer fits is unaffected. */
 .devteam-view-head {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 12px var(--chat-gutter);
+  padding: 12px max(var(--chat-gutter), (100% - var(--chat-measure)) / 2);
   border-bottom: 1px solid var(--border);
 }
 

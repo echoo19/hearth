@@ -296,6 +296,41 @@ describe('style gates', () => {
     expect(css).toMatch(/\.devteam-card-name,\n\.devteam-card-role,\n\.devteam-card-task \{[^}]*max-width:\s*100%/);
   });
 
+  /**
+   * The team screen has one vertical axis and everything on it is on that axis.
+   *
+   * Measured on a real board, three engineers packed into the left 60% under a
+   * lead card centred over the whole width, with four hundred pixels of nothing
+   * beside them: `auto-fill` keeps the empty tracks and a `1fr` cap let the
+   * cards be whatever width was left over, so they were neither centred nor the
+   * lead's size. The view's head was the same fault one screen over, sitting at
+   * the gutter while the conversation it heads sits at the measure.
+   */
+  it('keeps the team board and the member head on the axis of what they sit over', () => {
+    const css = fs.readFileSync(path.join(STYLES_DIR, 'app/devteam.css'), 'utf8');
+    const rule = (selector: string): string => {
+      const at = css.indexOf(`\n${selector} {`);
+      expect(at, selector).toBeGreaterThan(-1);
+      return css.slice(at, css.indexOf('}', at));
+    };
+
+    const lanes = rule('.devteam-lanes');
+    // Empty tracks have to collapse and the cards have to be a fixed width,
+    // or there is nothing for the centring to act on.
+    expect(lanes).toMatch(/grid-template-columns:\s*repeat\(auto-fit,/);
+    expect(lanes).toMatch(/justify-content:\s*center/);
+    const capped = /minmax\(\s*[\d.]+rem\s*,\s*([\d.]+)rem\s*\)/.exec(lanes);
+    expect(capped, 'the crew track needs a fixed cap, not 1fr').not.toBeNull();
+    // The same width the lead slot sets: one card, worn by everybody.
+    expect(rule('.devteam-lead-slot .devteam-card')).toMatch(new RegExp(`width:\\s*${capped![1]}rem`));
+
+    // The head lines up with the transcript under it, with the gutter as a
+    // floor so a pane too narrow for the measure is left alone.
+    expect(rule('.devteam-view-head')).toMatch(
+      /padding:[^;]*max\(\s*var\(--chat-gutter\)\s*,\s*\(100% - var\(--chat-measure\)\) \/ 2\s*\)/,
+    );
+  });
+
   it('Gate A: every font-size under styles/ (and the styles.css manifest) uses a --text-* token', () => {
     const files = [...collectFiles(STYLES_DIR, ['.css']), MANIFEST_CSS];
     const offenders: string[] = [];
