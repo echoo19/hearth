@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   DEV_TEAM_STEPS,
   devTeamActivity,
@@ -17,7 +17,7 @@ import { FlameMark, Icon, Modal } from '../ui';
 import { Button } from '../ui/Button';
 import { Composer } from './Composer';
 import { Markdown } from './Markdown';
-import { MessageList, MessageTurns } from './MessageList';
+import { MessageList, MessageTurns, useFollowTail } from './MessageList';
 import { useElapsed } from './WorkingRow';
 
 /**
@@ -378,6 +378,10 @@ function MemberView({
   const answer = useApp((s) => s.answerEngineerInput);
   const stopRun = useApp((s) => s.stopDevTeam);
   const engineerId = member.engineerId;
+  // An engineer's log is a transcript like any other, and it fills fast: this
+  // is the same follow-the-tail the conversation has, which it did not have.
+  const laneRef = useRef<HTMLDivElement>(null);
+  useFollowTail(laneRef, member.messages);
 
   return (
     <section className="devteam-view" aria-label={`${member.name} log`}>
@@ -399,7 +403,7 @@ function MemberView({
         {member.isLead ? (
           <MessageList />
         ) : (
-          <div className="devteam-lane-scroll">
+          <div className="devteam-lane-scroll" ref={laneRef}>
             {member.messages.length > 0 ? (
               <MessageTurns
                 messages={member.messages}

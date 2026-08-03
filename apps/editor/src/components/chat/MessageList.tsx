@@ -356,32 +356,67 @@ export function turnGrowth(message: ChatMessage | undefined): number {
   }
 }
 
-export function MessageList() {
-  const messages = useApp((s) => s.messages);
-  const agent = useApp(agentReadiness);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const followRef = useRef(true);
+/**
+ * The element that actually scrolls, which is not always this one.
+ *
+ * The transcript is `.chat-scroll` in an ordinary conversation and scrolls
+ * itself. In dev team mode it is one block inside a column that scrolls as a
+ * whole — the run's status line, the specification and the report have to move
+ * with the transcript rather than under a frozen strip — so `.chat-scroll` is
+ * `overflow: visible` there and the scrollport is an ancestor. Following the
+ * tail by setting `scrollTop` on a box that does not scroll does nothing at
+ * all, which is why a dev team conversation sat still while the agent wrote.
+ *
+ * Falls back to the element itself: a jsdom tree lays nothing out and reports
+ * no overflow, and the honest answer there is the box the caller named.
+ */
+function scrollportOf(el: HTMLElement | null): HTMLElement | null {
+  for (let node: HTMLElement | null = el; node; node = node.parentElement) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if (overflowY === 'auto' || overflowY === 'scroll') return node;
+  }
+  return el;
+}
 
-  // Follow the tail unless the reader has scrolled up to reread something —
-  // the standard chat idiom. Appending grows scrollHeight without firing a
-  // scroll event, so the intent is retained across new content.
+/**
+ * Keep the newest words in view while they arrive, unless the reader has
+ * scrolled up to reread something — the standard chat idiom.
+ *
+ * Shared, because every transcript in the app is a chat: the conversation, the
+ * lead's own view, and each engineer's log. The lanes did not follow at all,
+ * so watching an engineer work meant scrolling by hand once a second.
+ */
+export function useFollowTail(
+  ref: React.RefObject<HTMLElement | null>,
+  messages: readonly ChatMessage[],
+): void {
+  const followRef = useRef(true);
+  // Appending grows scrollHeight without firing a scroll event, so the intent
+  // is retained across new content rather than re-derived from it.
   const lastId = messages.length > 0 ? messages[messages.length - 1].id : '';
   const lastLength = turnGrowth(messages[messages.length - 1]);
 
   useLayoutEffect(() => {
-    const el = scrollRef.current;
+    const el = scrollportOf(ref.current);
     if (el && followRef.current) el.scrollTop = el.scrollHeight;
-  }, [lastId, lastLength]);
+  }, [ref, lastId, lastLength]);
 
   useEffect(() => {
-    const el = scrollRef.current;
+    const el = scrollportOf(ref.current);
     if (!el) return;
     const onScroll = (): void => {
       followRef.current = isNearBottom(el);
     };
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
-  }, []);
+  }, [ref]);
+}
+
+export function MessageList() {
+  const messages = useApp((s) => s.messages);
+  const agent = useApp(agentReadiness);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useFollowTail(scrollRef, messages);
 
   return (
     <div className="chat-scroll" ref={scrollRef}>
