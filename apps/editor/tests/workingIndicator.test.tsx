@@ -124,7 +124,11 @@ describe('the line in the transcript', () => {
     expect(document.querySelector('.working-elapsed')).toBeNull();
 
     act(() => {
-      vi.advanceTimersByTime(12_000);
+      // Past the boundary rather than exactly on it: each update is scheduled
+      // for the turn's next whole second plus a few milliseconds of slack, so
+      // that a timer landing a hair early cannot render the same second twice
+      // (see useElapsed). Nobody sees those milliseconds; a fake clock does.
+      vi.advanceTimersByTime(12_010);
     });
     expect(document.querySelector('.working-elapsed')?.textContent).toBe('12s');
   });

@@ -53,17 +53,38 @@ export function workingLabel(message: Pick<ChatMessage, 'parts'>): string {
 }
 
 /**
- * Milliseconds since `startedAt`, re-read once a second. Returns null when the
- * turn never recorded a start (a replay), so the caller shows no counter at
- * all rather than a stopwatch pinned at zero.
+ * Milliseconds since `startedAt`, re-read on that turn's own second.
+ *
+ * Not `setInterval(1000)`. The number on screen is `floor((now - startedAt) /
+ * 1000)`, and a repeating interval keeps its own phase: it is scheduled from
+ * whenever it last fired, drifts a millisecond or two each time, and after
+ * enough of them a single tick straddles two whole seconds. The counter then
+ * shows 5s, 6s, 8s — one number skipped and one shown twice — which for
+ * something a person is watching tick is the difference between a clock and an
+ * animation of a clock.
+ *
+ * So each update is scheduled for the next boundary of the TURN's clock rather
+ * than one second from now, and the phase cannot drift because it is derived
+ * from `startedAt` every time. A tab that was frozen still jumps when it comes
+ * back, which is correct: that time really did pass.
  */
 export function useElapsed(startedAt: number | undefined, active: boolean): number | null {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (startedAt === undefined || !active) return;
-    setNow(Date.now());
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
+    let timer = 0;
+    const tick = (): void => {
+      const at = Date.now();
+      setNow(at);
+      // Where in the current second this turn is, then the rest of it. The
+      // double modulo keeps a clock that has stepped backwards positive, and
+      // the few milliseconds of slack stop a timer that lands a hair early
+      // from rendering the same second twice.
+      const into = (((at - startedAt) % 1000) + 1000) % 1000;
+      timer = window.setTimeout(tick, 1000 - into + 4);
+    };
+    tick();
+    return () => window.clearTimeout(timer);
   }, [startedAt, active]);
   if (startedAt === undefined) return null;
   return Math.max(0, now - startedAt);
