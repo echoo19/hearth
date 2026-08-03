@@ -37,17 +37,6 @@ const LEAD_TURN_PHASES = new Set<DevTeamSnapshot['phase']>([
 ]);
 
 /**
- * How long a single lead turn may go without finishing before the pane offers
- * a way out of it.
- *
- * A clean planning turn measured about fifty seconds against a real provider.
- * Three minutes is comfortably longer than slow-but-working and far shorter
- * than the hour a hung turn will otherwise sit there for. It is a threshold for
- * OFFERING help, not for taking action: nothing is cancelled on its own.
- */
-const STALL_AFTER_MS = 3 * 60 * 1000;
-
-/**
  * An agent is on the board once it exists, and stays there afterwards.
  *
  * `pending` is the one status that never appears. A task nobody has been
@@ -75,9 +64,8 @@ function usePhaseElapsed(state: DevTeamSnapshot | null): number | null {
   const active = state !== null && LEAD_TURN_PHASES.has(state.phase);
   const elapsed = useElapsed(state?.phaseSince ?? undefined, active);
   // `useElapsed`'s active flag only decides whether the clock TICKS; it still
-  // returns a duration for an inactive one. Returning that here would have
-  // called a two hour build stalled and offered to recover a run whose
-  // engineers were working the whole time.
+  // returns a duration for an inactive one, and a build that has legitimately
+  // been running for two hours must not be counted as a lead turn that has.
   return active ? elapsed : null;
 }
 
@@ -85,11 +73,20 @@ function usePhaseElapsed(state: DevTeamSnapshot | null): number | null {
  * What a run looks like while it is still just a conversation.
  *
  * The interview and the specification are a chat and nothing more: one person
- * and one agent working out what to make. Everything the console needs to add
- * to that is a single line saying the lead is on it and offering the way out —
- * so that is all this is. A four-step progress rail over a two-message
- * conversation was describing a pipeline to someone who was still typing the
- * first sentence of it.
+ * and one agent working out what to make. All the console adds to that is one
+ * line saying which step the lead is on and how long it has been — so that is
+ * all this is. A four-step progress rail over a two-message conversation was
+ * describing a pipeline to someone who was still typing the first sentence of
+ * it.
+ *
+ * THERE IS NO STALL PANEL, and there should not be one. A turn that had run
+ * three minutes used to raise a bordered warning offering to recover the run or
+ * stop it, and it was the loudest thing on the screen at the exact moment the
+ * screen was supposed to be a conversation someone was in the middle of. No
+ * chat app tells you its agent is taking too long and asks what you would like
+ * to do about it; you either wait or you press Stop, and Stop is in the box
+ * where it is in every other conversation in this app. A dev team run is an
+ * agent using subagents, not a machine that needs an operator's console.
  */
 function RunStrip({ phase, elapsed }: { phase: DevTeamSnapshot['phase']; elapsed: number | null }) {
   const counter = elapsed === null ? null : formatElapsed(elapsed);
@@ -105,50 +102,6 @@ function RunStrip({ phase, elapsed }: { phase: DevTeamSnapshot['phase']; elapsed
         <span className="devteam-strip-clock" aria-hidden="true">{counter}</span>
       )}
     </div>
-  );
-}
-
-/**
- * The way out of a step that is not going to finish on its own.
- *
- * This exists because of a run that sat in `planning` for over an hour with a
- * complete, schema-valid plan.json already on disk. The pane said "The lead is
- * writing the plan", which was not true, and offered Stop, which would have
- * thrown that plan away. The person had no way to tell a hung turn from a slow
- * one and nothing to press that would help.
- *
- * It says how long, states plainly that this is longer than it should be, and
- * offers the two real choices. It appears only after STALL_AFTER_MS, so a turn
- * that is merely taking its time is never nagged about.
- */
-function StallNotice({ elapsed, phase }: { elapsed: number; phase: DevTeamSnapshot['phase'] }) {
-  const recover = useApp((s) => s.recoverDevTeam);
-  const stop = useApp((s) => s.stopDevTeam);
-  // The phase labels are nouns — "Review", "Planning", "Wrapping up" — so the
-  // sentence has to take one as a noun. Lowercasing one into a gerund slot
-  // produced "The lead has been review for 17m 56s", which shipped.
-  const step = devTeamPhaseLabel(phase);
-
-  return (
-    <section className="devteam-stall" role="status">
-      <p className="devteam-stall-lead">
-        <Icon name="warning" size={13} />
-        The lead has not finished {step} after {formatElapsed(elapsed) ?? 'a long time'}.
-      </p>
-      <p className="devteam-stall-body">
-        A turn that runs this long has usually stopped responding rather than slowed down. Picking the run
-        back up keeps whatever the team has already written to the project and carries on from it; if
-        there is nothing usable yet, the run parks so you can run the step again.
-      </p>
-      <div className="devteam-stall-actions">
-        <Button variant="primary" icon="restart" onClick={recover}>
-          Pick the run back up
-        </Button>
-        <Button variant="danger" icon="stop" onClick={stop}>
-          Stop the run
-        </Button>
-      </div>
-    </section>
   );
 }
 
@@ -594,9 +547,6 @@ function TeamStage({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number
           />
         ) : (
           <div className="devteam-board">
-            {elapsed !== null && elapsed >= STALL_AFTER_MS && (
-              <StallNotice elapsed={elapsed} phase={state.phase} />
-            )}
             {state.error && <p className="devteam-error" role="alert">{state.error}</p>}
             <div className="devteam-lead-slot">
               <AgentCard
@@ -706,7 +656,6 @@ export function DevTeamPane() {
   const state = useApp((s) => s.devTeam);
   const stopRun = useApp((s) => s.stopDevTeam);
   const elapsed = usePhaseElapsed(state);
-  const stalled = elapsed !== null && elapsed >= STALL_AFTER_MS;
   const copy = composerCopy(state);
   const stage = devTeamStage(state);
   const phase = state?.phase ?? 'idle';
@@ -724,7 +673,6 @@ export function DevTeamPane() {
       ) : (
       <div className="devteam-main">
         {phase !== 'idle' && phase !== 'done' && <RunStrip phase={phase} elapsed={elapsed} />}
-        {stalled && state && <StallNotice elapsed={elapsed!} phase={state.phase} />}
         {state && state.history.length > 0 && (
           <div className="devteam-history" aria-label="Completed dev team runs">
             {state.history.map((run) => <RunRecord key={run.runId} state={run} historical />)}

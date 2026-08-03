@@ -907,47 +907,6 @@
 
 /* --- Notices -------------------------------------------------------------- */
 
-/* The one panel in this pane that is allowed to be loud, because it appears
-   only when the run has stopped moving and the person needs to be told so. */
-.devteam-stall {
-  padding: 16px 18px;
-  border: 1px solid var(--warn-soft);
-  border-radius: var(--radius-lg);
-  background: var(--warn-soft);
-}
-
-.devteam-stall-lead {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  color: var(--ink);
-  font-size: var(--text-sm);
-  font-weight: var(--fw-strong);
-  letter-spacing: var(--track-snug);
-}
-
-.devteam-stall-lead svg {
-  flex: none;
-  color: var(--warn);
-}
-
-.devteam-stall-body {
-  max-width: 62ch;
-  margin: 8px 0 0;
-  color: var(--ink-mute);
-  font-size: var(--text-xs);
-  line-height: 1.55;
-  text-wrap: pretty;
-}
-
-.devteam-stall-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-}
-
 .devteam-error {
   /* Not `margin: 0`: this sits in a centred column and a shorthand reset here
      beats the column's own auto margins, which left the one red thing on the

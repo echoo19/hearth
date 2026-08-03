@@ -251,18 +251,24 @@ describe('DevTeamPane', () => {
     }
   });
 
-  it('still offers a way out of a run that has stopped moving', () => {
-    // Taking the standing controls off the board must not leave a hung turn
-    // with nothing to press. The stall notice carries both real choices, and
-    // it is attached to the problem rather than standing by for one.
+  it('never interrupts the conversation to ask what to do about a slow turn', () => {
+    // A turn running twenty minutes used to raise a bordered warning offering
+    // to recover the run or stop it, and it was the loudest thing on screen at
+    // the exact moment the screen was meant to be a conversation someone was in
+    // the middle of. No chat app does this. You wait, or you press Stop, and
+    // Stop is in the box where it is in every other conversation in this app.
     cleanup();
     act(() => useApp.setState({
-      devTeam: snapshot({ phase: 'planning', plan: null, tasks: [], phaseSince: Date.now() - 20 * 60 * 1000 }),
+      devTeam: snapshot({ phase: 'interviewing', plan: null, tasks: [], phaseSince: Date.now() - 20 * 60 * 1000 }),
     } as never));
     render(<DevTeamPane />);
 
-    expect(screen.getByRole('button', { name: /Pick the run back up/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Stop the run/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Pick the run back up/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Stop the run/ })).toBeNull();
+    expect(screen.queryByText(/has not finished/)).toBeNull();
+    // What is left is the truth and one control: the step, its clock, and Stop.
+    expect(screen.getByRole('status', { name: 'Dev team phase' }).textContent).toBe('Interview');
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
   });
 
   it('shows the interview as an ordinary chat with one line of run status', () => {
@@ -368,43 +374,24 @@ describe('DevTeamPane', () => {
     }
   });
 
-  it('offers a way out once a single lead turn has run far too long', () => {
-    // The pane used to show "The lead is writing the plan" at minute one and at
-    // hour two with no way to tell those apart and nothing to press but Stop,
-    // which discards whatever the turn had already written.
-    const recoverDevTeam = vi.fn();
-    cleanup();
-    act(() => useApp.setState({
-      recoverDevTeam,
-      devTeam: snapshot({ phase: 'planning', plan: null, tasks: [], phaseSince: Date.now() - 20 * 60 * 1000 }),
-    } as never));
-    render(<DevTeamPane />);
-
-    expect(screen.getByText(/has not finished Planning after /)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /Pick the run back up/ }));
-    expect(recoverDevTeam).toHaveBeenCalledTimes(1);
-  });
-
-  it('says nothing about stalling while a turn is merely taking its time', () => {
-    cleanup();
-    act(() => useApp.setState({
-      devTeam: snapshot({ phase: 'planning', plan: null, tasks: [], phaseSince: Date.now() - 20 * 1000 }),
-    } as never));
-    render(<DevTeamPane />);
-
-    expect(screen.queryByRole('button', { name: /Pick the run back up/ })).toBeNull();
-  });
-
-  it('never calls a long build stalled, because its members are still reporting', () => {
-    // `building` is the one long phase that is not a single turn. Nagging about
-    // it would fire on every healthy run that takes more than three minutes.
+  it('runs the clock on a lead turn and not on a build', () => {
+    // `building` is the one long phase that is not a single turn: engineers are
+    // reporting the whole time, and a counter climbing past two hours beside the
+    // word Build would be describing the run as one stuck turn when it is
+    // sixteen healthy ones.
     cleanup();
     act(() => useApp.setState({
       devTeam: snapshot({ phase: 'building', phaseSince: Date.now() - 2 * 60 * 60 * 1000 }),
     } as never));
     render(<DevTeamPane />);
+    expect(document.querySelector('.devteam-strip-clock')).toBeNull();
 
-    expect(screen.queryByRole('button', { name: /Pick the run back up/ })).toBeNull();
+    cleanup();
+    act(() => useApp.setState({
+      devTeam: snapshot({ phase: 'interviewing', plan: null, tasks: [], phaseSince: Date.now() - 90 * 1000 }),
+    } as never));
+    render(<DevTeamPane />);
+    expect(document.querySelector('.devteam-strip-clock')?.textContent).toBe('1m 30s');
   });
 
   it('opens a member over the board, and comes back to where you left', () => {
