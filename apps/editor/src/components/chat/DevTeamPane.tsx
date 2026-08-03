@@ -48,19 +48,20 @@ const LEAD_TURN_PHASES = new Set<DevTeamSnapshot['phase']>([
 const STALL_AFTER_MS = 3 * 60 * 1000;
 
 /**
- * A member of the team exists while it is on the job.
+ * An agent is on the board once it exists, and stays there afterwards.
  *
- * `done` is absent on purpose: a finished engineer has nothing left to manage,
- * and leaving it on the board is what turned a sixteen-task run into a wall of
- * cards where thirteen of them said "QUEUED" and none of them were anybody.
- * `pending` is absent for the same reason from the other end — nobody has been
- * summoned for it yet. Both still appear in the plan, which is where a task
- * that is not a person belongs.
+ * `pending` is the one status that never appears. A task nobody has been
+ * summoned for is not an agent yet, and treating it as one is what turned a
+ * sixteen-task run into a wall of cards where thirteen said "QUEUED" and none
+ * of them were anybody. Those live in the plan, which is where a task that is
+ * not a person belongs.
  *
- * `error` and `interrupted` stay. They are the ones that stopped without
- * finishing, which is exactly what a person managing the run has to see.
+ * Everything else stays, finished included: the board's job is to say how each
+ * agent is doing, and "done" is one of the answers.
  */
-const LIVE_STATUS = new Set<DevTeamTaskRecord['status']>(['running', 'waiting', 'error', 'interrupted']);
+const BOARD_STATUS = new Set<DevTeamTaskRecord['status']>([
+  'running', 'waiting', 'error', 'interrupted', 'done',
+]);
 
 /** The lead's own entry id. Not a task id, and task ids cannot collide with it
  *  because the schema requires them to start with an alphanumeric. */
@@ -81,7 +82,13 @@ function usePhaseElapsed(state: DevTeamSnapshot | null): number | null {
 }
 
 /**
- * The three controls that govern a run, wherever it is being run from.
+ * The three controls that govern a run, on the strip over a conversation.
+ *
+ * They are NOT on the team board. That screen's job is to say how each agent
+ * is doing, and a pair of buttons governing the whole run sat in it as the one
+ * thing that was not a status. The way out of a run that has stopped moving is
+ * offered by the stall notice, where it belongs: attached to the problem it
+ * solves rather than standing by for one.
  *
  * Stop is offered for the whole life of a run, not just the phases that can be
  * paused. It used to be derived from those, which left an interview with no
@@ -393,8 +400,6 @@ function RunRail({
           </p>
         )}
       </div>
-
-      <RunControls phase={state.phase} />
     </aside>
   );
 }
@@ -411,7 +416,7 @@ function TeamEmpty({ state }: { state: DevTeamSnapshot }) {
       ? 'The run is parked. Nobody is working until it is picked back up.'
       : state.phase === 'reviewing'
         ? 'Everyone has handed their work back. The lead is reviewing it.'
-        : 'Nobody is on the job right now. Engineers appear here as the lead brings them on.';
+        : 'Nobody has been brought on yet. Engineers appear here as the lead summons them.';
 
   return <p className="devteam-board-note">{text}</p>;
 }
@@ -518,10 +523,12 @@ function crewRollCall(crew: readonly Member[]): string {
   const blocked = crew.filter((member) => member.asks.count > 0 || member.status === 'waiting');
   const stopped = crew.filter((member) => member.status === 'error' || member.status === 'interrupted');
   const working = crew.filter((member) => member.status === 'running' && member.asks.count === 0);
+  const done = crew.filter((member) => member.status === 'done');
   return [
     working.length > 0 ? `${working.length} working` : null,
     blocked.length > 0 ? `${blocked.length} needs you` : null,
     stopped.length > 0 ? `${stopped.length} stopped` : null,
+    done.length > 0 ? `${done.length} done` : null,
   ].filter((part): part is string => part !== null).join(' · ');
 }
 
@@ -557,7 +564,7 @@ function TeamStage({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number
   };
 
   const crew: Member[] = state.tasks
-    .filter((record) => LIVE_STATUS.has(record.status))
+    .filter((record) => BOARD_STATUS.has(record.status))
     .map((record) => {
       const task = tasks.get(record.taskId);
       const role = task ? roles.get(task.roleId) : undefined;

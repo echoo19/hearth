@@ -210,22 +210,39 @@ describe('dev team presentation helpers', () => {
 });
 
 describe('DevTeamPane', () => {
-  it('offers Stop for the whole life of a run, including the interview', () => {
+  it('offers Stop wherever a run is still a conversation, and never on the board', () => {
     // A lead turn can hang with nothing but a climbing counter to show for it,
-    // and the interview is exactly where that happened. Deriving Stop from the
-    // pausable phases left that run with no control at all.
-    for (const phase of ['interviewing', 'drafting-spec', 'spec-review', 'building', 'paused', 'interrupted'] as const) {
+    // and the interview is exactly where that happened, so the strip over a
+    // conversation keeps its way out. The board is a different thing: it says
+    // how each agent is doing, and a pair of buttons governing the whole run
+    // sat in it as the one thing that was not a status.
+    for (const phase of ['interviewing', 'drafting-spec', 'spec-review'] as const) {
       cleanup();
-      act(() => useApp.setState({ devTeam: snapshot({ phase }) } as never));
+      act(() => useApp.setState({ devTeam: snapshot({ phase, plan: null, tasks: [] }) } as never));
       render(<DevTeamPane />);
       expect(screen.queryByRole('button', { name: 'Stop dev team' }), phase).toBeTruthy();
     }
-    for (const phase of ['idle', 'done'] as const) {
+    for (const phase of ['idle', 'done', 'building', 'reviewing'] as const) {
       cleanup();
       act(() => useApp.setState({ devTeam: snapshot({ phase }) } as never));
       render(<DevTeamPane />);
       expect(screen.queryByRole('button', { name: 'Stop dev team' }), phase).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Pause dev team' }), phase).toBeNull();
     }
+  });
+
+  it('still offers a way out of a run that has stopped moving', () => {
+    // Taking the standing controls off the board must not leave a hung turn
+    // with nothing to press. The stall notice carries both real choices, and
+    // it is attached to the problem rather than standing by for one.
+    cleanup();
+    act(() => useApp.setState({
+      devTeam: snapshot({ phase: 'planning', plan: null, tasks: [], phaseSince: Date.now() - 20 * 60 * 1000 }),
+    } as never));
+    render(<DevTeamPane />);
+
+    expect(screen.getByRole('button', { name: /Pick the run back up/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Stop the run/ })).toBeTruthy();
   });
 
   it('shows the interview as an ordinary chat with one line of run status', () => {
@@ -257,29 +274,30 @@ describe('DevTeamPane', () => {
     expect(screen.getByRole('textbox', { name: 'Tell the team' }).getAttribute('placeholder')).toBe('Tell the team…');
   });
 
-  it('keeps only the members still on the job, and leaves the rest in the plan', () => {
+  it('keeps every agent that exists on the board, and no task that is not one', () => {
     // A sixteen-task run put sixteen cards on the board, thirteen of them
-    // reading QUEUED. A queued task is not a person yet and a finished one is
-    // not a person any more; both belong in the plan.
+    // reading QUEUED. A task nobody has been summoned for is not an agent; a
+    // finished one is, and how it finished is a status worth showing.
     cleanup();
     act(() => useApp.setState({
       devTeam: snapshot({
         tasks: [
           { taskId: 'controls', engineerId: 'engineer-controls', status: 'done', summary: 'Controls landed.' },
-          { taskId: 'look', engineerId: 'engineer-look', status: 'running' },
+          { taskId: 'look', engineerId: '', status: 'pending' },
         ],
       }),
-      devTeamLanes: { 'engineer-controls': [], 'engineer-look': [] },
+      devTeamLanes: { 'engineer-controls': [] },
     } as never));
     render(<DevTeamPane />);
 
-    expect(screen.queryByRole('button', { name: /Build controls/ })).toBeNull();
-    expect(cardOf('Shape the look')).toBeTruthy();
+    expect(cardOf('Build controls').getAttribute('aria-label')).toContain('Finished');
+    expect(screen.queryByRole('button', { name: /Shape the look/ })).toBeNull();
+    expect(screen.getByText('1 done')).toBeTruthy();
     expect(screen.getByText('1 of 2 finished')).toBeTruthy();
-    // Still accounted for: the plan carries the outcome.
+    // The one nobody is on is still accounted for, in the plan.
     fireEvent.click(screen.getByRole('button', { name: 'Plan' }));
-    const planned = screen.getAllByText('Build controls').map((node) => node.closest('li')).find(Boolean);
-    expect(planned?.getAttribute('data-status')).toBe('done');
+    const planned = screen.getAllByText('Shape the look').map((node) => node.closest('li')).find(Boolean);
+    expect(planned?.getAttribute('data-status')).toBe('pending');
   });
 
   it('keeps the plan and the specification behind buttons rather than in the way', () => {
@@ -394,9 +412,9 @@ describe('DevTeamPane', () => {
     expect(screen.getByRole('textbox', { name: 'Tell the team' })).toBeTruthy();
   });
 
-  it('falls back to the board when the member you opened finishes and leaves', () => {
-    // A card can vanish mid-read: the whole point of the board is that members
-    // leave when they are done.
+  it('keeps you where you are when the member you opened finishes', () => {
+    // Finishing is a status, not a disappearance: reading somebody's log must
+    // not be interrupted by their last turn ending.
     cleanup();
     act(() => useApp.setState({ devTeamLanes: { 'engineer-controls': [], 'engineer-look': [] } } as never));
     const view = render(<DevTeamPane />);
@@ -410,6 +428,24 @@ describe('DevTeamPane', () => {
           { taskId: 'look', engineerId: 'engineer-look', status: 'done', summary: 'Sprites done.' },
         ],
       }),
+    }));
+    view.rerender(<DevTeamPane />);
+
+    expect(screen.getByRole('region', { name: /log$/ })).toBeTruthy();
+    expect(document.querySelector('.devteam-view-state')?.textContent).toBe('Finished');
+  });
+
+  it('sends you back to the board if the agent you opened is no longer in the run', () => {
+    // Whoever is open can leave the run entirely (a replanned milestone drops
+    // its tasks). Falling back in the render rather than in an effect means
+    // there is never a frame showing a member who is not there.
+    cleanup();
+    act(() => useApp.setState({ devTeamLanes: { 'engineer-controls': [], 'engineer-look': [] } } as never));
+    const view = render(<DevTeamPane />);
+    fireEvent.click(cardOf('Shape the look'));
+
+    act(() => useApp.setState({
+      devTeam: snapshot({ tasks: [{ taskId: 'controls', engineerId: 'engineer-controls', status: 'running' }] }),
     }));
     view.rerender(<DevTeamPane />);
 
@@ -510,14 +546,16 @@ describe('DevTeamPane', () => {
     );
   });
 
-  it('offers pause and stop while active, then resume when paused', () => {
+  it('pauses, stops and resumes a run from the strip over its conversation', () => {
+    cleanup();
+    act(() => useApp.setState({ devTeam: snapshot({ phase: 'wrapping', plan: null, tasks: [] }) } as never));
     const { rerender } = render(<DevTeamPane />);
     fireEvent.click(screen.getByRole('button', { name: 'Pause dev team' }));
     fireEvent.click(screen.getByRole('button', { name: 'Stop dev team' }));
     expect(useApp.getState().pauseDevTeam).toHaveBeenCalledOnce();
     expect(useApp.getState().stopDevTeam).toHaveBeenCalledOnce();
 
-    act(() => useApp.setState({ devTeam: snapshot({ phase: 'paused' }) }));
+    act(() => useApp.setState({ devTeam: snapshot({ phase: 'paused', plan: null, tasks: [] }) }));
     rerender(<DevTeamPane />);
     fireEvent.click(screen.getByRole('button', { name: 'Resume dev team' }));
     expect(useApp.getState().resumeDevTeam).toHaveBeenCalledOnce();

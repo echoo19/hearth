@@ -314,6 +314,10 @@
 .devteam-card[data-status='waiting'] { border-color: var(--warn); }
 .devteam-card[data-status='error'],
 .devteam-card[data-status='interrupted'] { border-color: var(--err); }
+/* Finished agents stay on the board, so their ring is the quiet one: on a
+   sixteen-task run most of the board ends up green, and green at full strength
+   would drown the two or three cards still doing something. */
+.devteam-card[data-status='done'] { border-color: var(--ok-soft); }
 
 .devteam-card[data-status='pending']:hover,
 .devteam-card[data-status='lead']:hover {
@@ -356,6 +360,19 @@
   border-color: var(--err);
   background: var(--err-soft);
   color: var(--err);
+}
+
+.devteam-card[data-status='done'] .devteam-card-mark {
+  border-color: var(--ok-soft);
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+/* A finished agent has nothing left to act on, so it recedes: the name stops
+   being the brightest ink on the card and the row it sits in reads as history
+   rather than as work. */
+.devteam-card[data-status='done'] .devteam-card-name {
+  color: var(--ink-mute);
 }
 
 .devteam-card-name,
@@ -424,6 +441,7 @@
 .devteam-card[data-status='waiting'] .devteam-card-status { color: var(--warn); }
 .devteam-card[data-status='error'] .devteam-card-status,
 .devteam-card[data-status='interrupted'] .devteam-card-status { color: var(--err); }
+.devteam-card[data-status='done'] .devteam-card-status { color: var(--ok); }
 
 /* How long this one has been at it. A board without a per-worker clock cannot
    tell a card that is thinking from a card that has wedged. */
