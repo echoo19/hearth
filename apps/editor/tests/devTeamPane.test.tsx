@@ -3,7 +3,14 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DevTeamPane } from '../src/components/chat/DevTeamPane';
-import { devTeamActivity, devTeamPhaseLabel, devTeamStage, pendingLaneAsk } from '../src/chat/devteam';
+import {
+  devTeamActivity,
+  devTeamPhaseLabel,
+  devTeamStage,
+  devTeamStepStates,
+  pendingLaneAsk,
+  teamNames,
+} from '../src/chat/devteam';
 import { useApp } from '../src/store';
 import type { ChatMessage, DevTeamSnapshot } from '../src/types';
 
@@ -72,9 +79,21 @@ const engineerLane: ChatMessage[] = [{
   streaming: true,
 }];
 
-const lanes = () => screen.getAllByRole('button', { name: /lane/i });
+/** A member's card, found by the task it is on: the NAME is generated, so a
+ *  test that hunted for one would be pinning the name table rather than the
+ *  board. */
+const cardOf = (assignment: string): HTMLElement =>
+  screen.getByRole('button', { name: new RegExp(`, ${assignment},`) });
 
 beforeEach(() => {
+  // jsdom implements neither showModal nor close; the Plan and Specification
+  // dialogs only need them to be open/close toggles.
+  const proto = HTMLDialogElement.prototype as unknown as Record<string, unknown>;
+  proto.showModal = function (this: HTMLDialogElement) { this.open = true; };
+  proto.close = function (this: HTMLDialogElement) {
+    this.open = false;
+    this.dispatchEvent(new Event('close'));
+  };
   useApp.setState({
     projectPath: '/work/game',
     projectName: 'game',
@@ -137,6 +156,19 @@ describe('dev team presentation helpers', () => {
     });
   });
 
+  it('gives every task a stable, unique name without asking anything but its id', () => {
+    // Headless engineers with no names read as a queue of robots rather than as
+    // people doing work. The names have to survive a reload and a reorder, and
+    // two of them must never collide inside one run.
+    const ids = ['controls', 'look', 'audio', 'hud', 'waves', 'polish'];
+    const first = teamNames(ids);
+    expect(new Set(first.values()).size).toBe(ids.length);
+    expect(teamNames(ids)).toEqual(first);
+    // Adding somebody must not rename everybody who is already on the board.
+    const later = teamNames([...ids, 'shipping']);
+    for (const id of ids) expect(later.get(id)).toBe(first.get(id));
+  });
+
   it('is a conversation until a team exists and again once it has dissolved', () => {
     // The interview and the spec are one person and one agent working something
     // out; the report is written when the engineers have all gone home. Only
@@ -157,6 +189,23 @@ describe('dev team presentation helpers', () => {
     expect(stage('interrupted', false)).toBe('conversation');
     expect(stage('interrupted')).toBe('team');
     expect(devTeamStage(null)).toBe('conversation');
+  });
+
+  it('reads the steps off the handshakes a parked run actually finished', () => {
+    const at = (over: Partial<DevTeamSnapshot>) => devTeamStepStates({
+      phase: 'interrupted', spec: '# Spec', approvals: [{ specVersion: 1, approvedAt: 'x' }], specVersion: 1, ...over,
+    } as DevTeamSnapshot);
+
+    // Planning is the stretch where a spec is approved and no plan exists yet,
+    // and it is the longest a lead turn ever runs, so it is the state most
+    // likely to be looked at. Keying on the plan sent it back to a step it had
+    // already finished.
+    expect(at({})).toEqual(['done', 'done', 'waiting', 'waiting']);
+    expect(at({ approvals: [] })).toEqual(['done', 'waiting', 'waiting', 'waiting']);
+    expect(at({ spec: null, approvals: [] })).toEqual(['waiting', 'waiting', 'waiting', 'waiting']);
+    // Nothing turns on a parked run; the one being worked spins only while it is.
+    expect(at({ phase: 'building' } as Partial<DevTeamSnapshot>)).toEqual(['done', 'done', 'active', 'waiting']);
+    expect(at({ phase: 'done' } as Partial<DevTeamSnapshot>)).toEqual(['done', 'done', 'done', 'done']);
   });
 });
 
@@ -191,32 +240,27 @@ describe('DevTeamPane', () => {
 
     expect(screen.getAllByText('I am reviewing the first pass.').length).toBeGreaterThan(0);
     expect(screen.getByRole('status', { name: 'Dev team phase' }).textContent).toBe('Interview');
-    expect(screen.queryAllByRole('button', { name: /lane/i })).toHaveLength(0);
-    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Dev team progress' })).toBeNull();
     expect(screen.getByRole('textbox', { name: 'Message the lead' })).toBeTruthy();
   });
 
-  it('becomes a lead-over-team board once the spec is approved', () => {
+  it('puts the lead above its team in the same card everyone else wears', () => {
     render(<DevTeamPane />);
 
-    // The lead is first and stays first: it is the one you talk to and the one
-    // that summons and dismisses the rest.
-    expect(lanes()[0].getAttribute('aria-label')).toMatch(/^Lead lane/);
-    expect(screen.getByRole('progressbar', { name: 'Tasks finished' }).getAttribute('aria-valuemax')).toBe('2');
-    const engineer = screen.getByRole('button', { name: /Build controls lane/i });
-    expect(engineer.getAttribute('aria-label')).toBe(
-      'Build controls lane, Gameplay builder, Needs you, Wiring movement now., 1 waiting question',
-    );
-    expect(screen.getByText('Playable loop')).toBeTruthy();
-    expect(screen.getByText(/Ask mode pauses engineers/)).toBeTruthy();
+    const lead = screen.getByRole('button', { name: /^Lead, Tech lead/ });
+    expect(lead.className).toBe(cardOf('Build controls').className);
+    // Named people with real roles, not a task with a robot beside it.
+    expect(cardOf('Build controls').getAttribute('aria-label'))
+      .toMatch(/^\w+, Gameplay builder, Build controls, Needs you, 1 waiting question$/);
+    expect(cardOf('Shape the look').getAttribute('aria-label'))
+      .toMatch(/^\w+, Visual maker, Shape the look, Working$/);
     expect(screen.getByRole('textbox', { name: 'Tell the team' }).getAttribute('placeholder')).toBe('Tell the team…');
   });
 
   it('keeps only the members still on the job, and leaves the rest in the plan', () => {
     // A sixteen-task run put sixteen cards on the board, thirteen of them
     // reading QUEUED. A queued task is not a person yet and a finished one is
-    // not a person any more; both belong in the plan, which is where a task
-    // that is not somebody you can manage lives.
+    // not a person any more; both belong in the plan.
     cleanup();
     act(() => useApp.setState({
       devTeam: snapshot({
@@ -229,12 +273,46 @@ describe('DevTeamPane', () => {
     } as never));
     render(<DevTeamPane />);
 
-    expect(screen.queryByRole('button', { name: /Build controls lane/i })).toBeNull();
-    expect(screen.getByRole('button', { name: /Shape the look lane/i })).toBeTruthy();
-    // Still accounted for: the plan carries the outcome, and the meter counts it.
-    expect(screen.getByRole('progressbar', { name: 'Tasks finished' }).getAttribute('aria-valuenow')).toBe('1');
+    expect(screen.queryByRole('button', { name: /Build controls/ })).toBeNull();
+    expect(cardOf('Shape the look')).toBeTruthy();
+    expect(screen.getByText('1 of 2 finished')).toBeTruthy();
+    // Still accounted for: the plan carries the outcome.
+    fireEvent.click(screen.getByRole('button', { name: 'Plan' }));
     const planned = screen.getAllByText('Build controls').map((node) => node.closest('li')).find(Boolean);
     expect(planned?.getAttribute('data-status')).toBe('done');
+  });
+
+  it('keeps the plan and the specification behind buttons rather than in the way', () => {
+    render(<DevTeamPane />);
+    // Neither of the loose notes that used to float above the work.
+    expect(screen.queryByText(/queued for the lead/)).toBeNull();
+    expect(screen.queryByText(/Approved specification/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Plan' }));
+    expect(screen.getByText('Playable loop')).toBeTruthy();
+    // What the task asks for is text in the row, not a hover-only title=.
+    expect(screen.getByText('Implement interaction')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Specification' }));
+    expect(screen.getByText(/Build a small, tactile world./)).toBeTruthy();
+    // Opening one closes the other rather than stacking two dialogs.
+    expect(screen.queryByText('Playable loop')).toBeNull();
+  });
+
+  it('ticks the steps behind it, spins the one being worked, numbers the rest', () => {
+    render(<DevTeamPane />);
+    const marks = screen.getAllByRole('listitem').map((item) => ({
+      name: item.textContent,
+      state: item.getAttribute('data-state'),
+      spinning: item.querySelector('.devteam-spin') !== null,
+    }));
+
+    expect(marks.map((mark) => mark.state)).toEqual(['done', 'done', 'active', 'waiting']);
+    expect(marks[2].spinning).toBe(true);
+    expect(marks[3].name).toContain('4');
+    // A parked run has nothing turning, because nothing is.
+    act(() => useApp.setState({ devTeam: snapshot({ phase: 'paused' }) }));
+    expect(document.querySelectorAll('.devteam-steps .devteam-spin')).toHaveLength(0);
   });
 
   it('says why the board is empty rather than showing an empty board', () => {
@@ -290,47 +368,40 @@ describe('DevTeamPane', () => {
     expect(screen.queryByRole('button', { name: /Pick the run back up/ })).toBeNull();
   });
 
-  it('shows one member log at a time and swaps it when another card is picked', () => {
-    // The team is headless: the board is the only place they exist, and the log
-    // is the only way to see what one of them actually did. Reading one must
-    // not bury the others, so exactly one log is open and the board stays put.
+  it('opens a member over the board, and comes back to where you left', () => {
+    // The board gives way rather than a log appearing under it. A panel below a
+    // board is a preview of a conversation; going INTO somebody is the point.
     render(<DevTeamPane />);
+    fireEvent.click(cardOf('Build controls'));
 
-    const controls = screen.getByRole('button', { name: /Build controls lane/i });
-    const look = screen.getByRole('button', { name: /Shape the look lane/i });
-    // The blocked one shows itself without being asked.
-    expect(controls.getAttribute('aria-expanded')).toBe('true');
-    expect(look.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.getAllByRole('region', { name: /log$/ })).toHaveLength(1);
+    expect(screen.getByRole('region', { name: /log$/ })).toBeTruthy();
+    expect(screen.getAllByText('Wiring movement now.').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: /^Lead, Tech lead/ })).toBeNull();
 
-    fireEvent.click(look);
-    expect(look.getAttribute('aria-expanded')).toBe('true');
-    expect(controls.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.getByRole('region', { name: 'Shape the look log' })).toBeTruthy();
-    expect(screen.getAllByRole('region', { name: /log$/ })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the team' }));
+    expect(screen.getByRole('button', { name: /^Lead, Tech lead/ })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: /log$/ })).toBeNull();
   });
 
-  it('puts the ordinary conversation back in the panel when the lead is picked', () => {
-    // "Click into the main agent and chat with it the same." The lead's log is
-    // not a summary of the run, it is the run's actual conversation.
+  it('puts the ordinary conversation in front of you when you open the lead', () => {
+    // A dev team run is an agent using subagents, so going into the lead has to
+    // be the ordinary conversation with every ordinary control working.
     render(<DevTeamPane />);
-    fireEvent.click(screen.getByRole('button', { name: /Lead lane/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Lead, Tech lead/ }));
 
     expect(screen.getByRole('region', { name: 'Lead log' }).textContent)
       .toContain('I am reviewing the first pass.');
-    expect(screen.getByRole('button', { name: /Build controls lane/i }).getAttribute('aria-expanded'))
-      .toBe('false');
+    expect(screen.getByRole('textbox', { name: 'Tell the team' })).toBeTruthy();
   });
 
-  it('falls back to the lead when the member being read finishes and leaves', () => {
+  it('falls back to the board when the member you opened finishes and leaves', () => {
     // A card can vanish mid-read: the whole point of the board is that members
-    // leave when they are done. There must never be a frame with nothing
-    // selected and no log at all.
+    // leave when they are done.
     cleanup();
     act(() => useApp.setState({ devTeamLanes: { 'engineer-controls': [], 'engineer-look': [] } } as never));
     const view = render(<DevTeamPane />);
-    fireEvent.click(screen.getByRole('button', { name: /Shape the look lane/i }));
-    expect(screen.getByRole('region', { name: 'Shape the look log' })).toBeTruthy();
+    fireEvent.click(cardOf('Shape the look'));
+    expect(screen.getByRole('region', { name: /log$/ })).toBeTruthy();
 
     act(() => useApp.setState({
       devTeam: snapshot({
@@ -342,8 +413,8 @@ describe('DevTeamPane', () => {
     }));
     view.rerender(<DevTeamPane />);
 
-    expect(screen.queryByRole('button', { name: /Shape the look lane/i })).toBeNull();
-    expect(screen.getByRole('region', { name: 'Lead log' })).toBeTruthy();
+    expect(screen.queryByRole('region', { name: /log$/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /^Lead, Tech lead/ })).toBeTruthy();
   });
 
   it('tells you a headless member has reported nothing rather than showing a blank', () => {
@@ -351,17 +422,20 @@ describe('DevTeamPane', () => {
     act(() => useApp.setState({ devTeamLanes: { 'engineer-controls': [], 'engineer-look': [] } } as never));
     render(<DevTeamPane />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Shape the look lane/i }));
+    fireEvent.click(cardOf('Shape the look'));
     expect(screen.getByText(/headless, so whatever it does shows up here/)).toBeTruthy();
   });
 
-  it('opens a blocked lane on its own and routes asks to that engineer only', () => {
+  it('marks the member that is blocked and routes its answer to that engineer', () => {
     render(<DevTeamPane />);
-    const engineer = screen.getByRole('button', { name: /Build controls lane/i });
-    expect(engineer.getAttribute('aria-expanded')).toBe('true');
-    expect(screen.getAllByText('Wiring movement now.').length).toBeGreaterThan(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Allow' }));
+    // Findable without reading a word: the count on the board and the badge on
+    // the card. Opening it is a decision the person makes, not one the board
+    // makes for them by yanking the screen away.
+    expect(screen.getByText('1 working · 1 needs you')).toBeTruthy();
+    expect(cardOf('Build controls').getAttribute('aria-label')).toContain('1 waiting question');
 
+    fireEvent.click(cardOf('Build controls'));
+    fireEvent.click(screen.getByRole('button', { name: 'Allow' }));
     expect(useApp.getState().approveEngineer).toHaveBeenCalledWith(
       'engineer-controls',
       'approval-1',
@@ -390,6 +464,7 @@ describe('DevTeamPane', () => {
       },
     }));
     render(<DevTeamPane />);
+    fireEvent.click(cardOf('Build controls'));
     fireEvent.change(screen.getByRole('textbox', { name: 'Direction' }), { target: { value: 'north' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
@@ -401,7 +476,7 @@ describe('DevTeamPane', () => {
     );
   });
 
-  it('gives keyboard shortcuts to only one engineer ask at a time', () => {
+  it('gives keyboard shortcuts only to the blocked ask you are actually looking at', () => {
     const secondAsk: ChatMessage = {
       id: 'engineer-2',
       role: 'agent',
@@ -419,8 +494,13 @@ describe('DevTeamPane', () => {
       devTeamLanes: { 'engineer-controls': engineerLane, 'engineer-look': [secondAsk] },
     }));
     render(<DevTeamPane />);
+    // A shortcut that answers a question offscreen is worse than no shortcut,
+    // so the board itself owns none of them.
     fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(useApp.getState().approveEngineer).not.toHaveBeenCalled();
 
+    fireEvent.click(cardOf('Build controls'));
+    fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(useApp.getState().approveEngineer).toHaveBeenCalledTimes(1);
     expect(useApp.getState().approveEngineer).toHaveBeenCalledWith(
       'engineer-controls',
@@ -441,21 +521,6 @@ describe('DevTeamPane', () => {
     rerender(<DevTeamPane />);
     fireEvent.click(screen.getByRole('button', { name: 'Resume dev team' }));
     expect(useApp.getState().resumeDevTeam).toHaveBeenCalledOnce();
-  });
-
-  it('opens the lead lane when review begins without moving keyboard focus', () => {
-    cleanup();
-    act(() => useApp.setState({ devTeamLanes: { 'engineer-controls': [], 'engineer-look': [] } } as never));
-    render(<DevTeamPane />);
-    const composer = screen.getByRole('textbox', { name: 'Tell the team' });
-    composer.focus();
-    fireEvent.click(screen.getByRole('button', { name: /Build controls lane/i }));
-    expect(screen.getByRole('button', { name: /Lead lane/i }).getAttribute('aria-expanded')).toBe('false');
-
-    act(() => useApp.setState({ devTeam: snapshot({ phase: 'reviewing' }) }));
-
-    expect(screen.getByRole('button', { name: /Lead lane/i }).getAttribute('aria-expanded')).toBe('true');
-    expect(document.activeElement).toBe(composer);
   });
 
   it('explains that active team steering is text-only, only when a file is offered', () => {
@@ -481,16 +546,6 @@ describe('DevTeamPane', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Approve & build' }));
     expect(useApp.getState().approveDevTeamSpec).toHaveBeenCalledOnce();
     expect(screen.getByRole('textbox', { name: 'Message the lead' }).getAttribute('placeholder')).toBe('Describe a revision…');
-  });
-
-  it('settles an approved spec to a one-line record that can still be read', () => {
-    act(() => useApp.setState({ devTeam: snapshot({ phase: 'planning' }) }));
-    render(<DevTeamPane />);
-    const record = screen.getByText('Approved specification v1').closest('details');
-    expect(record).not.toBeNull();
-    expect(record?.hasAttribute('open')).toBe(false);
-    expect(record?.textContent).toContain('Build a small, tactile world.');
-    expect(screen.queryByRole('region', { name: 'Specification' })).toBeNull();
   });
 
   it('keeps a completed run reopenable after a later run starts', () => {
@@ -530,7 +585,7 @@ describe('DevTeamPane', () => {
 
     // The team has dissolved: there is no board left, only the conversation and
     // the report, with the plan under it carrying what each task came to.
-    expect(screen.queryAllByRole('button', { name: /lane/i })).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /^Lead, Tech lead/ })).toBeNull();
     expect(screen.getAllByText('I am reviewing the first pass.').length).toBeGreaterThan(0);
     const record = screen.getByText(/Run complete/).closest('details');
     expect(record?.hasAttribute('open')).toBe(true);
@@ -540,7 +595,7 @@ describe('DevTeamPane', () => {
     expect(screen.getByRole('textbox', { name: 'Message the lead' })).toBeTruthy();
   });
 
-  it('names lanes by the task so two people in one role stay apart', () => {
+  it('gives two people in one role different names', () => {
     act(() => useApp.setState({
       devTeam: snapshot({
         plan: {
@@ -558,13 +613,10 @@ describe('DevTeamPane', () => {
     }));
     render(<DevTeamPane />);
 
-    const labels = lanes().map((lane) => lane.getAttribute('aria-label'));
-    // "Working, Working" until the lane stopped reporting its own status as if
-    // it were an observation. A lane with no prose to show falls back to its
-    // status for the tail, and that is the word the activity column is already
-    // showing, so the fallback said nothing twice.
-    expect(labels).toContain('Build controls lane, Gameplay builder, Working');
-    expect(labels).toContain('Tune the camera lane, Gameplay builder, Working');
+    const first = cardOf('Build controls').getAttribute('aria-label')!.split(',')[0];
+    const second = cardOf('Tune the camera').getAttribute('aria-label')!.split(',')[0];
+    expect(first).not.toBe(second);
+    expect(cardOf('Tune the camera').getAttribute('aria-label')).toContain('Gameplay builder');
   });
 
   it('does not report the person\'s own steering note as the lead\'s activity', () => {
@@ -579,52 +631,19 @@ describe('DevTeamPane', () => {
     }));
     render(<DevTeamPane />);
 
-    const lead = screen.getByRole('button', { name: /Lead lane/i });
-    expect(lead.getAttribute('aria-label')).toBe('Lead lane, Plan and review, Supervising');
+    expect(screen.getByRole('button', { name: /^Lead, Tech lead/ }).getAttribute('aria-label'))
+      .toBe('Lead, Tech lead, Plans the work and reviews it, Supervising');
   });
 
-  it('says the lead is supervising the build rather than available', () => {
-    act(() => useApp.setState({ messages: [] }));
+  it('names what the lead is doing rather than saying Supervising for three hours', () => {
+    act(() => useApp.setState({ messages: [], devTeam: snapshot({ phase: 'reviewing' }) }));
     render(<DevTeamPane />);
-    expect(screen.getByRole('button', { name: /Lead lane/i }).getAttribute('aria-label')).toContain('Supervising');
+    expect(screen.getByRole('button', { name: /^Lead, Tech lead/ }).getAttribute('aria-label'))
+      .toContain('Reviewing');
 
-    act(() => useApp.setState({
-      messages: [{ ...leadMessage, streaming: true }],
-      devTeam: snapshot({ phase: 'reviewing' }),
-    }));
-    expect(screen.getByRole('button', { name: /Lead lane/i }).getAttribute('aria-label')).toContain('Working');
-  });
-
-  it('tells the person a queued steering note was received', () => {
-    act(() => useApp.setState({
-      devTeam: snapshot({ steering: [{ ts: '2026-08-01T00:00:00.000Z', text: 'Heavier jump.' }] }),
-    }));
-    const view = render(<DevTeamPane />);
-    expect(screen.getByText('One note is queued for the lead. It is folded in at the next review.')).toBeTruthy();
-
-    act(() => useApp.setState({
-      devTeam: snapshot({
-        steering: [
-          { ts: '2026-08-01T00:00:00.000Z', text: 'Heavier jump.' },
-          { ts: '2026-08-01T00:01:00.000Z', text: 'Slower fall.' },
-        ],
-      }),
-    }));
-    view.rerender(<DevTeamPane />);
-    expect(screen.getByText('2 notes are queued for the lead. They are folded in at the next review.')).toBeTruthy();
-  });
-
-  it('keeps the whole plan reachable behind one fold', () => {
-    render(<DevTeamPane />);
-    const fold = screen.getByText('Plan').closest('details');
-    expect(fold?.hasAttribute('open')).toBe(false);
-    expect(screen.getByText('A first complete pass')).toBeTruthy();
-    // What the task asks for is text in the row, not a native title=. As a
-    // tooltip it was hover-only: unreachable from the keyboard, absent on
-    // touch, and it is the only place the plan explains a one-line title.
-    expect(screen.getByText('Implement interaction')).toBeTruthy();
-    const item = screen.getAllByText('Build controls').map((node) => node.closest('li')).find(Boolean);
-    expect(item?.hasAttribute('title')).toBe(false);
+    act(() => useApp.setState({ messages: [{ ...leadMessage, streaming: true }] }));
+    expect(screen.getByRole('button', { name: /^Lead, Tech lead/ }).getAttribute('aria-label'))
+      .toContain('Working');
   });
 
   it('collapses Hearth-authored orchestration instead of dressing it as the user', () => {

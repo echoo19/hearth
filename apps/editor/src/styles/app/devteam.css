@@ -6,50 +6,52 @@
 
      conversation — the interview, the specification and the closing report.
                     One person, one agent, a chat and a single quiet run strip.
-     team         — everything between. The lead on top, the engineers it has
-                    summoned indented under it, and the log of whichever one is
-                    selected below them both.
+     team         — everything between. The lead centred above the engineers it
+                    has summoned, the run's own column down the right, and any
+                    one of them opening to fill the screen.
 
-   There is no permanent chrome column. The four-step rail that used to hold one
-   was describing a pipeline over the top of whichever step you were in. */
+   The team screen is a fancy way of showing an agent using subagents, so
+   opening the lead has to land you in the ORDINARY conversation with every
+   ordinary control working. That is why a member opens OVER the board rather
+   than into a panel beneath it: a panel below a board is a preview of a
+   conversation, not one. */
 
 .conversation-layer.is-devteam {
   grid-template-rows: minmax(0, 1fr);
 }
 
-/* The head and the composer are the frame around the column; both used to
-   centre themselves on the conversation's measure while the board sat
-   left-aligned on a wider one, so the box you type into started 274px inboard
-   of every card you were reading. Three left edges on a screen that is one
-   column. */
 .chat-column[data-mode='devteam'] {
   /* One measure for the whole mode, declared where the head can see it too:
      the head and the composer sit outside .devteam-pane. */
   --devteam-measure: 62rem;
+  --devteam-rail-w: 13rem;
 }
 
+/* The head and the composer are the frame around the column; both used to
+   centre themselves on the conversation's measure while the board sat
+   left-aligned on a wider one, so the box you type into started 274px inboard
+   of every card you were reading. */
 .chat-column[data-mode='devteam'] .conversation-head {
   width: 100%;
-  max-width: calc(var(--devteam-measure) + var(--chat-gutter) * 2);
+  max-width: calc(var(--devteam-measure) + var(--devteam-rail-w) + var(--chat-gutter) * 2);
   margin: 0;
-}
-
-.devteam-pane .composer-card {
-  max-width: var(--devteam-measure);
-  margin-left: 0;
-  margin-right: 0;
 }
 
 .devteam-pane[data-stage='conversation'] .composer-card {
   max-width: var(--chat-measure);
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.devteam-pane[data-stage='team'] .composer-card {
+  max-width: calc(var(--devteam-measure) + var(--devteam-rail-w));
+  margin-left: 0;
+  margin-right: 0;
 }
 
 .devteam-pane {
-  /* One measure for everything in the column (declared on the chat column
-     above, so the head and composer share it). The blocks in it used to centre
-     themselves independently, which is four left edges and is why the pane read
-     as unaligned: it WAS unaligned, and no single rule was wrong. */
   --devteam-measure: 62rem;
+  --devteam-rail-w: 13rem;
 
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -57,6 +59,8 @@
   min-width: 0;
   min-height: 0;
 }
+
+/* --- The conversation shape ----------------------------------------------- */
 
 .devteam-main {
   display: flex;
@@ -67,8 +71,7 @@
   padding: 18px var(--chat-gutter) 24px;
   overflow-y: auto;
   /* Scroll anchoring keeps the reading position when content above changes,
-     which is right for a transcript and wrong for a board: a streaming log at
-     the bottom dragged the lead panel off the top of the screen. */
+     which is right for a transcript and wrong for a console. */
   overflow-anchor: none;
 }
 
@@ -76,17 +79,9 @@
    right one. This single rule is what the alignment complaint was about. */
 .devteam-main > * {
   width: 100%;
-  max-width: var(--devteam-measure);
+  max-width: var(--chat-measure);
   margin-left: 0;
   margin-right: 0;
-}
-
-/* While the run is still a conversation there is no board to be as wide as, so
-   the whole column takes the transcript's measure. Without this the run strip
-   and the notices ran sixteen rems past the right edge of the conversation they
-   were heading, and the Stop button ended up floating in open space. */
-.devteam-pane[data-stage='conversation'] .devteam-main > * {
-  max-width: var(--chat-measure);
 }
 
 .devteam-main > .chat-scroll,
@@ -101,8 +96,6 @@
   flex-direction: column;
   gap: 20px;
   width: 100%;
-  /* Reading measure, capped by the column's own measure above. Not centred:
-     the working column has one left edge and this is on it. */
   max-width: var(--chat-measure);
 }
 
@@ -110,8 +103,6 @@
   max-width: none;
   padding-bottom: 0;
 }
-
-/* --- The run strip, over a conversation ----------------------------------- */
 
 /* The interview and the specification are a chat and nothing more. All the
    console has to add is one line saying the lead is on it, how long it has
@@ -146,7 +137,7 @@
   flex: none;
   border-radius: 50%;
   background: currentColor;
-  animation: devteam-pulse 2.4s var(--ease-in-out, ease-in-out) infinite;
+  animation: devteam-pulse 2.4s ease-in-out infinite;
 }
 
 .devteam-strip-state[data-parked] .devteam-strip-pulse {
@@ -161,6 +152,8 @@
 }
 
 .devteam-strip .devteam-controls {
+  flex-direction: row;
+  margin-top: 0;
   margin-left: auto;
 }
 
@@ -169,208 +162,73 @@
   50% { opacity: 0.35; }
 }
 
-/* --- The board ------------------------------------------------------------ */
+/* --- The team shape -------------------------------------------------------- */
+
+.devteam-team {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--devteam-rail-w);
+  min-width: 0;
+  min-height: 0;
+}
+
+.devteam-stage {
+  min-width: 0;
+  min-height: 0;
+}
+
+.devteam-stage[data-view='board'] {
+  padding: 20px var(--chat-gutter) 24px;
+  overflow-y: auto;
+  overflow-anchor: none;
+}
+
+/* An opened member owns the region: its own head, and a body that scrolls
+   inside itself so the head stays put. */
+.devteam-stage[data-view='member'] {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
 
 .devteam-board {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 20px;
   width: 100%;
+  max-width: var(--devteam-measure);
 }
 
-/* The lead is not one card among the others and must not look like one. It is
-   the agent you actually talk to, the one that hires and dismisses the rest,
-   and the only one still here from the interview. It gets the lit surface, the
-   whole width, and the controls that govern the run. */
-.devteam-lead {
-  overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  background: var(--bg-2);
-  box-shadow: var(--shadow-1);
-  transition: border-color var(--t-fast) var(--ease-out);
-}
-
-/* Same rule as the cards: the fill says you are reading it. The lead is
-   already the widest, brightest, most elevated thing on the board and does not
-   need a ring to be found. */
-.devteam-lead[data-selected] {
-  border-color: var(--border-strong);
-}
-
-.devteam-lead-main {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  padding: 14px 16px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--t-fast) var(--ease-out);
-}
-
-.devteam-lead-main:hover {
-  background: var(--bg-3);
-}
-
-.devteam-lead[data-selected] .devteam-lead-main {
-  background: var(--accent-faint);
-}
-
-.devteam-lead-main:has(.devteam-ask-badge) {
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
-}
-
-.devteam-lead-mark {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  flex: none;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: var(--bg-0);
-  color: var(--ink-mute);
-}
-
-.devteam-lead[data-live] .devteam-lead-mark {
-  border-color: var(--accent-soft);
-  background: var(--accent-soft);
-  color: var(--accent);
-  animation: devteam-pulse 2.4s var(--ease-in-out, ease-in-out) infinite;
-}
-
-.devteam-lead-who {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.devteam-lead-who strong {
-  color: var(--ink);
-  font-size: var(--text-md);
-  font-weight: var(--fw-strong);
-  letter-spacing: var(--track-snug);
-}
-
-.devteam-lead-who span {
-  overflow: hidden;
-  color: var(--ink-faint);
-  font-size: var(--text-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.devteam-lead-state {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex: none;
-}
-
-.devteam-lead .devteam-lane-activity {
-  color: var(--ink-mute);
-}
-
-.devteam-lead[data-live] .devteam-lane-activity {
-  color: var(--accent);
-}
-
-.devteam-lead-clock {
-  color: var(--ink-faint);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  font-variant-numeric: tabular-nums;
-}
-
-/* The two facts that belong to the run rather than to any one member: how much
-   of the plan is finished, and what governs it. Outside the button, because a
-   button inside a button is not a thing a browser will render. */
-.devteam-lead-foot {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px 16px;
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-1);
-}
-
-.devteam-progress {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  flex: 1 1 12rem;
-}
-
-.devteam-progress-track {
-  position: relative;
-  min-width: 0;
-  height: 4px;
-  flex: 1 1 auto;
-  overflow: hidden;
-  border-radius: 999px;
-  background: var(--bg-3);
-}
-
-.devteam-progress-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--ok);
-  transition: width var(--t-slow) var(--ease-out);
-}
-
-.devteam-progress-text {
-  flex: none;
-  color: var(--ink-faint);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Governing the run. A trailing cluster, never a full-width stack: at the foot
-   of the lead panel these are two decisions about the run, not a toolbar. */
-.devteam-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-left: auto;
-}
-
-/* The crew, indented under the lead it belongs to and joined to it by a guide
-   line. Two sibling sections of equal weight said the engineers were a peer of
-   the lead; they are not, they exist because it summoned them. */
-.devteam-crew {
+/* The lead sits above its team, centred, in the same card everyone else wears.
+   It used to be a wide elevated banner with the run's controls in its foot,
+   which made it a different KIND of thing from the people under it. */
+.devteam-lead-slot {
   position: relative;
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding-left: 24px;
+  justify-content: center;
+  padding-bottom: 20px;
 }
 
-.devteam-crew::before {
+/* The line down to the team. It is what makes a centred card above a grid read
+   as "these came from that" rather than as two unrelated blocks. */
+.devteam-lead-slot::after {
   content: '';
   position: absolute;
-  left: 0;
-  top: -12px;
-  bottom: 6px;
+  left: 50%;
+  bottom: 0;
   width: 1px;
+  height: 20px;
   background: var(--border);
 }
 
-/* The name of a region of the console. Quiet on purpose: it labels the thing
-   under it and must never compete with it. */
-/* A region label, a live status, a disclosure and a phase were all 10px / 620
-   / 0.075em caps, so only colour separated a heading from a state. The labels
-   drop a weight; the status words keep it and keep their colour. */
+.devteam-crew {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* The name of a region. Quiet on purpose: it labels the thing under it and
+   must never compete with it, so it drops a weight from the status words. */
 .devteam-section {
   display: flex;
   align-items: center;
@@ -383,8 +241,6 @@
   text-transform: uppercase;
 }
 
-/* How many are on the job right now. In the mono face and without the caps
-   tracking, so it reads as a count rather than as part of the heading. */
 .devteam-section-count {
   margin-left: auto;
   color: var(--ink-faint);
@@ -396,26 +252,33 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* A grid of members, not a stack of rows. They are headless: this grid is the
-   only place their existence is visible, so it has to be scannable at a glance
-   and stay put when one of them is opened. */
 .devteam-lanes {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
   gap: 10px;
   min-width: 0;
 }
 
+/* --- The card ------------------------------------------------------------- */
+
+/* Square, and the same square for everyone including the lead. A board of them
+   is scanned rather than read, and a fixed shape means the eye learns one
+   layout once and afterwards only reads what changed.
+
+   EVERY line clips. The card used to carry the last thing its engineer said,
+   in mono, and at 15rem that line escaped the card and ran clear across the
+   board and out the other side. A card is a summary; the transcript is one
+   press away. */
 .devteam-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 3px;
+  aspect-ratio: 1;
   min-width: 0;
-  /* Room for the tail line whether or not there is one to show, so a card does
-     not change height the moment its engineer says something. */
-  min-height: 6.5rem;
-  padding: 12px 14px;
+  padding: 14px;
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-1);
@@ -423,8 +286,8 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
-  /* An engineer appearing on the board is a real event — the lead has just
-     brought someone on — so the card arrives rather than blinking into place. */
+  /* An engineer appearing on the board is a real event: the lead has just
+     brought somebody on, so the card arrives rather than blinking into place. */
   animation: devteam-card-in var(--t-slow) var(--ease-out) both;
   transition:
     background var(--t-fast) var(--ease-out),
@@ -436,109 +299,135 @@
   to { opacity: 1; transform: none; }
 }
 
+.devteam-lead-slot .devteam-card {
+  width: 12rem;
+  flex: none;
+}
+
 .devteam-card:hover {
   background: var(--bg-2);
 }
 
+/* The ring is the state. A failed engineer used to measure byte-identical to a
+   working one, so the board could not be read without reading every word. */
+.devteam-card[data-status='running'] { border-color: var(--accent-soft); }
+.devteam-card[data-status='waiting'] { border-color: var(--warn); }
+.devteam-card[data-status='error'],
+.devteam-card[data-status='interrupted'] { border-color: var(--err); }
+
 .devteam-card[data-status='pending']:hover,
-.devteam-card[data-status='done']:hover {
+.devteam-card[data-status='lead']:hover {
   border-color: var(--border-strong);
 }
 
-/* The board speaks two things at once and they must not share a channel:
-   THE RING IS THE STATE, THE FILL IS THE SELECTION. Both used to be a warm
-   1px border, so "this one needs an answer" and "this is the one you are
-   reading" were the same signal, and a failed engineer had no ring at all —
-   measured byte-identical to a working one. */
-.devteam-card[data-status='waiting'] {
-  border-color: var(--warn);
-}
-
-.devteam-card[data-status='error'],
-.devteam-card[data-status='interrupted'] {
-  border-color: var(--err);
-}
-
-.devteam-card[data-status='running'] {
-  border-color: var(--accent-soft);
-}
-
-/* The one being read. A fill and nothing else, so the grid still reads as a
-   grid and the selected card never out-shouts a card that is blocked. */
-.devteam-card[aria-expanded='true'] {
-  background: var(--accent-faint);
-}
-
-.devteam-card-head {
+/* A tile rather than a dot: it has to hold a glyph or a spinner, and a bounded
+   tile is what lines a grid of them up. */
+.devteam-card-mark {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  margin-bottom: 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--ink-faint);
 }
 
-.devteam-card-who {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
+.devteam-card[data-status='lead'] .devteam-card-mark {
+  color: var(--ink-mute);
 }
 
-.devteam-card-who strong {
+.devteam-card[data-status='running'] .devteam-card-mark {
+  border-color: var(--accent-soft);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.devteam-card[data-status='waiting'] .devteam-card-mark {
+  border-color: var(--warn);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.devteam-card[data-status='error'] .devteam-card-mark,
+.devteam-card[data-status='interrupted'] .devteam-card-mark {
+  border-color: var(--err);
+  background: var(--err-soft);
+  color: var(--err);
+}
+
+.devteam-card-name,
+.devteam-card-role,
+.devteam-card-task {
+  max-width: 100%;
+  min-width: 0;
   overflow: hidden;
+}
+
+.devteam-card-name {
   color: var(--ink);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   font-weight: var(--fw-strong);
   letter-spacing: var(--track-snug);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Who they are, one step brighter than what they last did. The two were the
-   same size, weight and colour, differing only in font-family, which is not a
-   difference anybody reads. */
-.devteam-card-who span {
-  overflow: hidden;
+/* The role is the real fact on the card: the name is a handle, this is the job.
+   It gets the brighter of the two secondary inks for that reason. */
+.devteam-card-role {
   color: var(--ink-mute);
   font-size: var(--text-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.devteam-card-foot {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  min-width: 0;
+/* What they are on. Two lines and then it stops. */
+.devteam-card-task {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  margin-top: 6px;
+  color: var(--ink-faint);
+  font-size: var(--text-2xs);
+  line-height: 1.4;
 }
 
-/* The last thing observed. Clipped to one line: the card is a summary, and the
-   whole of it is one press away. */
-.devteam-lane-tail {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink-faint);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.devteam-card-state {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin-top: auto;
+  padding-top: 8px;
 }
 
 /* How far along, as a status word rather than a caption. Tracked caps read as
    a state at a glance, and the colour lets the grid be read without names. */
-.devteam-lane-activity {
-  flex: none;
+.devteam-card-status {
+  min-width: 0;
+  overflow: hidden;
   color: var(--ink-mute);
   font-size: var(--text-3xs);
   font-weight: var(--fw-strong);
   letter-spacing: var(--track-caps);
   text-transform: uppercase;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.devteam-card[data-status='running'] .devteam-card-status { color: var(--accent); }
+.devteam-card[data-status='waiting'] .devteam-card-status { color: var(--warn); }
+.devteam-card[data-status='error'] .devteam-card-status,
+.devteam-card[data-status='interrupted'] .devteam-card-status { color: var(--err); }
+
 /* How long this one has been at it. A board without a per-worker clock cannot
    tell a card that is thinking from a card that has wedged. */
-.devteam-lane-clock {
-  margin-left: auto;
+.devteam-card-clock {
   flex: none;
   color: var(--ink-faint);
   font-family: var(--font-mono);
@@ -546,74 +435,15 @@
   font-variant-numeric: tabular-nums;
 }
 
-.devteam-card[data-status='running'] .devteam-lane-activity {
-  color: var(--accent);
-}
-
-.devteam-card[data-status='waiting'] .devteam-lane-activity {
-  color: var(--warn);
-}
-
-.devteam-card[data-status='error'] .devteam-lane-activity,
-.devteam-card[data-status='interrupted'] .devteam-lane-activity {
-  color: var(--err);
-}
-
-.devteam-card[data-status='done'] .devteam-lane-activity {
-  color: var(--ok);
-}
-
-/* A tile rather than a dot: it has to hold a glyph, and a bounded tile is what
-   lines a grid of them up. The tint is the status, so the mark answers "who"
-   and "how is it going" at once. */
-.devteam-lane-mark {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  flex: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-2);
-  color: var(--ink-faint);
-}
-
-.devteam-card[data-status='running'] .devteam-lane-mark {
-  border-color: var(--accent-soft);
-  background: var(--accent-soft);
-  color: var(--accent);
-  animation: devteam-pulse 2.4s var(--ease-in-out, ease-in-out) infinite;
-}
-
-.devteam-card[data-status='done'] .devteam-lane-mark {
-  border-color: var(--ok-soft);
-  background: var(--ok-soft);
-  color: var(--ok);
-}
-
-.devteam-card[data-status='waiting'] .devteam-lane-mark {
-  border-color: var(--warn-soft);
-  background: var(--warn-soft);
-  color: var(--warn);
-}
-
-/* A solid err border rather than the 14%-alpha tint: measured against the
-   running tile, err-soft and accent-soft differ by 17 degrees of hue and 0.016
-   of lightness, which in a 26px tile is no difference at all. */
-.devteam-card[data-status='error'] .devteam-lane-mark,
-.devteam-card[data-status='interrupted'] .devteam-lane-mark {
-  border-color: var(--err);
-  background: var(--err-soft);
-  color: var(--err);
-}
-
 .devteam-ask-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: var(--ctl-h-xs);
   height: var(--ctl-h-xs);
-  flex: none;
   border-radius: var(--radius-sm);
   background: var(--warn-soft);
   color: var(--warn);
@@ -621,91 +451,287 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* A working state, not a caption. It was one grey sentence floating at the top
-   of an empty column, which is what made a run that had stopped and a run that
-   was thinking look identical. */
+/* The one looping animation this screen is allowed: a wait of unknown length
+   with no other way to say "still going". Linear, because a spinner that eases
+   is pretending to be somewhere it is not. */
+.devteam-spin {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: devteam-spin 700ms linear infinite;
+}
+
+.devteam-step-mark .devteam-spin {
+  width: 11px;
+  height: 11px;
+}
+
+@keyframes devteam-spin {
+  to { transform: rotate(360deg); }
+}
+
 .devteam-board-note {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   margin: 0;
-  padding: 14px 16px;
+  padding: 16px;
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
   color: var(--ink-mute);
   font-size: var(--text-sm);
 }
 
-.devteam-board-note-flame {
-  display: grid;
-  place-items: center;
-  flex: none;
-  color: var(--accent);
+/* --- The run's own column ------------------------------------------------- */
+
+.devteam-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-width: 0;
+  padding: 20px 14px 18px;
+  border-left: 1px solid var(--border);
+  /* A shade back from the work. The rail is chrome about the run; the board is
+     the lit surface. */
+  background: var(--bg-0);
+  overflow-y: auto;
 }
 
-.devteam-board-note-clock {
-  margin-left: auto;
+.devteam-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.devteam-steps li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+/* The thread between the marks, which is what makes four rows read as one
+   sequence rather than four unrelated rows. */
+.devteam-steps li + li::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: -7px;
+  width: 1px;
+  height: 12px;
+  background: var(--border);
+}
+
+.devteam-step-mark {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
   flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
   color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-size: var(--text-2xs);
+  font-size: var(--text-3xs);
+  font-weight: var(--fw-medium);
   font-variant-numeric: tabular-nums;
 }
 
-/* --- The plan, folded away ------------------------------------------------ */
-
-/* A task is not a person. Queued and finished work belongs here, where it can
-   be looked up, rather than on the board as sixteen cards of nobody. */
-.devteam-plan-fold {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-1);
-}
-
-.devteam-plan-fold > summary {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: var(--ctl-h);
-  padding: 0 14px;
+.devteam-step-name {
+  overflow: hidden;
   color: var(--ink-faint);
-  font-size: var(--text-3xs);
+  font-size: var(--text-sm);
   font-weight: var(--fw-medium);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: color var(--t-fast) var(--ease-out);
+  letter-spacing: var(--track-snug);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.devteam-plan-fold > summary::-webkit-details-marker { display: none; }
-.devteam-plan-fold > summary::marker { content: ''; }
+.devteam-steps li[data-state='done'] .devteam-step-mark {
+  border-color: transparent;
+  background: var(--ok);
+  /* Dark ink on the tick, not white: --ok is a light green and white on it
+     measures under 2:1. */
+  color: oklch(0.16 0.03 150);
+}
 
-.devteam-plan-fold > summary:hover {
+.devteam-steps li[data-state='done'] .devteam-step-name {
   color: var(--ink-mute);
 }
 
-.devteam-plan-fold > summary > span {
-  margin-left: auto;
+.devteam-steps li[data-state='active'] {
+  background: var(--accent-faint);
+}
+
+.devteam-steps li[data-state='active'] .devteam-step-mark {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.devteam-steps li[data-state='active'] .devteam-step-name {
+  color: var(--ink);
+  font-weight: var(--fw-strong);
+}
+
+/* The two documents the run is built on. Buttons, not folds: they are things
+   you go and read, and neither belongs in the column of work. */
+.devteam-rail-docs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.devteam-rail-docs .btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.devteam-rail-count {
+  margin: 4px 0 0;
+  color: var(--ink-faint);
   font-family: var(--font-mono);
-  font-weight: var(--fw-regular);
   font-size: var(--text-2xs);
-  letter-spacing: var(--track-normal);
-  text-transform: none;
   font-variant-numeric: tabular-nums;
+}
+
+/* Governing the run, at the foot of the column that describes it. */
+.devteam-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.devteam-rail .devteam-controls .btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+/* --- An opened member ----------------------------------------------------- */
+
+.devteam-view {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.devteam-view-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px var(--chat-gutter);
+  border-bottom: 1px solid var(--border);
+}
+
+.devteam-view-who {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.devteam-view-who strong {
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-snug);
+}
+
+.devteam-view-who span {
+  overflow: hidden;
+  color: var(--ink-faint);
+  font-size: var(--text-2xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.devteam-view-state {
+  margin-left: auto;
+  flex: none;
+  color: var(--ink-mute);
+  font-size: var(--text-3xs);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+}
+
+.devteam-view-state[data-status='running'] { color: var(--accent); }
+.devteam-view-state[data-status='waiting'] { color: var(--warn); }
+.devteam-view-state[data-status='error'],
+.devteam-view-state[data-status='interrupted'] { color: var(--err); }
+
+.devteam-view-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.devteam-view-body > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.devteam-lane-scroll {
+  padding: 18px var(--chat-gutter);
+  overflow-y: auto;
+}
+
+/* The transcript starts where the head above it starts. Left to centre itself
+   on its own measure inside a region this wide it landed 113px inboard of the
+   name of the person whose transcript it is, which is the same fourth-axis
+   problem the board was rebuilt to get rid of. */
+.devteam-view-body .chat-turns {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.devteam-lane-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: var(--chat-measure);
+}
+
+.devteam-lane-turns .msg-text,
+.devteam-lane-turns .md {
+  font-size: var(--text-sm);
+}
+
+.devteam-lane-empty {
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+}
+
+/* --- The two documents, in a dialog --------------------------------------- */
+
+.devteam-doc {
+  max-height: min(60vh, 32rem);
+  padding: 4px 18px 18px;
+  overflow-y: auto;
+}
+
+.devteam-doc > .md {
+  max-width: 72ch;
 }
 
 .devteam-milestones {
   min-width: 0;
-  padding: 4px 14px 16px;
-  border-top: 1px solid var(--border);
-}
-
-.devteam-milestone {
-  padding-top: 14px;
 }
 
 .devteam-milestone + .devteam-milestone {
-  margin-top: 4px;
+  margin-top: 18px;
+  padding-top: 18px;
   border-top: 1px solid var(--guide);
 }
 
@@ -735,7 +761,7 @@
 .devteam-milestone ul {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -765,8 +791,7 @@
 .devteam-milestone li[data-status='interrupted'] > :last-child { color: var(--err); }
 
 /* What the task actually asks for. It existed only as a native title= on the
-   row, so it was hover-only, invisible to the keyboard and absent on touch,
-   and it is the only place the plan says what a one-line title means. */
+   row, so it was hover-only, invisible to the keyboard and absent on touch. */
 .devteam-task-title {
   display: flex;
   min-width: 0;
@@ -780,9 +805,6 @@
   text-wrap: pretty;
 }
 
-/* Sized to the glyph it may hold. When it holds none it collapses back to a
-   dot via the ::before, so a pending task still reads as a bullet rather than
-   as an empty box. */
 .devteam-task-mark {
   display: grid;
   place-items: center;
@@ -800,118 +822,21 @@
   border-radius: 50%;
 }
 
-/* The status colours the glyph, and the dot fallback when there is no glyph,
-   so both forms of the mark answer to the same four states. */
-.devteam-milestone li[data-status='running'] .devteam-task-mark {
-  color: var(--accent);
-}
+.devteam-milestone li[data-status='running'] .devteam-task-mark { color: var(--accent); }
 
 .devteam-milestone li[data-status='running'] .devteam-task-mark:empty::before {
   border-color: var(--accent);
   background: var(--accent);
 }
 
-.devteam-milestone li[data-status='done'] .devteam-task-mark {
-  color: var(--ok);
-}
+.devteam-milestone li[data-status='done'] .devteam-task-mark { color: var(--ok); }
 
 .devteam-milestone li[data-status='error'] .devteam-task-mark,
-.devteam-milestone li[data-status='interrupted'] .devteam-task-mark {
-  color: var(--err);
-}
+.devteam-milestone li[data-status='interrupted'] .devteam-task-mark { color: var(--err); }
 
-.devteam-milestone li[data-status='waiting'] .devteam-task-mark {
-  color: var(--warn);
-}
+.devteam-milestone li[data-status='waiting'] .devteam-task-mark { color: var(--warn); }
 
-/* --- The log of the one being read --------------------------------------- */
-
-.devteam-log {
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--bg-1);
-}
-
-.devteam-log-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.devteam-log-head h3 {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink);
-  font-size: var(--text-sm);
-  font-weight: var(--fw-strong);
-  letter-spacing: var(--track-snug);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Which of the team you are reading, in the same quiet register the cards use
-   for the same fact. */
-.devteam-log-sub {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ink-faint);
-  font-size: var(--text-2xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.devteam-log-body {
-  min-width: 0;
-  padding: 16px;
-}
-
-/* The log scrolls inside itself. Left to grow, a 2,700px transcript inflated
-   the whole column and pushed the lead, the crew and the plan off the top of
-   the screen: opening the chat landed you 1,733px BELOW the board you came to
-   look at, and the transcript's own scroll-to-newest quietly became a no-op
-   because the element it scrolls had nothing to scroll. */
-.devteam-log-body > .chat-scroll {
-  min-height: 0;
-  max-height: min(58vh, 38rem);
-  padding: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-/* The panel is as wide as the board above it; the prose inside it is not. A
-   transcript set to the full 62rem is a wall, and the reading measure is the
-   one thing the ordinary conversation gets right that a console can lose.
-   The margins are reset as well as the width: the inherited `margin: 0 auto`
-   re-centred the transcript on a fourth axis, 111px inboard of the panel
-   header naming it. */
-.devteam-log-body .chat-turns {
-  max-width: var(--chat-measure);
-  margin-left: 0;
-  margin-right: 0;
-  padding: 0;
-}
-
-.devteam-lane-turns {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.devteam-lane-turns .msg-text,
-.devteam-lane-turns .md {
-  font-size: var(--text-sm);
-}
-
-.devteam-lane-empty {
-  margin: 0;
-  color: var(--ink-mute);
-  font-size: var(--text-sm);
-}
-
-/* --- The specification ---------------------------------------------------- */
+/* --- The specification, while it is being decided ------------------------- */
 
 .devteam-spec {
   overflow: hidden;
@@ -944,38 +869,6 @@
 .devteam-spec-actions {
   justify-content: flex-start;
   border-top: 1px solid var(--border);
-}
-
-/* The approved spec is the run's brief. It settles to one quiet line, but it
-   stays readable — the same fold the transcript uses for orchestration. */
-.devteam-spec-record {
-  color: var(--ink-faint);
-  font-size: var(--text-xs);
-}
-
-.devteam-spec-record > summary {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: var(--ctl-h-xs);
-  cursor: pointer;
-  transition: color var(--t-fast) var(--ease-out);
-}
-
-/* The default marker sits outside the flex row and knocks the icon out of
-   alignment; the icon IS the affordance here, so the marker goes. */
-.devteam-spec-record > summary::-webkit-details-marker { display: none; }
-.devteam-spec-record > summary::marker { content: ''; }
-
-.devteam-spec-record > summary:hover {
-  color: var(--ink-mute);
-}
-
-.devteam-spec-record-body {
-  max-width: 72ch;
-  padding: 6px 0 2px 18px;
-  color: var(--ink-mute);
-  font-size: var(--text-sm);
 }
 
 /* --- Notices -------------------------------------------------------------- */
@@ -1021,29 +914,13 @@
   margin-top: 14px;
 }
 
-/* The measure and the margins come from `.devteam-main > *`; these rules carry
-   only what makes a notice a notice. They each used to restate a width and an
-   `auto` margin of their own, and no two of them agreed. */
-.devteam-ask-warning,
 .devteam-error {
+  margin: 0;
   padding: 9px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--warn-soft);
-  color: var(--ink-mute);
-  font-size: var(--text-xs);
-}
-
-.devteam-error {
   background: var(--err-soft);
   color: var(--ink);
-}
-
-/* A note the person typed has left the composer but not yet reached the lead.
-   Say so once, quietly, above whatever the run is showing. */
-.devteam-steering-note {
-  margin: 0;
-  color: var(--ink-mute);
   font-size: var(--text-xs);
 }
 
@@ -1099,12 +976,6 @@
   max-width: 72ch;
 }
 
-.devteam-run-body .devteam-milestones {
-  padding-left: 0;
-  padding-right: 0;
-  border-top: 0;
-}
-
 .orchestration-record {
   align-self: flex-start;
   color: var(--ink-faint);
@@ -1129,8 +1000,7 @@
 
 /* The annotation on a running conversation yields to the title. At `flex: none`
    it took 100px of a 224px row, so the chat you are actually in was the least
-   readable row in the rail: its title rendered 80px wide where every quiet
-   sibling got 145. */
+   readable row in the rail. */
 .chat-live {
   min-width: 0;
   max-width: 40%;
@@ -1144,129 +1014,163 @@
 
 /* --- Narrow --------------------------------------------------------------- */
 
-/* Narrow mode still includes the project rail, so the conversation region can
-   be much smaller than the viewport-wide media query suggests. Both paths do
-   the same three things: the lead's identity stacks above its status instead of
-   sitting beside it, the crew loses its indent, and the board becomes one
-   column. What must never happen is the run's controls going off the right
-   edge — that is the failure this whole section exists to prevent, because the
-   runs you most want to stop are the ones where it happens. */
-.app-shell.is-narrow .devteam-lead-main,
-.app-shell.is-narrow .devteam-lead-main:has(.devteam-ask-badge) {
-  grid-template-columns: auto minmax(0, 1fr) auto;
+/* Narrow mode also arrives without the viewport being narrow: the project rail
+   can leave the conversation in a sliver of a wide window. Both paths do the
+   same things — the run's column stops being a fixed track beside the work and
+   becomes a strip above it, the steps lay out along that strip, the board
+   becomes one column, and a square card becomes a strip because a square is
+   taller than the region showing it. What must never happen is the run's
+   controls going off the right edge, because the runs you most want to stop
+   are the ones where it happens. */
+.app-shell.is-narrow .devteam-team {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
-.app-shell.is-narrow .devteam-lead-state {
-  grid-column: 2 / -1;
+.app-shell.is-narrow .devteam-rail {
+  /* First, not second. The rail follows the stage in the DOM, which is right
+     beside it and wrong above it: collapsed to a strip it was placed in the
+     row UNDER the board, where the composer covered it and Pause and Stop
+     could not be reached at all. */
+  order: -1;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px var(--chat-gutter);
+  border-left: 0;
+  border-bottom: 1px solid var(--border);
+  overflow-y: hidden;
+}
+
+.app-shell.is-narrow .devteam-steps {
+  flex-direction: row;
+  align-items: center;
   flex-wrap: wrap;
 }
 
-/* The badge stays on the identity row. Dropped into the flow it landed under
-   the status word in the mark's own column, reading as an orphaned number with
-   nothing to be a count of. */
-.app-shell.is-narrow .devteam-lead-main .devteam-ask-badge {
-  grid-row: 1;
-  grid-column: 3;
+/* In a row, a name track that can shrink to zero does: measured at 520px, the
+   live step squeezed to a single character. */
+.app-shell.is-narrow .devteam-steps li {
+  flex: none;
+  grid-template-columns: 22px auto;
 }
 
-.app-shell.is-narrow .devteam-crew {
-  padding-left: 0;
+.app-shell.is-narrow .devteam-steps li + li::before {
+  left: -6px;
+  top: 50%;
+  width: 10px;
+  height: 1px;
 }
 
-.app-shell.is-narrow .devteam-crew::before {
+.app-shell.is-narrow .devteam-rail-docs {
+  flex-direction: row;
+  margin-left: auto;
+}
+
+.app-shell.is-narrow .devteam-rail-count {
   display: none;
+}
+
+.app-shell.is-narrow .devteam-rail-docs .btn,
+.app-shell.is-narrow .devteam-controls .btn,
+.app-shell.is-narrow .devteam-rail .devteam-controls .btn {
+  width: auto;
+}
+
+.app-shell.is-narrow .devteam-controls {
+  flex-direction: row;
+  margin-top: 0;
 }
 
 .app-shell.is-narrow .devteam-lanes {
   grid-template-columns: minmax(0, 1fr);
 }
 
-.app-shell.is-narrow .devteam-controls {
-  flex-direction: row;
+.app-shell.is-narrow .devteam-card {
+  aspect-ratio: auto;
 }
 
-.app-shell.is-narrow .devteam-controls .btn {
-  width: auto;
+.app-shell.is-narrow .devteam-lead-slot .devteam-card {
+  width: 100%;
 }
 
 @media (max-width: 680px) {
-  .devteam-main {
-    gap: 14px;
-    padding-top: 14px;
+  .devteam-team {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
-  /* The name and the state stop competing for one row: at this width the
-     status track squeezed the description down to a character or two, and a
-     line that cannot show its own words is worse than one that wraps. */
-  .devteam-lead-main,
-  .devteam-lead-main:has(.devteam-ask-badge) {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-  }
-
-  .devteam-lead-state {
-    grid-column: 2 / -1;
+  .devteam-rail {
+    order: -1;
+    flex-direction: row;
+    align-items: center;
     flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px var(--chat-gutter);
+    border-left: 0;
+    border-bottom: 1px solid var(--border);
+    overflow-y: hidden;
   }
 
-  .devteam-lead-main .devteam-ask-badge {
-    grid-row: 1;
-    grid-column: 3;
+  .devteam-steps {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    min-width: 0;
   }
 
-  .devteam-crew {
-    padding-left: 0;
+  .devteam-steps li {
+    flex: none;
+    grid-template-columns: 22px auto;
   }
 
-  .devteam-crew::before {
+  .devteam-steps li + li::before {
+    left: -5px;
+    top: 50%;
+    width: 8px;
+    height: 1px;
+  }
+
+  /* Only the live step keeps its words; the rest keep their numbers, which is
+     the whole reason the marks are numbered. */
+  .devteam-steps li:not([data-state='active']) .devteam-step-name,
+  .devteam-rail-count {
     display: none;
   }
 
-  /* One card per row once two will not fit: the grid's 15rem minimum would
-     otherwise force a horizontal overflow rather than a second line. */
+  .devteam-rail-docs {
+    flex-direction: row;
+    margin-left: auto;
+  }
+
+  .devteam-rail-docs .btn,
+  .devteam-controls .btn,
+  .devteam-rail .devteam-controls .btn {
+    width: auto;
+  }
+
+  .devteam-controls {
+    flex-direction: row;
+    margin-top: 0;
+  }
+
   .devteam-lanes {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  /* The controls lay out along the row and keep their natural width rather
-     than becoming a column of full-width buttons. */
-  .devteam-controls {
-    flex-direction: row;
-    margin-left: 0;
+  .devteam-card {
+    aspect-ratio: auto;
   }
 
-  .devteam-controls .btn {
-    width: auto;
-  }
-
-  .devteam-progress {
-    flex: 1 1 100%;
-  }
-
-  /* The plan wraps; it must never become a sideways scroller. */
-  .devteam-milestones {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-  }
-
-  .devteam-milestone {
-    flex: 1 1 12rem;
-  }
-
-  .devteam-milestone + .devteam-milestone {
-    margin-top: 0;
-    border-top: 0;
+  .devteam-lead-slot .devteam-card {
+    width: 100%;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .devteam-card,
-  .devteam-lead,
-  .devteam-lead-main,
-  .devteam-run-chevron,
-  .devteam-progress-fill,
-  .devteam-spec-record > summary,
-  .devteam-plan-fold > summary {
+  .devteam-run-chevron {
     transition: none;
   }
 
@@ -1274,9 +1178,16 @@
     animation: none;
   }
 
-  .devteam-strip-pulse,
-  .devteam-lead[data-live] .devteam-lead-mark,
-  .devteam-card[data-status='running'] .devteam-lane-mark {
+  .devteam-strip-pulse {
     animation: none;
+  }
+
+  /* The spinner stops rather than spinning imperceptibly. The step keeps its
+     accent ring and the card keeps its status word, so progress is never
+     conveyed by motion alone. */
+  .devteam-spin {
+    animation: none;
+    border-top-color: currentColor;
+    opacity: 0.55;
   }
 }

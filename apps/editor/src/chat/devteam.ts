@@ -162,3 +162,90 @@ export function devTeamStage(
       return 'conversation';
   }
 }
+
+/**
+ * The names the team is drawn from.
+ *
+ * A headless engineer with no name is a task with a robot beside it, and a
+ * board of those reads as a queue rather than as people doing work. Short,
+ * one word, and drawn from a wide enough spread that a run of six does not
+ * look like a set. They are labels for the person managing the run, not
+ * claims about who anybody is: the ROLE is the real fact on the card, and it
+ * comes from the plan.
+ */
+const TEAM_NAMES = [
+  'Ada', 'Arlo', 'Bex', 'Bo', 'Cass', 'Cyra', 'Dara', 'Dov',
+  'Eli', 'Esme', 'Faye', 'Fen', 'Gia', 'Gus', 'Hana', 'Hollis',
+  'Ines', 'Ivo', 'Jae', 'June', 'Kai', 'Kit', 'Lark', 'Lena',
+  'Marek', 'Mira', 'Nils', 'Noor', 'Odile', 'Oren', 'Petra', 'Pia',
+  'Quinn', 'Rai', 'Rune', 'Sable', 'Suri', 'Thea', 'Tova', 'Uma',
+  'Vero', 'Vidar', 'Wren', 'Wynn', 'Yuki', 'Zara', 'Zoe', 'Xan',
+] as const;
+
+/** FNV-1a, so a task id lands on the same name on every machine and in every
+ *  session. Nothing here may depend on render order or on the clock. */
+function hashId(id: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < id.length; index += 1) {
+    hash ^= id.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+/**
+ * One name per task, stable for the life of the run and unique within it.
+ *
+ * Keyed on the task id rather than the engineer id: an engineer id only exists
+ * once the task is dispatched, and two tasks waiting to start share an empty
+ * one, so naming by engineer would rename people as the build went on.
+ *
+ * Assignment walks the tasks in plan order and probes forward from the hashed
+ * slot, so it is a pure function of the task ids and nothing else.
+ */
+export function teamNames(taskIds: readonly string[]): Map<string, string> {
+  const taken = new Set<number>();
+  const names = new Map<string, string>();
+  for (const taskId of taskIds) {
+    let slot = hashId(taskId) % TEAM_NAMES.length;
+    for (let probe = 0; probe < TEAM_NAMES.length && taken.has(slot); probe += 1) {
+      slot = (slot + 1) % TEAM_NAMES.length;
+    }
+    taken.add(slot);
+    names.set(taskId, TEAM_NAMES[slot]);
+  }
+  return names;
+}
+
+/**
+ * Which of the run's four steps is where, for the rail.
+ *
+ * `active` is the one being worked and wears a spinner; `waiting` is still to
+ * come and wears its number. A parked run has no active step: nothing is
+ * turning, so nothing should look like it is.
+ */
+export const DEV_TEAM_STEPS = ['Interview', 'Specification', 'Build', 'Done'] as const;
+
+export function devTeamStepStates(
+  state: Pick<DevTeamSnapshot, 'phase' | 'spec' | 'approvals' | 'specVersion'> | null,
+): ('done' | 'active' | 'waiting')[] {
+  const phase = state?.phase ?? 'idle';
+  const parked = phase === 'paused' || phase === 'interrupted';
+  // Where the run got to. `paused` and `interrupted` do not say, so the
+  // handshakes do: no spec means the interview never finished, and a spec
+  // nobody has approved means it was still waiting on that.
+  let reached: number;
+  if (phase === 'idle' || phase === 'interviewing' || phase === 'drafting-spec') reached = 0;
+  else if (phase === 'spec-review') reached = 1;
+  else if (phase === 'done') reached = 3;
+  else if (parked && !state?.spec) reached = 0;
+  else if (parked && !state?.approvals.some((a) => a.specVersion === state.specVersion)) reached = 1;
+  else reached = 2;
+
+  return DEV_TEAM_STEPS.map((_, index) => {
+    if (index < reached) return 'done';
+    if (index > reached) return 'waiting';
+    if (phase === 'done') return 'done';
+    return parked ? 'waiting' : 'active';
+  });
+}

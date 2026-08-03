@@ -245,23 +245,55 @@ describe('style gates', () => {
     // the case the media query alone never sees. Both paths do the same work.
     const measured = css.slice(0, start);
     for (const block of [narrow, measured]) {
-      // The cards stack rather than forcing a sideways scroll past the 15rem
-      // minimum the grid asks for.
+      // The run's column stops being a fixed track beside the work, and goes
+      // ABOVE it rather than under it: it follows the stage in the DOM, so
+      // without the order it was placed in the row the composer covers, and
+      // Pause and Stop could not be reached at all.
+      expect(block).toMatch(/\.devteam-team\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/);
+      expect(block).toMatch(/\.devteam-rail\s*\{[^}]*order:\s*-1/);
+      // Laid out as a row, the steps wrap rather than pushing the rest off the
+      // edge, and a name track that can shrink to zero does: measured at 520px
+      // the live step squeezed down to a single character.
+      expect(block).toMatch(/\.devteam-steps\s*\{[^}]*flex-wrap:\s*wrap/);
+      expect(block).toMatch(/\.devteam-steps li\s*\{[^}]*grid-template-columns:\s*22px auto/);
+      // The cards stack rather than forcing a sideways scroll past the 10rem
+      // minimum the grid asks for, and stop being squares: at this width a
+      // square card is taller than the region showing it.
       expect(block).toMatch(/\.devteam-lanes\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/);
-      // The lead's status drops to its own row instead of squeezing the line
-      // that carries its name and its description.
-      expect(block).toMatch(/\.devteam-lead-state\s*\{[^}]*grid-column:\s*2 \/ -1/);
-      // The crew's indent and its guide line cost width that is not there.
-      expect(block).toMatch(/\.devteam-crew\s*\{[^}]*padding-left:\s*0/);
-      // The controls lay out along the row and keep their natural width, rather
-      // than becoming a column of full-width buttons.
+      expect(block).toMatch(/\.devteam-card\s*\{[^}]*aspect-ratio:\s*auto/);
+      // The controls lay out along the row and keep their natural width rather
+      // than staying a column of full-width buttons in a horizontal strip.
       expect(block).toMatch(/\.devteam-controls\s*\{[^}]*flex-direction:\s*row/);
       expect(block).toMatch(/\.devteam-controls \.btn\s*\{[^}]*width:\s*auto/);
     }
+  });
 
-    // The plan wraps; it must never become a sideways scroller.
-    expect(narrow).toMatch(/\.devteam-milestones\s*\{[^}]*flex-wrap:\s*wrap/);
-    expect(narrow).not.toMatch(/\.devteam-milestones\s*\{[^}]*overflow-x:\s*auto/);
+  /**
+   * A card is a summary and its lines have to stop at its edge. They did not:
+   * the last line an engineer said was printed in mono with `nowrap`, and at
+   * 15rem it left the card and ran clear across the board and out the other
+   * side, over the two cards beside it. Every line on a card clips now, and the
+   * card clips whatever a future line forgets to.
+   */
+  it('keeps every line of a member card inside the card', () => {
+    const css = fs.readFileSync(path.join(STYLES_DIR, 'app/devteam.css'), 'utf8');
+    const rule = (selector: string): string => {
+      const at = css.indexOf(`\n${selector} {`);
+      expect(at, selector).toBeGreaterThan(-1);
+      return css.slice(at, css.indexOf('}', at));
+    };
+
+    expect(rule('.devteam-card')).toMatch(/overflow:\s*hidden/);
+    expect(rule('.devteam-card')).toMatch(/min-width:\s*0/);
+    // The three text lines: two clip to one line, the assignment to two.
+    for (const line of ['.devteam-card-name', '.devteam-card-role']) {
+      expect(rule(line), line).toMatch(/text-overflow:\s*ellipsis/);
+      expect(rule(line), line).toMatch(/white-space:\s*nowrap/);
+    }
+    // Any rule for it, not the first: the three lines share a max-width rule
+    // whose selector list starts with this class.
+    expect(css).toMatch(/\.devteam-card-task \{[^}]*line-clamp:\s*2/);
+    expect(css).toMatch(/\.devteam-card-name,\n\.devteam-card-role,\n\.devteam-card-task \{[^}]*max-width:\s*100%/);
   });
 
   it('Gate A: every font-size under styles/ (and the styles.css manifest) uses a --text-* token', () => {
