@@ -140,6 +140,40 @@ describe('project open/create', () => {
   });
 });
 
+describe('tidying the conversation list across folders', () => {
+  // The rail lists every conversation on this machine and each row carries the
+  // folder it belongs to. Gating rename and delete on the folder being OPEN
+  // meant tidying the list one folder at a time: deleting six chats across
+  // three games meant opening three games. The gate is a folder the user has
+  // named — open, or on their own recents list — which is the same gate the
+  // appearance route uses and for the same reason.
+
+  it('renames and deletes a conversation in a folder that is known but closed', async () => {
+    const created = await ctx.createNewProject(path.join(tmpDir, 'projects'), 'Tidy Game');
+    const root = (created.body as { path: string }).path;
+    const made = await ctx.createProjectChat(root);
+    const chatId = (made.body as { chat: { id: string } }).chat.id;
+    // Closed, so it is no longer open, but it stays on recents: exactly the
+    // state every row in the rail but one is in.
+    expect((await ctx.closeWorkspace(root)).status).toBe(200);
+
+    const renamed = await ctx.renameProjectChat(root, chatId, 'Renamed from the rail');
+    expect(renamed.status).toBe(200);
+    expect((renamed.body as { chat: { title: string } }).chat.title).toBe('Renamed from the rail');
+
+    const deleted = await ctx.deleteProjectChat(root, chatId);
+    expect(deleted.status).toBe(200);
+    expect((deleted.body as { chats: unknown[] }).chats).toHaveLength(0);
+  });
+
+  it('still refuses a folder the user never named', async () => {
+    const stranger = path.join(tmpDir, 'stranger');
+    await fsp.mkdir(stranger, { recursive: true });
+    const deleted = await ctx.deleteProjectChat(stranger, 'anything');
+    expect(deleted.status).toBe(403);
+  });
+});
+
 describe('.hearth/.gitignore self-ignore guard', () => {
   // Confirmed finding: opening/creating a project used to materialize
   // .hearth/chats, .hearth/tester and .hearth/log with nothing keeping them

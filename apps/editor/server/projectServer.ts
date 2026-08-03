@@ -2020,6 +2020,16 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       };
     },
 
+    /**
+     * Renaming and deleting are gated on a KNOWN folder, not an open one.
+     *
+     * The rail lists every conversation on the machine and the row carries the
+     * folder it belongs to, so tidying the list meant opening each folder in
+     * turn to be allowed to touch one row of it. Every path on that list got
+     * there because the user opened it; it is still a folder they picked, just
+     * not the one they are in. Same reasoning, and the same gate, as the
+     * appearance route below.
+     */
     async renameProjectChat(project: unknown, chatId: unknown, title: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || typeof chatId !== 'string' || typeof title !== 'string') {
         return {
@@ -2028,10 +2038,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root))
+      if (!(await isKnownRoot(root)))
         return {
           status: 403,
-          body: { ok: false, error: 'Folder is not open.' },
+          body: { ok: false, error: 'That folder is not one of yours.' },
         };
       const chat = await renameChat(root, chatId, title);
       if (!chat)
@@ -2053,10 +2063,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root))
+      if (!(await isKnownRoot(root)))
         return {
           status: 403,
-          body: { ok: false, error: 'Folder is not open.' },
+          body: { ok: false, error: 'That folder is not one of yours.' },
         };
       const id = safeChatId(chatId);
       const chat = id ? await getChat(root, id) : null;

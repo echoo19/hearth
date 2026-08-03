@@ -552,8 +552,15 @@ export interface AppState {
   newProject(): void;
   /** Switch to an existing conversation, replaying it from disk. */
   openChat(chatId: string): void;
-  renameChat(chatId: string, title: string): Promise<void>;
-  deleteChat(chatId: string): Promise<void>;
+  /**
+   * Rename or delete a conversation in `from`, defaulting to the open folder.
+   *
+   * The rail lists every conversation on the machine, so the folder has to be
+   * nameable: without it, tidying the list meant opening each folder in turn
+   * to be allowed to touch one row of it.
+   */
+  renameChat(chatId: string, title: string, from?: string): Promise<void>;
+  deleteChat(chatId: string, from?: string): Promise<void>;
   refreshChats(): Promise<void>;
   /** Re-read the global conversation list (all folders). Safe to over-call. */
   refreshRecentChats(): Promise<void>;
@@ -2854,8 +2861,8 @@ export const useApp = create<AppState>((set, get) => {
       requestChat({ type: 'chat-open', chatId });
     },
 
-    async renameChat(chatId, title) {
-      const project = get().projectPath;
+    async renameChat(chatId, title, from) {
+      const project = from ?? get().projectPath;
       if (!project) return;
       const res = await apiRenameChat(project, chatId, title);
       // A rename that did not land used to be silence: the old title just came
@@ -2869,10 +2876,17 @@ export const useApp = create<AppState>((set, get) => {
         return;
       }
       if (get().projectPath === project) set({ chats: res.chats });
+      // The row is in the global list too, and that list is a snapshot on a
+      // schedule: without this the old title sits there until the next read.
+      set((state) => ({
+        recentChats: state.recentChats.map((entry) =>
+          entry.id === chatId ? { ...entry, title } : entry,
+        ),
+      }));
     },
 
-    async deleteChat(chatId) {
-      const project = get().projectPath;
+    async deleteChat(chatId, from) {
+      const project = from ?? get().projectPath;
       if (!project) return;
       const res = await apiDeleteChat(project, chatId);
       // Same as renameChat: a delete that failed must say so where the click
@@ -2883,15 +2897,22 @@ export const useApp = create<AppState>((set, get) => {
         showToast(res.error, 'error');
         return;
       }
-      if (get().projectPath !== project) return;
       deletedChatIds.add(chatId);
+      const open = get().projectPath === project;
+      // Gone from the list it was clicked in, now. `chats` is the open folder's
+      // and must not be handed another folder's answer; `recentChats` spans
+      // folders and is refreshed on a schedule, so leaving it to that read is
+      // how a deleted conversation stays on screen for the next four hundred
+      // milliseconds and comes back if the read is slower than that.
       set((state) => ({
-        chats: res.chats,
+        ...(open ? { chats: res.chats } : {}),
+        recentChats: state.recentChats.filter((entry) => entry.id !== chatId),
         devTeamByChat: withoutKey(state.devTeamByChat, chatId),
       }));
       // Deleting the conversation you are reading leaves nowhere to be: land in
-      // the next one, or start a fresh one.
-      if (get().activeChatId !== chatId) return;
+      // the next one, or start a fresh one. Deleting one in another folder
+      // leaves the screen alone, because nothing on it was that conversation.
+      if (!open || get().activeChatId !== chatId) return;
       if (res.chats.length > 0) {
         set({ activeChatId: null });
         get().openChat(res.chats[0].id);

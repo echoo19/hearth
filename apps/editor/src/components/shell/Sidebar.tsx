@@ -291,7 +291,6 @@ export function accountIdentity(
 function ChatRow({
   entry,
   active,
-  local,
   identity,
   onOpen,
   onRename,
@@ -300,8 +299,6 @@ function ChatRow({
 }: {
   entry: RecentChatEntry;
   active: boolean;
-  /** The chat lives in the project that is currently open. */
-  local: boolean;
   /** What its project looks like, so the row can say which game it belongs to. */
   identity?: ProjectIdentity | null;
   onOpen: () => void;
@@ -376,27 +373,30 @@ function ChatRow({
           <span className="chat-when">{relativeTime(entry.updatedAt)}</span>
         )}
       </button>
-      {local && (
-        <span className="chat-actions">
-          <MenuButton
-            label={`Conversation options for ${entry.title}`}
-            align="right"
-            triggerClassName="chat-more"
-            trigger={<Icon name="overflow" />}
-            items={[
-              {
-                label: 'Rename',
-                icon: 'pencil',
-                onSelect: () => {
-                  setDraft(entry.title);
-                  setRenaming(true);
-                },
+      {/* Every row, not only the folder that happens to be open. The rail is
+          the list of conversations on this machine, and a list you can only
+          tidy one folder at a time is a list that fills up: deleting six chats
+          across three games meant opening three games. The row carries the
+          folder it belongs to, so the menu acts on that one. */}
+      <span className="chat-actions">
+        <MenuButton
+          label={`Conversation options for ${entry.title}`}
+          align="right"
+          triggerClassName="chat-more"
+          trigger={<Icon name="overflow" />}
+          items={[
+            {
+              label: 'Rename',
+              icon: 'pencil',
+              onSelect: () => {
+                setDraft(entry.title);
+                setRenaming(true);
               },
-              { label: 'Delete', icon: 'trash', danger: true, onSelect: onDelete },
-            ]}
-          />
-        </span>
-      )}
+            },
+            { label: 'Delete', icon: 'trash', danger: true, onSelect: onDelete },
+          ]}
+        />
+      </span>
     </div>
   );
 }
@@ -1034,10 +1034,9 @@ export function Sidebar() {
                   // still has open, and marking it told a screen reader you
                   // were in a conversation that was not on the screen.
                   active={readingChat && entry.id === activeChatId && entry.project.path === projectPath}
-                  local={entry.project.path === projectPath}
                   identity={identityOf(entry.project.path)}
                   onOpen={() => void openRecentChat(entry)}
-                  onRename={(title) => void renameChat(entry.id, title)}
+                  onRename={(title) => void renameChat(entry.id, title, entry.project.path)}
                   onDelete={() => setPendingDelete(entry)}
                   annotation={devTeamSidebarAnnotation(
                     readingChat && entry.id === activeChatId && entry.project.path === projectPath
@@ -1078,7 +1077,7 @@ export function Sidebar() {
         onConfirm={() => {
           const entry = pendingDelete;
           setPendingDelete(null);
-          if (entry) void deleteChat(entry.id);
+          if (entry) void deleteChat(entry.id, entry.project.path);
         }}
       />
     </nav>

@@ -5,9 +5,9 @@
  * Four contracts, all of them about honesty:
  *   1. Recents is global — a conversation in a folder that isn't open still
  *      shows, and opening it opens its folder first;
- *   2. it never offers an action it can't perform: rename/delete belong to the
- *      folder's own index, so they appear only for the folder that is open,
- *      and the mode switch is not here at all (it moved to the column);
+ *   2. it never offers an action it can't perform: rename and delete are on
+ *      every row and carry the folder that row belongs to, and the mode switch
+ *      is not here at all (it moved to the column);
  *   3. search hides rows and nothing else — an empty box hides nothing;
  *   4. the update banner is present exactly when an update is, and its button
  *      really does relaunch.
@@ -62,6 +62,14 @@ function reset(over: Partial<ReturnType<typeof useApp.getState>> = {}): void {
 }
 
 beforeEach(() => {
+  // jsdom implements neither showModal nor close; the delete confirmation only
+  // needs them to be open/close toggles.
+  const proto = HTMLDialogElement.prototype as unknown as Record<string, unknown>;
+  proto.showModal = function (this: HTMLDialogElement) { this.open = true; };
+  proto.close = function (this: HTMLDialogElement) {
+    this.open = false;
+    this.dispatchEvent(new Event('close'));
+  };
   localStorage.clear();
   vi.mocked(apiRecentWorkspaces).mockResolvedValue([]);
   reset();
@@ -262,17 +270,27 @@ describe('Recents, across folders', () => {
     expect(openRecentChat).toHaveBeenCalledWith(entry);
   });
 
-  it('offers rename and delete only for the folder that is open', async () => {
+  it('offers rename and delete on every row, and acts on the folder that row belongs to', async () => {
+    // The rail is the list of conversations on this machine. Offering the menu
+    // only for the folder that happened to be open meant tidying the list one
+    // folder at a time: deleting six chats across three games meant opening
+    // three games first.
+    const deleteChat = vi.fn(async () => {});
     reset({
       projectPath: HERE,
       projectName: 'game',
       recentChats: [chat('mine', 'Mine', HERE), chat('theirs', 'Theirs', ELSEWHERE)],
+      deleteChat,
     });
     render(<Sidebar />);
 
     await screen.findByText('Mine');
     expect(screen.getByRole('button', { name: /Conversation options for Mine/ })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Conversation options for Theirs/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Conversation options for Theirs/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(deleteChat).toHaveBeenCalledWith('theirs', ELSEWHERE);
   });
 
   /**
