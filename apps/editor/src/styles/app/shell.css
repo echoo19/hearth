@@ -103,6 +103,15 @@
   border-bottom: 0;
 }
 
+/* Skills and Tester carry their own 52px header, so this strip is a second
+   empty one stacked over it: 96px of chrome, 44px of it holding nothing at
+   all, which put the first row of Skills 41% of the way down the window. The
+   drag region moves onto the header those screens do have. */
+.topbar.is-screen {
+  height: 0;
+  padding: 0;
+}
+
 .topbar-name {
   font-size: var(--text-sm);
   font-weight: var(--fw-label);

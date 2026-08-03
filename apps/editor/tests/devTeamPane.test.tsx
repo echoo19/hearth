@@ -103,7 +103,7 @@ afterEach(cleanup);
 describe('dev team presentation helpers', () => {
   it('uses truthful phase and activity language', () => {
     expect(devTeamPhaseLabel('spec-review')).toBe('Spec review');
-    expect(devTeamActivity(engineerLane)).toBe('Waiting for you');
+    expect(devTeamActivity(engineerLane)).toBe('Needs you');
     expect(devTeamActivity([], 'done')).toBe('Finished');
   });
 
@@ -205,7 +205,7 @@ describe('DevTeamPane', () => {
     expect(screen.getByRole('progressbar', { name: 'Tasks finished' }).getAttribute('aria-valuemax')).toBe('2');
     const engineer = screen.getByRole('button', { name: /Build controls lane/i });
     expect(engineer.getAttribute('aria-label')).toBe(
-      'Build controls lane, Gameplay builder, Waiting for you, Wiring movement now., 1 waiting question',
+      'Build controls lane, Gameplay builder, Needs you, Wiring movement now., 1 waiting question',
     );
     expect(screen.getByText('Playable loop')).toBeTruthy();
     expect(screen.getByText(/Ask mode pauses engineers/)).toBeTruthy();

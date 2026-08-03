@@ -22,6 +22,14 @@
   height: 52px;
   padding: 0 16px;
   border-bottom: 1px solid var(--border);
+  /* macOS draws no title bar of its own, and the strip that used to be the
+     drag handle above this one is collapsed on these screens. Its controls opt
+     back out below, exactly as .topbar's do. */
+  -webkit-app-region: drag;
+}
+
+.screen-head > * {
+  -webkit-app-region: no-drag;
 }
 
 /* The lead and actions slots hold their width whether or not they have

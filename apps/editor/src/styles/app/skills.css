@@ -37,11 +37,14 @@
   min-width: 0;
 }
 
+/* The same scale the project screen names itself at. Four screens reachable
+   from adjacent rail rows were naming themselves at 34px, 27px, 21px and
+   13px, so which one you were on changed how loudly it said so. */
 .skills-heading {
   margin: 0;
-  font-size: var(--text-3xl);
+  font-size: var(--text-2xl);
   font-weight: var(--fw-strong);
-  letter-spacing: -0.025em;
+  letter-spacing: -0.02em;
   color: var(--ink);
 }
 

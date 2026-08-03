@@ -18,12 +18,21 @@ export function devTeamPhaseLabel(phase: DevTeamPhase): string {
   return PHASE_LABEL[phase];
 }
 
+/**
+ * How a task is doing, in as few words as it takes.
+ *
+ * These are read as chips: tracked caps on a card, and sixteen rows deep in
+ * the plan. "Stopped with an error" set that way ran 150px across a 316px card
+ * and printed itself down the whole plan, which is a sentence doing a label's
+ * job. Every comparable board — a CI run, a deploy, an issue tracker — says
+ * this in one or two words, and the card's red ring already carries the alarm.
+ */
 export function devTeamTaskLabel(status: DevTeamTaskRecord['status']): string {
   switch (status) {
     case 'running': return 'Working';
-    case 'waiting': return 'Waiting for you';
+    case 'waiting': return 'Needs you';
     case 'done': return 'Finished';
-    case 'error': return 'Stopped with an error';
+    case 'error': return 'Failed';
     case 'interrupted': return 'Interrupted';
     default: return 'Queued';
   }
@@ -43,8 +52,8 @@ export function devTeamActivity(
 ): string {
   for (const message of messages) {
     for (const part of message.parts) {
-      if (part.kind === 'approval' && part.decision === null) return 'Waiting for you';
-      if (part.kind === 'input' && part.resolution === null) return 'Waiting for you';
+      if (part.kind === 'approval' && part.decision === null) return 'Needs you';
+      if (part.kind === 'input' && part.resolution === null) return 'Needs you';
     }
   }
   const part = lastPart(messages);

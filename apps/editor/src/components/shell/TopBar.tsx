@@ -143,8 +143,12 @@ export function TopBar({ narrow, paneOpen = false }: { narrow: boolean; paneOpen
   // conversation underneath — the header saying one thing while the body
   // showed another — and its controls moved a column nobody could see.
   if (!hasFolder || place === 'skills' || place === 'tester') {
+    // Skills and Tester have a header of their own directly under this, so the
+    // strip collapses rather than stacking a second empty one over it. Home
+    // has no such header, so it keeps the strip as its drag region.
+    const screen = place === 'skills' || place === 'tester';
     return (
-      <header className="topbar is-empty">
+      <header className={screen ? 'topbar is-empty is-screen' : 'topbar is-empty'}>
         <span className="topbar-spacer" />
         {native && native.platform !== 'darwin' && <span className="topbar-window-controls" aria-hidden="true" />}
       </header>
