@@ -220,6 +220,13 @@ export function Markdown({ text, live }: { text: string; live: boolean }) {
     return <p className="msg-text">{text}</p>;
   }
 
+  // Nothing to draw is not a thing to draw. An empty `.md` still takes its
+  // place in the turn's flex column and still claims the 12px gap on both
+  // sides of itself: eleven of them in one measured transcript added 264px of
+  // whitespace that looked like deliberate spacing, and each one broke the
+  // rule that closes consecutive machinery rows to 4px.
+  if (blocks.length === 0) return null;
+
   return (
     <div className="md">
       {blocks.map((block, index) => (

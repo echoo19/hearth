@@ -28,6 +28,22 @@ export function commandStatusNote(part: Pick<ChatCommandPart, 'state' | 'exitCod
   return part.exitCode === undefined ? 'failed' : `exit ${part.exitCode}`;
 }
 
+/**
+ * Every command the agent runs arrives wrapped in `/bin/zsh -lc "..."`, and the
+ * collapsed line has room for about sixty characters. Thirteen of them were
+ * spent, every time, on the one part of the string that is the same on every
+ * row: measured at its worst, a 3,888px command showed 401px, and what it
+ * showed was the wrapper.
+ *
+ * The expanded body keeps the verbatim string, because that is the evidence.
+ */
+const SHELL_WRAPPER = /^\/?(?:usr\/)?bin\/(?:ba|z)?sh\s+-[a-z]*c\s+(['"])([\s\S]*)\1\s*$/;
+
+export function previewCommand(title: string): string {
+  const match = SHELL_WRAPPER.exec(title.trim());
+  return match ? match[2] : title;
+}
+
 export function CommandRow({ part }: { part: ChatCommandPart }) {
   const [open, setOpen] = useState(false);
   const duration = formatDuration(part.durationMs);
@@ -41,7 +57,7 @@ export function CommandRow({ part }: { part: ChatCommandPart }) {
           <Icon name="chevron" size={9} />
         </span>
         <span className="cmd-verb">Ran</span>
-        <span className="cmd-text">{part.title}</span>
+        <span className="cmd-text">{previewCommand(part.title)}</span>
         {note && <span className="cmd-note">{note}</span>}
         {duration && <span className="cmd-time">{duration}</span>}
       </button>

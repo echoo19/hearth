@@ -42,11 +42,14 @@ dialog.modal.is-settings {
 /* The rail's own group headings — "Settings", "Customize". Quieter and
    smaller than the pane headings on the right, because they label a list of
    destinations rather than the thing you came to read. */
+/* The same caps register every other section label in the app uses. This one
+   had drifted to 11px / 550 / 0.04em against the rail's 10px / 620 / 0.075em,
+   and the two rails are on screen together. */
 .set-rail-title {
   margin: 12px 8px 4px;
-  font-size: var(--text-2xs);
-  font-weight: var(--fw-label);
-  letter-spacing: 0.04em;
+  font-size: var(--text-3xs);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-caps);
   text-transform: uppercase;
   color: var(--ink-faint);
 }
@@ -73,9 +76,15 @@ dialog.modal.is-settings {
   color: var(--ink);
 }
 
+/* Current is the accent tint everywhere in this app; this rail was answering
+   in neutral grey, which is the hover step of its own family. */
 .set-rail-item[aria-current='true'] {
-  background: var(--bg-3);
+  background: var(--accent-soft);
   color: var(--ink);
+}
+
+.set-rail-item[aria-current='true'] svg {
+  color: var(--accent);
 }
 
 .set-rail-item svg {

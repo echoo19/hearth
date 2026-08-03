@@ -651,6 +651,7 @@ export function Sidebar() {
   const recentChats = useApp((s) => s.recentChats);
   const recentChatsLoaded = useApp((s) => s.recentChatsLoaded);
   const activeChatId = useApp((s) => s.activeChatId);
+  const projectView = useApp((s) => s.projectView);
   const devTeam = useApp((s) => s.devTeam);
   const devTeamByChat = useApp((s) => s.devTeamByChat);
   const newChat = useApp((s) => s.newChat);
@@ -673,6 +674,13 @@ export function Sidebar() {
   // is not where you are. See `globalPlace`.
   const place = useApp((s) => globalPlace(s));
   const inProject = place === null;
+  // A conversation is current only when you are READING it. The project's own
+  // screen replaces the working area with ProjectHome, so no conversation is on
+  // screen there, and the rail was lighting the folder AND its last chat at
+  // once: two rows claiming "you are here" in the same accent, one of them
+  // pointing at something the window was not showing. The folder row is right
+  // to stay lit; it is open. The chat row is not.
+  const readingChat = inProject && !projectView;
   const native = hearthNative();
   const [recents, setRecents] = useState<RecentWorkspace[]>([]);
   const [pendingDelete, setPendingDelete] = useState<RecentChatEntry | null>(null);
@@ -1025,14 +1033,14 @@ export function Sidebar() {
                   // New chat, Skills or Tester it is merely the one the server
                   // still has open, and marking it told a screen reader you
                   // were in a conversation that was not on the screen.
-                  active={inProject && entry.id === activeChatId && entry.project.path === projectPath}
+                  active={readingChat && entry.id === activeChatId && entry.project.path === projectPath}
                   local={entry.project.path === projectPath}
                   identity={identityOf(entry.project.path)}
                   onOpen={() => void openRecentChat(entry)}
                   onRename={(title) => void renameChat(entry.id, title)}
                   onDelete={() => setPendingDelete(entry)}
                   annotation={devTeamSidebarAnnotation(
-                    inProject && entry.id === activeChatId && entry.project.path === projectPath
+                    readingChat && entry.id === activeChatId && entry.project.path === projectPath
                       ? devTeam ?? devTeamByChat[entry.id] ?? null
                       : devTeamByChat[entry.id] ?? null,
                   )}

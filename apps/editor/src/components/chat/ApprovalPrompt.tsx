@@ -48,8 +48,15 @@ export function ApprovalPrompt({ part, active: activeProp, onRespond }: Approval
 
   // A blocking ask that leaves focus in the composer is a blocking ask the
   // keyboard can't answer. Taking focus is the point.
+  //
+  // Without `preventScroll`, focusing scrolls EVERY scrollable ancestor to
+  // reveal the button, and in the dev team pane one of those ancestors is the
+  // whole console: opening a run with a pending approval landed you at the
+  // very bottom with the lead, the crew and the plan scrolled off the top. The
+  // transcript already follows its own tail, so the prompt is on screen inside
+  // its own scroller without anything above it having to move.
   useEffect(() => {
-    if (active && pending) allowRef.current?.focus();
+    if (active && pending) allowRef.current?.focus({ preventScroll: true });
   }, [active, pending]);
 
   useEffect(() => {

@@ -273,7 +273,7 @@
      third label; setting it in the value face makes it obvious at a glance
      that it is a setting, without needing a label to say so. */
   font-family: var(--font-mono);
-  font-size: var(--text-2xs);
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   color: var(--ink-faint);
 }
@@ -358,6 +358,22 @@
   max-width: var(--chat-measure);
   margin: 0 auto;
   padding-bottom: 16px;
+}
+
+/* Prose gets a reading measure. Measured character-by-character over a real
+   agent paragraph, the column ran 85 characters to the line at its current
+   width and 111 at --chat-measure; sustained reading wants 65 to 75. Only the
+   running text is capped: code blocks, tables and every machinery row still
+   take the full column, because those are scanned rather than read. */
+.msg-agent .msg-text,
+.msg-agent > .md > p,
+.msg-agent > .md > ul,
+.msg-agent > .md > ol,
+.msg-agent > .md > blockquote,
+.msg-agent > .md > h1,
+.msg-agent > .md > h2,
+.msg-agent > .md > h3 {
+  max-width: 31rem;
 }
 
 /* --- Turns ---------------------------------------------------------------- */
@@ -1251,16 +1267,20 @@
   gap: 4px;
 }
 
+/* It is the highest-information row in a turn ("Ran 3 commands, 1 failed") and
+   it was the quietest thing in it: no surface and the faintest ink, directly
+   under filled rows. Its hover fill was also its neighbours' resting fill, so
+   pointing at it read as the row appearing rather than responding. */
 .run-summary {
   width: 100%;
   border-radius: var(--radius);
-  background: transparent;
-  color: var(--ink-faint);
+  background: var(--bg-2);
+  color: var(--ink-mute);
 }
 
 .run-summary:hover {
-  background: var(--bg-2);
-  color: var(--ink-mute);
+  background: var(--bg-3);
+  color: var(--ink);
 }
 
 .run-label {
@@ -1309,12 +1329,15 @@
 
 /* The command itself, in mono and clipped rather than wrapped: a line that
    wraps to three lines is no longer a line. */
+/* The command recedes until you are looking at it. At full --ink it was the
+   brightest token in the row and exactly as bright as the agent's prose, so
+   the least useful string on screen out-shouted the sentence explaining it. */
 .cmd-text {
   min-width: 0;
   flex: 1;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--ink);
+  color: var(--ink-mute);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1322,6 +1345,12 @@
 
 .cmd-row.state-running .cmd-text {
   color: var(--ink-mute);
+}
+
+/* Looking at it, or having opened it, is when the exact string matters. */
+.cmd-line:hover .cmd-text,
+.cmd-row[data-open='true'] .cmd-text {
+  color: var(--ink);
 }
 
 /* The only status colour on the row. Semantic, not decorative — a red exit
@@ -1806,6 +1835,7 @@
   color: var(--ink);
   font-size: var(--text-md);
   text-wrap: pretty;
+  font-weight: var(--fw-label);
 }
 
 .approval-detail {
@@ -2083,14 +2113,19 @@
    composer's measure so it sits directly above the box the reader is about to
    type in — the same shape as Home, one size down, because this is the second
    time they have seen it rather than the first. */
+/* The one sentence on the screen sits where the next thing you do is, on the
+   column's own left edge. Centred at 16vh it was 330px above the composer, on
+   an axis nothing else in the transcript uses, and the same sentence on Home
+   is left-aligned beside the flame at a different size again. */
 .chat-empty {
   max-width: var(--chat-measure);
-  margin: 16vh auto 0;
+  margin: auto auto 0;
+  padding-bottom: 20px;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  text-align: center;
-  align-items: center;
+  text-align: left;
+  align-items: flex-start;
 }
 
 .chat-empty-lead {
@@ -2099,9 +2134,9 @@
      the app wears (game.css .game-empty-lead, panels/common.css) — this one
      had drifted onto the UI font. */
   font-family: var(--font-display);
-  font-weight: var(--fw-strong);
+  font-weight: var(--fw-label);
   letter-spacing: -0.01em;
-  font-size: var(--text-xl);
+  font-size: var(--text-2xl);
   color: var(--ink);
   text-wrap: balance;
 }
@@ -2362,10 +2397,24 @@
    does wrap it takes its own line rather than stranding a pill beside it. */
 .composer-row {
   display: flex;
+  /* Wraps, and must keep wrapping: measured in a browser at 500px, `nowrap`
+     put the send button sixty pixels past the right edge of the WINDOW, not
+     clipped and not scrollable, simply gone. See tests/composerReach.test.ts.
+     What was wrong was where the wrapped button LANDED, which the auto margin
+     below fixes without giving that failure back. */
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px 8px 10px;
+  padding: 6px 18px 10px;
+}
+
+/* Send stays at the end of the row it belongs to, on whichever line it ends up
+   on. The gap element pushes it right while everything fits on one line and
+   then stops existing as a spacer the moment the row wraps, which left send
+   alone at the BOTTOM LEFT of the card, 536px from the row's end and in its
+   disabled grey, reading as a stray dot rather than as the primary action. */
+.composer-send {
+  margin-left: auto;
 }
 
 .composer-row-gap {
@@ -2533,8 +2582,8 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: var(--ctl-h-sm);
+  height: var(--ctl-h-sm);
   padding: 0;
   border: 0;
   border-radius: 50%;

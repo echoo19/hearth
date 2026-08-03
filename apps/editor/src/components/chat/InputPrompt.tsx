@@ -275,7 +275,9 @@ export function InputPrompt({ part, active: activeProp, onRespond }: InputPrompt
   useEffect(() => {
     if (!active || !pending) return;
     const first = formRef.current?.querySelector<HTMLElement>('input, button');
-    first?.focus();
+    // Same reason as ApprovalPrompt: focusing scrolls every scrollable
+    // ancestor, and the outermost one here is the dev team console.
+    first?.focus({ preventScroll: true });
   }, [active, pending]);
 
   useEffect(() => {

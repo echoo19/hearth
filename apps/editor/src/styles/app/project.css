@@ -110,7 +110,11 @@
 /* --- The project's conversations ------------------------------------------ */
 
 /*
- * The two ways to start something, as one row of equals.
+ * The three ways to start something, as one row of equals.
+ *
+ * A grid rather than a wrapping flex row. `flex: 1 1 12rem` needed 592px for
+ * three across and the row measured 576, so the third one dropped to its own
+ * line and stretched to double width: two neat buttons and a widow.
  *
  * Equal width and equal weight, on purpose. The earlier version put a composer
  * here with a lone New terminal button under it, which made one of the two
@@ -119,13 +123,18 @@
  * row as the screen narrows, and wraps rather than crushes when it cannot.
  */
 .proj-start {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
+@media (max-width: 620px) {
+  .proj-start {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .proj-start-act {
-  flex: 1 1 12rem;
   justify-content: center;
 }
 

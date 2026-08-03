@@ -460,7 +460,7 @@ function Milestones({ state }: { state: Pick<DevTeamSnapshot, 'plan' | 'tasks' |
             {milestone.tasks.map((task) => {
               const status = records.get(task.id)?.status ?? 'pending';
               return (
-                <li key={task.id} data-status={status} title={task.detail}>
+                <li key={task.id} data-status={status}>
                   {/* A settled task says so with a glyph, which reads at a
                       glance down a list; one still to come keeps the neutral
                       dot, because "nothing has happened yet" is exactly what a
@@ -468,7 +468,14 @@ function Milestones({ state }: { state: Pick<DevTeamSnapshot, 'plan' | 'tasks' |
                   <span className="devteam-task-mark" aria-hidden="true">
                     {TASK_GLYPH[status] ? <Icon name={TASK_GLYPH[status]} size={10} /> : null}
                   </span>
-                  <span>{task.title}</span>
+                  {/* What the task actually asks for. It lived only in a
+                      native title= on this row, so it was hover-only, absent
+                      on touch and unreachable from the keyboard, and it is the
+                      only place the plan says what a one-line title means. */}
+                  <span className="devteam-task-title">
+                    {task.title}
+                    {task.detail && <span className="devteam-task-detail">{task.detail}</span>}
+                  </span>
                   <span>{devTeamTaskLabel(status)}</span>
                 </li>
               );
@@ -508,8 +515,7 @@ function crewRollCall(crew: readonly { status: DevTeamTaskRecord['status'] }[]):
  * separates a lead that is thinking from one that has stopped, and it is the
  * fact the stall notice then acts on.
  */
-function TeamEmpty({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number | null }) {
-  const counter = elapsed === null ? null : formatElapsed(elapsed);
+function TeamEmpty({ state }: { state: DevTeamSnapshot }) {
   const parked = state.phase === 'paused' || state.phase === 'interrupted';
   const text = !state.plan
     ? 'The lead is writing the plan. The team appears here as it is brought on.'
@@ -525,9 +531,6 @@ function TeamEmpty({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number
         <Icon name={state.plan ? 'team' : 'fire'} size={13} />
       </span>
       {text}
-      {counter && (
-        <span className="devteam-board-note-clock" aria-hidden="true">{counter}</span>
-      )}
     </p>
   );
 }
@@ -648,7 +651,7 @@ function TeamStage({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number
             ))}
           </div>
         ) : (
-          <TeamEmpty state={state} elapsed={elapsed} />
+          <TeamEmpty state={state} />
         )}
       </div>
 
@@ -657,7 +660,7 @@ function TeamStage({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number
           <summary>
             <Icon name="checkpoint" size={11} />
             Plan
-            <span>{finished} of {state.tasks.length} finished</span>
+            <span>{state.tasks.length} {state.tasks.length === 1 ? 'task' : 'tasks'}</span>
           </summary>
           <Milestones state={state} />
         </details>

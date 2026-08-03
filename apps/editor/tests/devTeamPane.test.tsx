@@ -619,8 +619,12 @@ describe('DevTeamPane', () => {
     const fold = screen.getByText('Plan').closest('details');
     expect(fold?.hasAttribute('open')).toBe(false);
     expect(screen.getByText('A first complete pass')).toBeTruthy();
+    // What the task asks for is text in the row, not a native title=. As a
+    // tooltip it was hover-only: unreachable from the keyboard, absent on
+    // touch, and it is the only place the plan explains a one-line title.
+    expect(screen.getByText('Implement interaction')).toBeTruthy();
     const item = screen.getAllByText('Build controls').map((node) => node.closest('li')).find(Boolean);
-    expect(item?.getAttribute('title')).toBe('Implement interaction');
+    expect(item?.hasAttribute('title')).toBe(false);
   });
 
   it('collapses Hearth-authored orchestration instead of dressing it as the user', () => {
