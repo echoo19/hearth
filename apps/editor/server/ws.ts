@@ -501,6 +501,17 @@ export function attachWebSocket(
   const chatSessions = new Map<string, ChatSession>();
   const devTeamRuntimes = new Map<string, DevTeamRuntime>();
   const devTeamLeadAttachments = new Map<string, readonly ChatAttachment[]>();
+  /**
+   * How many turns this conversation's lead has been given, ever.
+   *
+   * Read across a `chat-send` to answer one question: did that message start a
+   * lead turn, or was it filed for later? Only the second wants the steering
+   * receipt, and nothing else on hand answers it. `session.turnActive` cannot:
+   * it is left standing by a turn that was abandoned, so a run parked mid-turn
+   * looks busy while nothing is running. Kept off the session because a rebind
+   * replaces the session and the count has to survive one.
+   */
+  const devTeamLeadSends = new Map<string, number>();
   /** A replay in flight supersedes live frames; disk will contain them. */
   const socketOpeningChats = new Map<WebSocket, Map<number, string>>();
   let nextChatOpenGeneration = 0;
@@ -1040,6 +1051,7 @@ export function attachWebSocket(
         if (closingSessions.get(key) === closed) {
           closingSessions.delete(key);
           devTeamLeadAttachments.delete(key);
+          devTeamLeadSends.delete(key);
         }
       };
       if (!(await settlesWithin(closed))) {
@@ -1212,6 +1224,7 @@ export function attachWebSocket(
         const session = chatSessions.get(key);
         if (!session?.driver) throw new Error('The lead agent is not connected.');
         session.turnActive = true;
+        devTeamLeadSends.set(key, (devTeamLeadSends.get(key) ?? 0) + 1);
         const provider = providerForTurn(session.driver);
         if (provider) await setChatProvider(root, chatId, provider);
         const attachments = devTeamLeadAttachments.get(key);
@@ -2125,6 +2138,12 @@ export function attachWebSocket(
                         // reached the steering queue is the one send in this app
                         // that no turn will ever end.
                         const steeringBefore = runtime?.snapshot().steering.length ?? 0;
+                        // A note that RESTARTS a parked run reaches the steering
+                        // queue AND starts a lead turn, so the queue growing is
+                        // no longer proof on its own that nothing was sent. A
+                        // receipt sent while that turn was streaming would
+                        // settle the very bubble the turn is about to fill.
+                        const sendsBefore = devTeamLeadSends.get(key) ?? 0;
                         let handled: boolean | undefined;
                         try {
                           handled = await runtime?.handleUserMessage(text);
@@ -2135,7 +2154,10 @@ export function attachWebSocket(
                         if (!handled) {
                           session.turnActive = true;
                           session.driver.send(delivered, agent ?? undefined, attachments);
-                        } else if ((runtime?.snapshot().steering.length ?? 0) > steeringBefore) {
+                        } else if (
+                          (devTeamLeadSends.get(key) ?? 0) === sendsBefore &&
+                          (runtime?.snapshot().steering.length ?? 0) > steeringBefore
+                        ) {
                           // Nothing was sent to the driver, so no turn-ending
                           // event is coming. Say so out loud: without this the
                           // window keeps its optimistic "the agent is working"

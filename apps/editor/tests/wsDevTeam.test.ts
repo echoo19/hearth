@@ -342,19 +342,22 @@ describe('dev team websocket integration', () => {
     expect(resumed.type === 'devteam-state' && resumed.state.runId).toBe(runId);
     inbox.socket.send(JSON.stringify({ type: 'devteam-stop' }));
     await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interrupted');
-    // Stop parks the run rather than ending it, so what is typed afterwards is
-    // steering for the resumed run and must not reach the lead as a turn.
+    // Stop parks the run rather than ending it, and a parked run is picked back
+    // up by being spoken to. What is typed is both the note and the restart: it
+    // goes into the steering queue and the step the run was parked in runs
+    // again carrying it. Nothing else can pick it up, because the board has no
+    // Resume button to press.
     const sentBeforeFollowup = harness.drivers[1].sent.length;
     inbox.socket.send(JSON.stringify({
       type: 'chat-send',
       text: 'ordinary follow-up',
       agent: { provider: 'anthropic', model: 'model-b' },
     }));
-    await inbox.next((frame) => frame.type === 'devteam-steering-accepted' && frame.chatId === chatId);
-    expect(harness.drivers[1].sent.length).toBe(sentBeforeFollowup);
-    const stopped = await readDevTeamState(harness.root, chatId);
-    expect(stopped).toMatchObject({ runId, phase: 'interrupted' });
-    expect(stopped.steering.map((note) => note.text)).toEqual(['ordinary follow-up']);
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    await until(() => harness.drivers[1].sent.length === sentBeforeFollowup + 1);
+    expect(harness.drivers[1].sent[sentBeforeFollowup].text).toContain('ordinary follow-up');
+    const restarted = await readDevTeamState(harness.root, chatId);
+    expect(restarted).toMatchObject({ runId, phase: 'interviewing' });
     inbox.socket.close();
   });
 
@@ -437,11 +440,14 @@ describe('dev team websocket integration', () => {
     await until(async () => (await readDevTeamState(harness.root, chatId)).phase === 'interrupted');
     expect((await readDevTeamState(harness.root, chatId)).steering).toEqual([]);
     harness.drivers[1].releaseStart();
-    await until(async () => (await readDevTeamState(harness.root, chatId)).steering.length === 1);
-    const interrupted = await readDevTeamState(harness.root, chatId);
-    expect(interrupted.resumePhase).toBe('planning');
-    expect(interrupted.steering.map((item) => item.text)).toEqual(['new provider detail']);
-    expect(harness.drivers[1].sent).toEqual([]);
+
+    // The message that caused the rebind is the message that picks the run back
+    // up: planning runs again on the replacement, once, carrying what was typed
+    // into the prompt. It used to park here and wait for a Resume press, which
+    // is a dead end now that the run is governed by talking to the lead.
+    await until(() => harness.drivers[1].sent.length === 1);
+    expect(harness.drivers[1].sent[0].text).toContain('new provider detail');
+    expect((await readDevTeamState(harness.root, chatId)).phase).toBe('planning');
 
     await fsp.writeFile(path.join(harness.root, '.hearth', 'devteam', chatId, 'plan.json'), JSON.stringify({
       version: 1,
@@ -451,35 +457,32 @@ describe('dev team websocket integration', () => {
         tasks: [{ id: 't1', title: 'Implement', roleId: 'maker', detail: 'Implement.', scope: ['src'] }],
       }],
     }));
+    // The retired driver's turn lands afterwards and belongs to nobody: it must
+    // neither finish the run's planning step nor start a second handshake.
     harness.drivers[0].releaseStop({ type: 'turn-complete' });
     await new Promise((resolve) => setTimeout(resolve, 30));
-    expect((await readDevTeamState(harness.root, chatId)).phase).toBe('interrupted');
+    expect((await readDevTeamState(harness.root, chatId)).phase).toBe('planning');
+    expect(harness.drivers[1].sent).toHaveLength(1);
 
-    const beforeResume = harness.drivers[1].sent.length;
-    inbox.socket.send(JSON.stringify({ type: 'devteam-resume' }));
-    await until(() => harness.drivers[1].sent.length === beforeResume + 1);
-    expect(harness.drivers[1].sent).toHaveLength(beforeResume + 1);
-    expect(harness.drivers[1].sent[0].text).toContain('new provider detail');
     harness.drivers[1].holdStop = true;
     inbox.socket.send(JSON.stringify({
       type: 'chat-send', text: 'second provider detail', agent: { provider: 'anthropic', model: 'model-c' },
     }));
     await until(() => harness.drivers.length === 3);
-    await until(async () => (await readDevTeamState(harness.root, chatId)).phase === 'interrupted');
-    await until(async () => (await readDevTeamState(harness.root, chatId)).steering.length === 2);
+    // Nothing typed is lost across a rebind: the first note has still not been
+    // read by a turn that finished, so it goes on the replacement's prompt too.
+    await until(() => harness.drivers[2].sent.length === 1);
+    expect(harness.drivers[2].sent[0].text).toContain('new provider detail');
+    expect(harness.drivers[2].sent[0].text).toContain('second provider detail');
     expect((await readDevTeamState(harness.root, chatId)).steering.map((item) => item.text)).toEqual([
       'new provider detail',
       'second provider detail',
     ]);
-    expect(harness.drivers[2].sent).toEqual([]);
     harness.drivers[1].releaseStop({ type: 'turn-complete' });
     await new Promise((resolve) => setTimeout(resolve, 30));
-    expect((await readDevTeamState(harness.root, chatId)).phase).toBe('interrupted');
+    expect((await readDevTeamState(harness.root, chatId)).phase).toBe('planning');
+    expect(harness.drivers[2].sent).toHaveLength(1);
 
-    inbox.socket.send(JSON.stringify({ type: 'devteam-resume' }));
-    await until(() => harness.drivers[2].sent.length === 1);
-    expect(harness.drivers[2].sent[0].text).toContain('new provider detail');
-    expect(harness.drivers[2].sent[0].text).toContain('second provider detail');
     harness.drivers[2].emit({ type: 'turn-complete' });
     await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'building');
     expect((await readDevTeamState(harness.root, chatId)).steering).toEqual([]);

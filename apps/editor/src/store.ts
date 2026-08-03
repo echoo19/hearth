@@ -1889,15 +1889,25 @@ export const useApp = create<AppState>((set, get) => {
         // typed afterwards queues locally and is never sent.
         //
         // The user's own words stay — the server wrote them to the transcript
-        // before answering — and only the empty agent bubble goes.
+        // before answering — and the empty agent bubble becomes the receipt.
+        //
+        // It used to be deleted, which left a message sent to the lead with no
+        // answer and no acknowledgement of any kind: indistinguishable, from
+        // the chair, from a send that failed. This is the one send in the app
+        // that is deliberately answered by nobody, so it has to say so itself.
         if (frame.chatId !== get().activeChatId) return;
         set((state) => {
           const last = state.messages[state.messages.length - 1];
+          const filed: ChatMessage = {
+            ...last,
+            parts: [{ kind: 'notice', text: 'Noted. The lead reads this at the next handoff.' }],
+            streaming: false,
+          };
           return {
             chatBusy: false,
             messages:
               last && last.role === 'agent' && last.parts.length === 0
-                ? state.messages.slice(0, -1)
+                ? [...state.messages.slice(0, -1), filed]
                 : state.messages,
           };
         });

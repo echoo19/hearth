@@ -486,6 +486,44 @@ describe('dev team lead state machine', () => {
     expect((await readDevTeamState(root, chatId)).steering).toEqual([]);
   });
 
+  it('picks a parked run back up when the lead is spoken to', async () => {
+    const run = runtime();
+    await reachPlanning(run);
+    const promptCount = leadPrompts.length;
+    await run.stop();
+    expect(run.snapshot().phase).toBe('interrupted');
+
+    // Filing the note and stopping there is what a RUNNING run does with one.
+    // A parked run has nothing coming that would ever read it, and no control
+    // left on the board to start one, so the message has to be the restart.
+    expect(await run.handleUserMessage('continue')).toBe(true);
+    expect(run.snapshot().phase).toBe('planning');
+    await vi.waitFor(() => expect(leadPrompts).toHaveLength(promptCount + 1), WAIT_FOR);
+    expect(leadPrompts.at(-1)).toContain('continue');
+  });
+
+  it('resumes a run parked twice, whose recorded phase says only that it is parked', async () => {
+    const run = runtime();
+    await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    await run.pause();
+    await run.stop();
+
+    // Parking something already parked used to write the parked phase in as the
+    // one to return to, which left the run unresumable by any route: resume set
+    // `interrupted` as the live phase, matched nothing, and did nothing. States
+    // written that way are on disk in real projects.
+    expect((await readDevTeamState(root, chatId)).resumePhase).toBe('building');
+    await writeDevTeamState(root, chatId, {
+      ...(await readDevTeamState(root, chatId)),
+      resumePhase: 'interrupted',
+    });
+
+    const reopened = runtime();
+    expect(await reopened.handleUserMessage('continue')).toBe(true);
+    await vi.waitFor(() => expect(reopened.snapshot().phase).toBe('building'), WAIT_FOR);
+  });
+
+
   it('correlates interview follow-ups and prevents approval while a revision is running', async () => {
     const run = runtime();
     await run.start('An incomplete brief.');

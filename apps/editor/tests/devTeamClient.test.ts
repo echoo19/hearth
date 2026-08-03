@@ -146,7 +146,7 @@ describe('dev team frame folding', () => {
     expect(messages[0]).toMatchObject({ role: 'user', orchestration: true });
   });
 
-  it('ends the optimistic turn a steering note never started', () => {
+  it('ends the optimistic turn a steering note never started, and says the note was taken', () => {
     const sendFrame = useApp.getState().sendFrame as ReturnType<typeof vi.fn>;
     useApp.setState({ wsStatus: 'connected' });
     receive({ type: 'devteam-state', chatId: 'team-chat', state: SNAPSHOT });
@@ -158,9 +158,17 @@ describe('dev team frame folding', () => {
     receive({ type: 'devteam-steering-accepted', chatId: 'team-chat' });
 
     expect(useApp.getState().chatBusy).toBe(false);
-    // The user's own words stay; only the bubble for a turn that never began goes.
+    // The user's own words stay, and the bubble for the turn that never began
+    // becomes the receipt. Deleting it left a message to the lead with no reply
+    // and no acknowledgement of any kind, which from the chair is exactly what
+    // a send that failed looks like.
     expect(stripMessageIds(useApp.getState().messages)).toEqual([
       expect.objectContaining({ role: 'user', parts: [{ kind: 'text', text: 'Keep the interface quiet.' }] }),
+      expect.objectContaining({
+        role: 'agent',
+        streaming: false,
+        parts: [{ kind: 'notice', text: expect.stringContaining('next handoff') }],
+      }),
     ]);
 
     expect(useApp.getState().sendChat('And keep it quick.')).toBe(true);

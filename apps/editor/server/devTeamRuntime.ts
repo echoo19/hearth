@@ -147,9 +147,22 @@ const DEV_TEAM_STOPPED = 'Dev team run stopped.';
  * Said when a turn was given up on rather than ended. Names what happened and
  * what to do next, because this is the message a person reads at the moment
  * they have been staring at a board that was not moving.
+ *
+ * "Resume to …" is not what any of these say any more. The board carries no run
+ * controls — it reports status and nothing else — so the instruction has to name
+ * the thing that is actually there, which is the lead and the box under it.
  */
 const DEV_TEAM_STALLED =
-  'The lead stopped responding, so the run was parked with nothing left running. Resume to run that step again.';
+  'The lead stopped responding, so the run was parked with nothing left running. Message the lead to run that step again.';
+const DEV_TEAM_REBOUND =
+  'The lead agent changed while a dev team handshake was running. Message the lead to pick the run back up.';
+
+/** Parked, in either of the two ways. Neither is a phase a run can resume INTO,
+ *  which is the whole reason this is asked: parking a parked run used to write
+ *  the parked phase in as the one to return to, and left it unresumable. */
+function parkedPhase(phase: DevTeamPhase | null): boolean {
+  return phase === 'paused' || phase === 'interrupted';
+}
 
 function initialState(): DevTeamState {
   return {
@@ -315,16 +328,25 @@ export class DevTeamRuntime {
       this.state.phase === 'planning' ||
       this.state.phase === 'building' ||
       this.state.phase === 'reviewing' ||
-      this.state.phase === 'wrapping' ||
-      this.state.phase === 'paused'
+      this.state.phase === 'wrapping'
     ) {
       this.state.steering.push({ ts: this.now(), text: message });
       await this.persist();
       return true;
     }
-    if (this.state.phase === 'interrupted') {
+    // A parked run is picked back up by BEING SPOKEN TO. Filing the note and
+    // stopping there is what a run does while it is moving; doing it to a run
+    // that has stopped is a dead end, and it shipped as one: a run parked by a
+    // mid-handshake agent change sat there through "continue?", "continue",
+    // "continue", "go", filing each one and restarting nothing, because the
+    // only thing that could restart it was a Resume button the board no longer
+    // has. The lead is an ordinary conversation, and an ordinary conversation
+    // answers when you talk to it. The note is filed FIRST so the turn that
+    // resume starts carries it.
+    if (this.state.phase === 'paused' || this.state.phase === 'interrupted') {
       this.state.steering.push({ ts: this.now(), text: message });
       await this.persist();
+      await this.resume();
       return true;
     }
     return false;
@@ -454,14 +476,14 @@ export class DevTeamRuntime {
     for (const operation of new Set(operations)) {
       if (operation?.bindingId !== bindingId) continue;
       this.removeLead(operation);
-      const phase = this.state.phase === 'paused' ? this.state.resumePhase : this.state.phase;
+      const phase = parkedPhase(this.state.phase) ? this.state.resumePhase : this.state.phase;
       // An interview follow-up immediately establishes a replacement
       // operation on the new binding. File-handshake turns have no such user
       // turn, so freezing them is the only honest alternative to stalling.
       if (phase && phase !== 'interviewing' && phase !== 'spec-review') {
         this.state.phase = 'interrupted';
         this.state.resumePhase = phase;
-        this.state.error = 'The lead agent changed while a dev team handshake was running. Resume to continue.';
+        this.state.error = DEV_TEAM_REBOUND;
         interrupted = true;
       }
     }
@@ -524,8 +546,25 @@ export class DevTeamRuntime {
 
   async resume(): Promise<void> {
     await this.load();
-    if (this.state.phase !== 'paused' && this.state.phase !== 'interrupted') return;
-    const phase = this.state.resumePhase ?? 'building';
+    if (!parkedPhase(this.state.phase)) return;
+    // Where to go back to, and a way back even when that was never recorded.
+    //
+    // `resumePhase` is written by whoever parked the run, and a run parked
+    // twice used to have "interrupted" written in as the phase to return to —
+    // which resume then set as the live phase, matched none of the branches
+    // below, and left the run exactly as dead as it found it. States like that
+    // are on disk already, so this reads the run itself when the recorded
+    // answer is not one a run can be in: a plan means the build is the thing to
+    // carry on with, a spec means it never got past planning, and neither means
+    // the interview.
+    const recorded = this.state.resumePhase;
+    const phase = recorded !== null && !parkedPhase(recorded) && recorded !== 'idle' && recorded !== 'done'
+      ? recorded
+      : this.state.plan
+        ? 'building'
+        : this.state.spec
+          ? 'planning'
+          : 'interviewing';
     const retryError = this.state.error;
     const needsRepair =
       this.state.retryCount > 0 && retryError !== null && (phase === 'planning' || phase === 'reviewing');
@@ -683,7 +722,7 @@ export class DevTeamRuntime {
       const prior = this.state.phase;
       this.state.phase = 'interrupted';
       this.state.resumePhase = prior;
-      this.state.error = 'The dev team run was interrupted and needs to be resumed.';
+      this.state.error = 'The dev team run was interrupted. Message the lead to pick it back up.';
       for (const record of this.state.tasks) {
         if (inFlight(record.status)) {
           record.status = 'interrupted';
@@ -1498,7 +1537,7 @@ export class DevTeamRuntime {
   private async interruptState(error: string, resumePhase?: DevTeamPhase | null): Promise<void> {
     this.invalidateLead();
     const phase = resumePhase ?? this.state.phase;
-    this.state.resumePhase = phase === 'paused' ? this.state.resumePhase : phase;
+    this.state.resumePhase = parkedPhase(phase) ? this.state.resumePhase : phase;
     this.state.phase = 'interrupted';
     this.state.error = error;
     await this.persist();
@@ -1511,7 +1550,7 @@ export class DevTeamRuntime {
     // Stopping something already parked keeps the phase it was parked at,
     // otherwise a second Stop would set 'paused' or 'interrupted' as the thing
     // to resume into and Resume would have nowhere to go.
-    const resumePhase = phase === 'paused' || phase === 'interrupted' ? this.state.resumePhase : phase;
+    const resumePhase = parkedPhase(phase) ? this.state.resumePhase : phase;
     const withdrawalErrors: string[] = [];
     for (const [engineerId, active] of [...this.active]) {
       const withdrawalError = await this.withdrawEngineerAsksBestEffort(engineerId, active);
