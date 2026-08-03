@@ -65,6 +65,22 @@ export function devTeamActivity(
 }
 
 /**
+ * Which flame an agent wears, from what it is doing.
+ *
+ * Burning means producing; banked means the fuel is there and nothing is
+ * coming off it. Thinking and blocked are both the second kind, and the board
+ * said so in words while the mark beside them burned — a card reading THINKING
+ * under a licking flame is the picture disagreeing with the caption.
+ *
+ * Keyed on the activity word rather than on the task status because the status
+ * cannot tell these apart: an engineer mid-thought and an engineer sitting on
+ * an unanswered question are both `running` to the runtime.
+ */
+export function devTeamFlame(activity: string): 'burn' | 'smoulder' {
+  return activity === 'Thinking' || activity === 'Needs you' ? 'smoulder' : 'burn';
+}
+
+/**
  * The lead's own lane. It has no task record, so its state has to come from the
  * run's phase — "Available" would be a lie while a milestone is being built,
  * because the lead is watching it.

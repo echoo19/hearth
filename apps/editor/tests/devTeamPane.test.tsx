@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DevTeamPane } from '../src/components/chat/DevTeamPane';
 import {
   devTeamActivity,
+  devTeamFlame,
   devTeamPhaseLabel,
   devTeamStage,
   devTeamStepStates,
@@ -154,6 +155,17 @@ describe('dev team presentation helpers', () => {
       active: { kind: 'input', id: 'input-first' },
       count: 2,
     });
+  });
+
+  it('burns while an agent produces and banks while it thinks or waits', () => {
+    // The board said THINKING in words next to a licking flame, which is the
+    // picture disagreeing with the caption. Burning means producing; banked
+    // means the fuel is there and nothing is coming off it.
+    expect(devTeamFlame('Working')).toBe('burn');
+    expect(devTeamFlame('Editing files')).toBe('burn');
+    expect(devTeamFlame('Running a command')).toBe('burn');
+    expect(devTeamFlame('Thinking')).toBe('smoulder');
+    expect(devTeamFlame('Needs you')).toBe('smoulder');
   });
 
   it('gives every task a stable, unique name without asking anything but its id', () => {

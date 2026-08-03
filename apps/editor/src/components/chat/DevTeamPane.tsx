@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   DEV_TEAM_STEPS,
   devTeamActivity,
+  devTeamFlame,
   devTeamLeadActivity,
   devTeamPhaseLabel,
   devTeamStage,
@@ -181,10 +182,9 @@ function AgentCard({
     >
       <span className="devteam-card-mark" aria-hidden="true">
         {status === 'running'
-          // Burning while it works, banked while it is blocked: an engineer
-          // sitting on an unanswered question is not producing anything, and
-          // the card should not look like it is.
-          ? <FlameMark state={asks > 0 ? 'smoulder' : 'burn'} size={14} />
+          // The mark says what the word beside it says: burning while it
+          // produces, banked while it thinks or waits on you.
+          ? <FlameMark state={asks > 0 ? 'smoulder' : devTeamFlame(activity)} size={14} />
           : <Icon name={status === 'lead' ? 'review' : 'bot'} size={14} />}
       </span>
       <span className="devteam-card-name">{name}</span>
