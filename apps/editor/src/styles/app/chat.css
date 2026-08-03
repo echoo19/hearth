@@ -655,28 +655,15 @@
   font-size: var(--text-sm);
 }
 
-.working-pulse,
+/* The dot that used to share this breath is gone: every live mark in the app
+   is a flame now (styles/app/flame.css). The word keeps breathing where it is
+   the only thing beside a flame that can carry a rhythm of its own. */
 .working-label {
-  /* Symmetric sine-ish easing, and one shared phase — see the note above. */
+  /* Symmetric sine-ish easing — see the note above. */
   animation-duration: 1200ms;
   animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
   animation-iteration-count: infinite;
   animation-direction: alternate;
-}
-
-.working-pulse {
-  flex: none;
-  align-self: center;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation-name: working-pulse;
-  /* Promote once, so the loop composites instead of repainting the row. */
-  will-change: transform, opacity;
-}
-
-.working-label {
   animation-name: working-breathe;
   will-change: opacity;
 }
@@ -686,19 +673,6 @@
   color: var(--ink-faint);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
-}
-
-/* Shallow on purpose. A dot that halves in size reads as a throb; this is a
-   breath, and the amplitude is the difference. */
-@keyframes working-pulse {
-  from {
-    transform: scale(0.84);
-    opacity: 0.5;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
 }
 
 @keyframes working-breathe {
@@ -714,18 +688,11 @@
    these on their dimmest frame. Working still has to be legible, so the
    motion is replaced rather than merely stopped. */
 @media (prefers-reduced-motion: reduce) {
-  /* `animation: none` FIRST, and it is the load-bearing line. These loops are
+  /* `animation: none` FIRST, and it is the load-bearing line. This loop is
      `infinite alternate`, and a running animation's keyframe values outrank a
      normal author declaration, so the settle values below never applied while
      the animation was still going: only the global 0.01ms duration clamp in
-     base.css was stopping the strobe, which is a backstop, not a rule. The
-     flame below does this correctly; these two did not. */
-  .working-pulse {
-    animation: none;
-    transform: none;
-    opacity: 1;
-  }
-
+     base.css was stopping the strobe, which is a backstop, not a rule. */
   .working-label {
     animation: none;
     opacity: 1;
@@ -734,182 +701,18 @@
 
 /* --- The flame in the working row ----------------------------------------- */
 
-/* The transcript's own working row carries the Hearth flame instead of the
-   shared dot, and it is the only thing in the line that moves. The word keeps
-   breathing in the reasoning line and the subagent card, where it is the sole
-   live mark; here it would be a second rhythm under a first, which is exactly
-   the two-place fidget the note above rejects, and this word sits at the foot
-   of prose someone is still reading. One live thing, and it is the flame. */
+/* The mark itself lives in styles/app/flame.css: it is the app's loading
+   language now rather than this row's ornament, and the dev team board, the
+   step rail and the subagent card all burn the same one.
+
+   The word stops breathing here. It keeps breathing in the reasoning line and
+   the subagent card, where it is the sole live mark; under a flame it would be
+   a second rhythm beneath a first, which is the two-place fidget the note
+   further up this file rejects, and this word sits at the foot of prose
+   someone is still reading. One live thing, and it is the flame. */
 .msg-working .working-label {
   animation: none;
   opacity: 1;
-}
-
-/* What makes fire read as alive is that it never repeats. A single looped
-   channel cannot do that at any amplitude: one track always returns to the
-   same beat, and the eye finds the beat in about four seconds and then reads
-   it as a spinner. So three things move on three periods that share no
-   noticeable common multiple (1.3s, 1.7s, 2.3s recombine only every ~8.5
-   minutes, longer than any turn anyone waits through), and the irregularity is
-   in their drift against each other rather than inside any one of them:
-
-     reach: the body stretching up off the base and settling
-     lean:  a small lateral tilt, pivoting on that same base
-     glow:  brightness, which in fire moves fastest and least evenly
-
-   They animate the individual `scale` / `rotate` properties rather than
-   `transform` on purpose. Two animations both writing `transform` clobber each
-   other, which would force reach and lean into one keyframe track sharing one
-   duration, collapsing the three periods back down to two and putting the beat
-   right back.
-
-   The durations sit outside the --t-* set on the same licence as the
-   field-reject shake in primitives.css and the sign-in breath in
-   settings-agents.css: those tokens size a response to an action, and nothing
-   here is responding to anything. Here there is a second reason, which is that
-   the three durations must be unequal and non-harmonic. That difference IS the
-   effect; a token set of three fixed values cannot express it.
-
-   Amplitudes are deliberately tiny (under 8% on scale, under 2.5deg of lean,
-   never dimmer than 0.74). This runs for minutes beside text being read: it
-   has to be findable in peripheral vision and ignorable in foveal.
-
-   Resting state is the visible state. No fill mode, no `both`, no `forwards`:
-   with the animations never running at all (hidden tab, headless render, reduce
-   on) the flame computes to upright, full size, full opacity from the base rule
-   below, so it can never ship as an invisible or half-scaled glyph the way a
-   fill-mode reveal does. See the notes in primitives/menu.css and shell.css. */
-.working-flame {
-  flex: none;
-  align-self: center;
-  display: inline-flex;
-  /* Not --flame-brand. That token is the wordmark's hotter orange, reserved
-     for brand moments; a status mark living inside a transcript belongs to the
-     UI accent so it cannot out-shout the message it is sitting under. */
-  color: var(--accent);
-  /* The glyph is ~6px of ink in a 12px box (see `fire` in ui.tsx), so the
-     8px gap would read as 11px and the flame would sit 3px right of where the
-     dot did. Pull both sides back to the optical gap. */
-  margin-inline: -3px;
-  /* Fire is anchored. The glyph's base sits at y=11 of its 12-unit box, so
-     every stretch and lean pivots there and the flame grows out of a fixed
-     foot instead of floating free. */
-  transform-origin: 50% 92%;
-  animation-name: working-flame-reach, working-flame-lean, working-flame-glow;
-  animation-duration: 1700ms, 2300ms, 1300ms;
-  /* Symmetric sine-ish easing, one value for all three. --ease-out decelerates
-     into a resting state, and none of these rest; see the note further up this
-     file for the full reason a loop cannot use it. */
-  animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
-  animation-iteration-count: infinite;
-  /* Promote once, so the loop composites instead of repainting the row. */
-  will-change: transform, opacity;
-}
-
-/* Reach. The flame narrows as it climbs and spreads as it drops, the way a
-   real tongue trades height for width, so x and y move against each other
-   rather than together (together is a throb). Stops are unevenly spaced so it
-   lingers at some heights and snaps past others; the tallest lick lands at 76%,
-   late, so the cycle does not read as building to a middle and coming back. */
-@keyframes working-flame-reach {
-  0% {
-    scale: 1 1;
-  }
-  17% {
-    scale: 0.97 1.06;
-  }
-  31% {
-    scale: 1.03 0.95;
-  }
-  48% {
-    scale: 0.98 1.04;
-  }
-  59% {
-    scale: 1.02 0.99;
-  }
-  76% {
-    scale: 0.96 1.08;
-  }
-  88% {
-    scale: 1.02 0.97;
-  }
-  100% {
-    scale: 1 1;
-  }
-}
-
-/* Lean. Degrees this small are never consciously seen; what they do is stop
-   the silhouette from being vertically symmetric at any given instant, which
-   is most of what separates a flame from a shape being scaled. Weighted so it
-   spends more of the loop off-centre than centred. */
-@keyframes working-flame-lean {
-  0% {
-    rotate: 0deg;
-  }
-  21% {
-    rotate: -1.8deg;
-  }
-  39% {
-    rotate: 0.9deg;
-  }
-  55% {
-    rotate: 2.4deg;
-  }
-  68% {
-    rotate: -0.5deg;
-  }
-  84% {
-    rotate: -2.1deg;
-  }
-  100% {
-    rotate: 0deg;
-  }
-}
-
-/* Glow. Fire brightens faster than it dims, so the climbs get short gaps
-   between stops and the falls get long ones; the asymmetry is in the spacing,
-   not in the easing, which stays the same curve as the other two. The floor is
-   0.74 rather than something lower because below roughly that the mark stops
-   reading as ember against --ink-mute and starts reading as a glitch. */
-@keyframes working-flame-glow {
-  0% {
-    opacity: 0.92;
-  }
-  12% {
-    opacity: 1;
-  }
-  34% {
-    opacity: 0.78;
-  }
-  46% {
-    opacity: 0.97;
-  }
-  63% {
-    opacity: 0.84;
-  }
-  71% {
-    opacity: 1;
-  }
-  89% {
-    opacity: 0.74;
-  }
-  100% {
-    opacity: 0.92;
-  }
-}
-
-/* The global reduce rule flattens durations, which here would pin the flame on
-   whatever the 0% frame happens to be. Settle it explicitly instead: upright,
-   full size, full strength. The row still reads as working without any motion
-   at all, because the counter beside it ticks once a second. That is liveness
-   carried by changing text, which is what reduced motion asks for. */
-@media (prefers-reduced-motion: reduce) {
-  .working-flame {
-    animation: none;
-    scale: 1;
-    rotate: 0deg;
-    opacity: 1;
-  }
 }
 
 /* --- Queued messages ------------------------------------------------------ */

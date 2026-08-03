@@ -104,8 +104,10 @@ describe('the line in the transcript', () => {
     // mark for a generic box with nothing failing anywhere. Pin the shape: the
     // wrapper the flicker pivots on is present, and what it holds is a path.
     showTranscript([turn([])]);
-    const flame = document.querySelector('.msg-working .working-flame');
+    const flame = document.querySelector('.msg-working .flame-mark');
     expect(flame).not.toBeNull();
+    // Burning, not banked: output is being written right now.
+    expect(flame?.getAttribute('data-flame')).toBe('burn');
     expect(flame?.querySelector('svg > path')).not.toBeNull();
     expect(flame?.querySelector('svg > rect')).toBeNull();
   });
@@ -133,8 +135,10 @@ describe('the line in the transcript', () => {
     showTranscript([turn([{ kind: 'reasoning', text: 'hmm', startedAt: 1, durationMs: 4200 }], true, Date.now())]);
     expect(screen.getAllByText('Thinking')).toHaveLength(1);
     expect(document.querySelector('.msg-working')).toBeNull();
-    // ...and the fold, not a separate row, is what pulses and counts.
-    expect(document.querySelector('.reasoning-line .working-flame')).not.toBeNull();
+    // ...and the fold, not a separate row, is what burns and counts. It
+    // smoulders rather than burns: a thought in progress is producing nothing
+    // yet, and the mark says which of the two is happening.
+    expect(document.querySelector('.reasoning-line .flame-mark')?.getAttribute('data-flame')).toBe('smoulder');
     expect(document.querySelector('.reasoning-line .working-elapsed')?.textContent).toBe('4s');
   });
 

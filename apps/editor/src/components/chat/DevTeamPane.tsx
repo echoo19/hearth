@@ -13,7 +13,7 @@ import {
 import { useApp } from '../../store';
 import type { ChatMessage, DevTeamCompletedRun, DevTeamSnapshot, DevTeamTaskRecord } from '../../types';
 import { formatElapsed } from '../../chat/duration';
-import { Icon, Modal } from '../ui';
+import { FlameMark, Icon, Modal } from '../ui';
 import { Button } from '../ui/Button';
 import { Composer } from './Composer';
 import { Markdown } from './Markdown';
@@ -82,48 +82,6 @@ function usePhaseElapsed(state: DevTeamSnapshot | null): number | null {
 }
 
 /**
- * The controls that govern a run, on the strip over a conversation.
- *
- * They are NOT on the team board. That screen's job is to say how each agent
- * is doing, and a pair of buttons governing the whole run sat in it as the one
- * thing that was not a status. The way out of a run that has stopped moving is
- * offered by the stall notice, where it belongs: attached to the problem it
- * solves rather than standing by for one.
- *
- * Stop is offered for the whole life of a run, not just the phases that can be
- * paused. It used to be derived from those, which left an interview with no
- * control at all — and an interview is exactly where a lead turn can hang with
- * the pane saying "Working" and climbing. The runtime already accepts stop from
- * every phase and only ignores it when there is nothing running.
- *
- * Pause is not here. Every phase it applied to is a phase with a team, and a
- * team is on the board, which has no controls: a button that no reachable state
- * can render is worse than one honest way to halt a run.
- */
-function RunControls({ phase }: { phase: DevTeamSnapshot['phase'] }) {
-  const resume = useApp((s) => s.resumeDevTeam);
-  const stop = useApp((s) => s.stopDevTeam);
-  const canResume = phase === 'paused' || phase === 'interrupted';
-  const canStop = phase !== 'idle' && phase !== 'done';
-  if (!canResume && !canStop) return null;
-
-  return (
-    <div className="devteam-controls">
-      {canResume && (
-        <Button size="sm" variant="primary" icon="play" aria-label="Resume dev team" onClick={resume}>
-          Resume
-        </Button>
-      )}
-      {canStop && (
-        <Button size="sm" variant="danger" icon="stop" aria-label="Stop dev team" onClick={stop}>
-          Stop
-        </Button>
-      )}
-    </div>
-  );
-}
-
-/**
  * What a run looks like while it is still just a conversation.
  *
  * The interview and the specification are a chat and nothing more: one person
@@ -140,13 +98,12 @@ function RunStrip({ phase, elapsed }: { phase: DevTeamSnapshot['phase']; elapsed
   return (
     <div className="devteam-strip">
       <span className="devteam-strip-state" data-parked={parked || undefined}>
-        <span className="devteam-strip-pulse" aria-hidden="true" />
+        <FlameMark state={parked ? 'ember' : 'burn'} size={11} />
         <span role="status" aria-label="Dev team phase">{devTeamPhaseLabel(phase)}</span>
       </span>
       {counter && (
         <span className="devteam-strip-clock" aria-hidden="true">{counter}</span>
       )}
-      <RunControls phase={phase} />
     </div>
   );
 }
@@ -271,7 +228,10 @@ function AgentCard({
     >
       <span className="devteam-card-mark" aria-hidden="true">
         {status === 'running'
-          ? <span className="devteam-spin" />
+          // Burning while it works, banked while it is blocked: an engineer
+          // sitting on an unanswered question is not producing anything, and
+          // the card should not look like it is.
+          ? <FlameMark state={asks > 0 ? 'smoulder' : 'burn'} size={14} />
           : <Icon name={status === 'lead' ? 'review' : 'bot'} size={14} />}
       </span>
       <span className="devteam-card-name">{name}</span>
@@ -379,7 +339,7 @@ function RunRail({
           >
             <span className="devteam-step-mark" aria-hidden="true">
               {steps[index] === 'done' && <Icon name="check" size={11} />}
-              {steps[index] === 'active' && <span className="devteam-spin" />}
+              {steps[index] === 'active' && <FlameMark size={11} />}
               {steps[index] === 'waiting' && index + 1}
             </span>
             <span className="devteam-step-name">{step}</span>
@@ -449,6 +409,7 @@ function MemberView({
   member,
   keyboardActive,
   running,
+  leadTurn,
   onBack,
 }: {
   member: Member;
@@ -456,10 +417,13 @@ function MemberView({
   /** The team is still working, so anything typed is steering rather than a
    *  turn of its own, and a file cannot be handed to the lead mid-run. */
   running: boolean;
+  /** The lead itself is mid-turn, so the box it carries offers Stop. */
+  leadTurn: boolean;
   onBack: () => void;
 }) {
   const approve = useApp((s) => s.approveEngineer);
   const answer = useApp((s) => s.answerEngineerInput);
+  const stopRun = useApp((s) => s.stopDevTeam);
   const engineerId = member.engineerId;
 
   return (
@@ -517,6 +481,8 @@ function MemberView({
           label="Message the lead"
           placeholder="Message the lead…"
           attachmentDisabledReason={running ? 'Steering is text-only while the team is running.' : undefined}
+          running={leadTurn}
+          onStop={stopRun}
         />
       )}
     </section>
@@ -619,6 +585,7 @@ function TeamStage({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number
           <MemberView
             member={open}
             running={state.phase !== 'paused' && state.phase !== 'interrupted'}
+            leadTurn={LEAD_TURN_PHASES.has(state.phase)}
             // Only one ask in the whole run may own Enter and Escape, and it is
             // the one being looked at: a shortcut that answers a question
             // offscreen is worse than no shortcut.
@@ -737,6 +704,7 @@ function composerCopy(state: DevTeamSnapshot | null): { label: string; placehold
 
 export function DevTeamPane() {
   const state = useApp((s) => s.devTeam);
+  const stopRun = useApp((s) => s.stopDevTeam);
   const elapsed = usePhaseElapsed(state);
   const stalled = elapsed !== null && elapsed >= STALL_AFTER_MS;
   const copy = composerCopy(state);
@@ -772,11 +740,20 @@ export function DevTeamPane() {
       )}
       {/* The board and an engineer's log have no composer: neither is a thing
           you talk to. The lead's own view brings one with it. */}
+      {/* Stop lives here and nowhere else. The strip over the conversation used
+          to carry its own pair of buttons, which put the run's one destructive
+          control somewhere different from the Stop every other conversation in
+          the app has, and left the box below it showing Send while a turn ran.
+          The run's Stop is the RUN's, not the turn's: it parks the run, keeps
+          the plan and the transcripts, and withdraws whatever the engineers
+          were waiting on. */}
       {stage === 'conversation' && (
         <Composer
           label={copy.label}
           placeholder={copy.placeholder}
           attachmentDisabledReason={done ? undefined : 'Steering is text-only while the team is running.'}
+          running={LEAD_TURN_PHASES.has(phase)}
+          onStop={stopRun}
         />
       )}
     </div>

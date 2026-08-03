@@ -1,0 +1,249 @@
+/* The flame, as this app's loading mark.
+ *
+ * Every other app in this category signals "something is happening" with a
+ * spinning ring or a blinking dot, and both of those are the same mark: a
+ * shape with a period, telling you only that a clock somewhere is still
+ * running. Hearth has a better answer sitting in its own name. A hearth with
+ * something burning in it is a truer picture of work in progress than a
+ * blinking light, and it is the one mark on the surface nobody could mistake
+ * for another product's.
+ *
+ * There are three of them, and they are three different facts rather than
+ * three decorations:
+ *
+ *   burn      — something is being produced right now. Full flicker.
+ *   smoulder  — the agent is thinking. Banked: it glows and barely moves,
+ *               because nothing is coming out yet.
+ *   ember     — parked. Alight but still, so a stopped run looks stopped
+ *               without going dark and reading as broken.
+ *
+ * WHAT MAKES FIRE READ AS ALIVE IS THAT IT NEVER REPEATS. A single looped
+ * channel cannot do that at any amplitude: one track always returns to the
+ * same beat, and the eye finds the beat in about four seconds and then reads
+ * it as a spinner. So `burn` moves three things on three periods that share no
+ * noticeable common multiple (1.3s, 1.7s, 2.3s recombine only every ~8.5
+ * minutes, longer than any turn anyone waits through), and the irregularity is
+ * in their drift against each other rather than inside any one of them:
+ *
+ *   reach: the body stretching up off the base and settling
+ *   lean:  a small lateral tilt, pivoting on that same base
+ *   glow:  brightness, which in fire moves fastest and least evenly
+ *
+ * They animate the individual `scale` / `rotate` properties rather than
+ * `transform` on purpose. Two animations both writing `transform` clobber each
+ * other, which would force reach and lean into one keyframe track sharing one
+ * duration, collapsing the three periods back down to two and putting the beat
+ * right back.
+ *
+ * The durations sit outside the --t-* set on the same licence as the
+ * field-reject shake in primitives.css and the sign-in breath in
+ * settings-agents.css: those tokens size a response to an action, and nothing
+ * here is responding to anything. Here there is a second reason, which is that
+ * the durations must be unequal and non-harmonic. That difference IS the
+ * effect; a token set of three fixed values cannot express it.
+ *
+ * Amplitudes are deliberately tiny (under 8% on scale, under 2.5deg of lean,
+ * never dimmer than 0.74). These run for minutes beside text being read: they
+ * have to be findable in peripheral vision and ignorable in foveal.
+ *
+ * RESTING STATE IS THE VISIBLE STATE. No fill mode, no `both`, no `forwards`:
+ * with the animations never running at all (hidden tab, headless render,
+ * reduce on) the flame computes to upright, full size, full opacity from the
+ * base rule, so it can never ship as an invisible or half-scaled glyph the way
+ * a fill-mode reveal does. See the notes in primitives/menu.css and shell.css.
+ */
+.flame-mark {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  /* Not --flame-brand. That token is the wordmark's hotter orange, reserved
+     for brand moments; a status mark living inside a transcript belongs to the
+     UI accent so it cannot out-shout the message it is sitting under. */
+  color: var(--accent);
+  /* The glyph is ~6px of ink in a 12px box (see `fire` in ui.tsx), so a row's
+     8px gap would read as 11px and the flame would sit 3px right of where the
+     dot it replaced did. Pull both sides back to the optical gap. Slots that
+     centre the mark in a box of their own set this to zero. */
+  margin-inline: -3px;
+  /* Fire is anchored. The glyph's base sits at y=11 of its 12-unit box, so
+     every stretch and lean pivots there and the flame grows out of a fixed
+     foot instead of floating free. */
+  transform-origin: 50% 92%;
+  /* Symmetric sine-ish easing, one value for every channel. --ease-out
+     decelerates into a resting state, and none of these rest. */
+  animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+  animation-iteration-count: infinite;
+  /* Promote once, so the loop composites instead of repainting the row. */
+  will-change: transform, opacity;
+}
+
+.flame-mark[data-flame='burn'] {
+  animation-name: flame-reach, flame-lean, flame-glow;
+  animation-duration: 1700ms, 2300ms, 1300ms;
+}
+
+/* Thinking. A banked fire: the fuel is there and nothing is coming off it yet,
+   so the glow swings twice as far as `burn`'s and the body hardly moves. Two
+   channels rather than three, on a slower pair, and no lean at all — a flame
+   that tilts is a flame being blown about, which is the wrong picture for a
+   thing sitting still working something out. The result reads as clearly
+   different from `burn` at a glance without being a second kind of mark. */
+.flame-mark[data-flame='smoulder'] {
+  animation-name: flame-bank, flame-breathe;
+  animation-duration: 2900ms, 2100ms;
+}
+
+/* Parked. Alight and still: no animation at all, dimmed to sit below the live
+   marks in the same view. Going dark instead would read as broken, and a run
+   someone stopped on purpose is not broken. */
+.flame-mark[data-flame='ember'] {
+  animation: none;
+  opacity: 0.55;
+}
+
+/* Reach. The flame narrows as it climbs and spreads as it drops, the way a
+   real tongue trades height for width, so x and y move against each other
+   rather than together (together is a throb). Stops are unevenly spaced so it
+   lingers at some heights and snaps past others; the tallest lick lands at 76%,
+   late, so the cycle does not read as building to a middle and coming back. */
+@keyframes flame-reach {
+  0% {
+    scale: 1 1;
+  }
+  17% {
+    scale: 0.97 1.06;
+  }
+  31% {
+    scale: 1.03 0.95;
+  }
+  48% {
+    scale: 0.98 1.04;
+  }
+  59% {
+    scale: 1.02 0.99;
+  }
+  76% {
+    scale: 0.96 1.08;
+  }
+  88% {
+    scale: 1.02 0.97;
+  }
+  100% {
+    scale: 1 1;
+  }
+}
+
+/* Lean. Degrees this small are never consciously seen; what they do is stop
+   the silhouette from being vertically symmetric at any given instant, which
+   is most of what separates a flame from a shape being scaled. Weighted so it
+   spends more of the loop off-centre than centred. */
+@keyframes flame-lean {
+  0% {
+    rotate: 0deg;
+  }
+  21% {
+    rotate: -1.8deg;
+  }
+  39% {
+    rotate: 0.9deg;
+  }
+  55% {
+    rotate: 2.4deg;
+  }
+  68% {
+    rotate: -0.5deg;
+  }
+  84% {
+    rotate: -2.1deg;
+  }
+  100% {
+    rotate: 0deg;
+  }
+}
+
+/* Glow. Fire brightens faster than it dims, so the climbs get short gaps
+   between stops and the falls get long ones; the asymmetry is in the spacing,
+   not in the easing, which stays the same curve as the other two. The floor is
+   0.74 rather than something lower because below roughly that the mark stops
+   reading as ember against --ink-mute and starts reading as a glitch. */
+@keyframes flame-glow {
+  0% {
+    opacity: 0.92;
+  }
+  12% {
+    opacity: 1;
+  }
+  34% {
+    opacity: 0.78;
+  }
+  46% {
+    opacity: 0.97;
+  }
+  63% {
+    opacity: 0.84;
+  }
+  71% {
+    opacity: 1;
+  }
+  89% {
+    opacity: 0.74;
+  }
+  100% {
+    opacity: 0.92;
+  }
+}
+
+/* Bank. `burn`'s reach with most of the air taken out of it: the same trade of
+   height against width, a third of the amplitude, and it settles low rather
+   than returning to full height, so the body sits down while it works. */
+@keyframes flame-bank {
+  0% {
+    scale: 1 0.96;
+  }
+  29% {
+    scale: 0.99 1.02;
+  }
+  52% {
+    scale: 1.01 0.95;
+  }
+  74% {
+    scale: 0.99 1;
+  }
+  100% {
+    scale: 1 0.96;
+  }
+}
+
+/* Breathe. Twice `flame-glow`'s swing on an even cadence — the one channel
+   doing real work here, and the reason a smouldering mark still reads as live
+   from the corner of the eye while its body is nearly still. */
+@keyframes flame-breathe {
+  0% {
+    opacity: 0.58;
+  }
+  44% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.58;
+  }
+}
+
+/* The global reduce rule flattens durations, which here would pin the flame on
+   whatever the 0% frame happens to be. Settle it explicitly instead: upright,
+   full size, full strength. Every place this mark appears has a counter, a
+   status word or a changing transcript beside it, so the surface still reads
+   as live without any motion at all. That is liveness carried by changing
+   text, which is what reduced motion asks for. */
+@media (prefers-reduced-motion: reduce) {
+  .flame-mark {
+    animation: none;
+    scale: 1;
+    rotate: 0deg;
+    opacity: 1;
+  }
+
+  .flame-mark[data-flame='ember'] {
+    opacity: 0.55;
+  }
+}

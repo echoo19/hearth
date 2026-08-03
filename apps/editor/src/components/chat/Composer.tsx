@@ -104,6 +104,8 @@ export function Composer({
   label = 'Message the agent',
   placeholder,
   attachmentDisabledReason,
+  running = false,
+  onStop,
 }: {
   variant?: ComposerVariant;
   /** Allows a conversation mode to name who receives the message without replacing the composer. */
@@ -111,6 +113,18 @@ export function Composer({
   placeholder?: string;
   /** Keeps text-only orchestration from accepting files it cannot deliver. */
   attachmentDisabledReason?: string;
+  /**
+   * Something is running that this box did not start.
+   *
+   * `chatBusy` only knows about turns sent from here, and a dev team run
+   * spends most of its life in turns the runtime starts on its own: the
+   * planning turn after a spec is approved, every milestone review, the
+   * report. Stop is the one control that has to be there for all of them,
+   * because it is the only one, so the box is told rather than left to guess.
+   */
+  running?: boolean;
+  /** What Stop means here, when interrupting the current turn is not it. */
+  onStop?: () => void;
 } = {}) {
   const sendChat = useApp((s) => s.sendChat);
   // Stop interrupts the TURN and keeps the conversation's agent alive, so the
@@ -245,6 +259,10 @@ export function Composer({
   const canSend = (isHome || connected) && !empty && !attachmentBlocked && (isHome ? !busy : true);
   /** A turn is running, so the next Enter queues rather than sends. */
   const queueing = busy && !isHome;
+  // Stop is offered for anything in flight; queueing stays tied to `chatBusy`,
+  // because what a message does when it is sent is a different question from
+  // whether there is something to halt. A steering note reaches the run.
+  const stoppable = (busy || running) && !isHome;
   const slashQuery = !isHome && text.startsWith('/') && !text.includes('\n')
     ? text.slice(1).split(/\s/, 1)[0].toLowerCase()
     : null;
@@ -466,9 +484,14 @@ export function Composer({
           {/* Stop belongs to the running turn and stays reachable while one is
               running. Send appears beside it the moment there is something to
               send — two circles only when both actually mean something. */}
-          {queueing && (
+          {stoppable && (
             <Tooltip content="Stop">
-              <button type="button" className="composer-send is-stop" aria-label="Stop" onClick={interruptChat}>
+              <button
+                type="button"
+                className="composer-send is-stop"
+                aria-label="Stop"
+                onClick={onStop ?? interruptChat}
+              >
                 <Icon name="stop" size={9} />
               </button>
             </Tooltip>

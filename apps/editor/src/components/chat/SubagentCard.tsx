@@ -15,7 +15,7 @@
  */
 import React, { useState } from 'react';
 import type { ChatSubagentPart } from '../../types';
-import { Icon } from '../ui';
+import { FlameMark, Icon } from '../ui';
 
 /**
  * The one line a running subagent shows: the last thing it actually said.
@@ -62,7 +62,7 @@ export function SubagentCard({ part }: { part: ChatSubagentPart }) {
           {open && line ? null : (line ??
             (running ? (
               <span className="subagent-working">
-                <span className="working-pulse" aria-hidden="true" />
+                <FlameMark />
                 <span className="working-label">Working</span>
               </span>
             ) : (

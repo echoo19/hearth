@@ -596,6 +596,33 @@ export function Icon({ name, size = 12 }: { name: string; size?: number }) {
   );
 }
 
+/**
+ * The app's loading mark: the Hearth flame, in one of three states.
+ *
+ * Everywhere something is in flight shows this rather than a ring or a
+ * blinking dot — the transcript's working row, a thinking line, an engineer's
+ * card on the dev team board, the step it is working. What the three states
+ * mean, and why they move the way they do, is in styles/app/flame.css.
+ *
+ * The wrapper exists so the flicker has something to pivot on: the transform
+ * origin has to sit at the flame's base and `Icon` renders a bare svg with no
+ * class of its own.
+ */
+export function FlameMark({
+  state = 'burn',
+  size = 12,
+}: {
+  /** burn: producing output. smoulder: thinking. ember: parked, alight, still. */
+  state?: 'burn' | 'smoulder' | 'ember';
+  size?: number;
+}) {
+  return (
+    <span className="flame-mark" data-flame={state} aria-hidden="true">
+      <Icon name="fire" size={size} />
+    </span>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Modal
 // ---------------------------------------------------------------------------

@@ -149,17 +149,12 @@
   color: var(--ink-faint);
 }
 
-.devteam-strip-pulse {
-  width: 7px;
-  height: 7px;
-  flex: none;
-  border-radius: 50%;
-  background: currentColor;
-  animation: devteam-pulse 2.4s ease-in-out infinite;
-}
-
-.devteam-strip-state[data-parked] .devteam-strip-pulse {
-  animation: none;
+/* The flame in this strip takes the strip's own colour rather than the shared
+   accent: the state word beside it goes grey when the run is parked, and a mark
+   that stayed ember beside a grey word would be the one live-looking thing on a
+   stopped run. */
+.devteam-strip-state .flame-mark {
+  color: inherit;
 }
 
 .devteam-strip-clock {
@@ -169,16 +164,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.devteam-strip .devteam-controls {
-  flex-direction: row;
-  margin-top: 0;
-  margin-left: auto;
-}
-
-@keyframes devteam-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
 
 /* --- The team shape -------------------------------------------------------- */
 
@@ -503,26 +488,17 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The one looping animation this screen is allowed: a wait of unknown length
-   with no other way to say "still going". Linear, because a spinner that eases
-   is pretending to be somewhere it is not. */
-.devteam-spin {
-  width: 13px;
-  height: 13px;
-  flex: none;
-  border: 1.5px solid currentColor;
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: devteam-spin 700ms linear infinite;
-}
+/* A wait of unknown length with no other way to say "still going" used to be a
+   rotating ring here, in two sizes. It is the flame now (styles/app/flame.css),
+   which says the same thing in this app's own voice and says a second thing the
+   ring could not: whether the agent is producing or blocked.
 
-.devteam-step-mark .devteam-spin {
-  width: 11px;
-  height: 11px;
-}
-
-@keyframes devteam-spin {
-  to { transform: rotate(360deg); }
+   Both of these slots centre the mark in a box of their own, so the optical
+   pull the flame carries for sitting inline in a text row is cancelled. */
+.devteam-card-mark .flame-mark,
+.devteam-step-mark .flame-mark {
+  margin-inline: 0;
+  color: inherit;
 }
 
 .devteam-board-note {
@@ -1239,16 +1215,7 @@
     animation: none;
   }
 
-  .devteam-strip-pulse {
-    animation: none;
-  }
-
-  /* The spinner stops rather than spinning imperceptibly. The step keeps its
-     accent ring and the card keeps its status word, so progress is never
-     conveyed by motion alone. */
-  .devteam-spin {
-    animation: none;
-    border-top-color: currentColor;
-    opacity: 0.55;
-  }
+  /* The marks that used to need a rule here are flames now, and flame.css
+     settles them itself. The step keeps its accent ring and the card keeps its
+     status word, so progress is never carried by motion alone. */
 }

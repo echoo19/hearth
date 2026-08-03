@@ -14,7 +14,7 @@ import type { ChatReasoningPart } from '../../types';
 import { formatDuration, formatElapsed } from '../../chat/duration';
 // The flame and the label share the working line's classes on purpose — one
 // "still going" idiom in the app. Styles live in styles/app/chat.css.
-import { Icon } from '../ui';
+import { FlameMark, Icon } from '../ui';
 
 /**
  * What the fold is called. Pure, because this is the whole rule: present tense
@@ -43,14 +43,10 @@ export function ReasoningRow({ part, live = false }: { part: ChatReasoningPart; 
         <span className="reasoning-chevron" aria-hidden="true">
           <Icon name="chevron" size={9} />
         </span>
-        {/* The same flame the working line burns, not the generic dot. While
-            the thinking is live this row IS the turn's working line, so the two
-            must not be two different pictures of the same fact. */}
-        {live && (
-          <span className="working-flame" aria-hidden="true">
-            <Icon name="fire" />
-          </span>
-        )}
+        {/* Smouldering rather than burning: this row is the turn's working
+            line while the thinking is live, and nothing is coming out of it
+            yet. Same mark, banked. */}
+        {live && <FlameMark state="smoulder" />}
         <span className="working-label">{reasoningLabel(part, live)}</span>
         {/* Counted from the deltas themselves, so it grows with the thought
             rather than needing a clock of its own. */}

@@ -215,24 +215,39 @@ describe('dev team presentation helpers', () => {
 });
 
 describe('DevTeamPane', () => {
-  it('offers Stop wherever a run is still a conversation, and never on the board', () => {
-    // A lead turn can hang with nothing but a climbing counter to show for it,
-    // and the interview is exactly where that happened, so the strip over a
-    // conversation keeps its way out. The board is a different thing: it says
-    // how each agent is doing, and a pair of buttons governing the whole run
-    // sat in it as the one thing that was not a status.
-    for (const phase of ['interviewing', 'drafting-spec', 'spec-review'] as const) {
+  it('puts Stop in the box you type into, and nowhere else', () => {
+    // The run's controls used to be a pair of buttons on the strip over the
+    // conversation, which put its one destructive control somewhere different
+    // from the Stop every other conversation in this app has. Stop is where it
+    // is everywhere else now, and it stops the RUN: a lead turn the runtime
+    // started on its own — planning, review, the report — is exactly the case
+    // `chatBusy` cannot see, and exactly the case someone needs to halt.
+    for (const phase of ['interviewing', 'drafting-spec'] as const) {
       cleanup();
       act(() => useApp.setState({ devTeam: snapshot({ phase, plan: null, tasks: [] }) } as never));
       render(<DevTeamPane />);
-      expect(screen.queryByRole('button', { name: 'Stop dev team' }), phase).toBeTruthy();
-    }
-    for (const phase of ['idle', 'done', 'building', 'reviewing'] as const) {
-      cleanup();
-      act(() => useApp.setState({ devTeam: snapshot({ phase }) } as never));
-      render(<DevTeamPane />);
       expect(screen.queryByRole('button', { name: 'Stop dev team' }), phase).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Pause dev team' }), phase).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+      expect(useApp.getState().stopDevTeam, phase).toHaveBeenCalled();
+      (useApp.getState().stopDevTeam as ReturnType<typeof vi.fn>).mockClear();
+    }
+
+    // Once there is a team the box is the lead's own, one click in, and Stop
+    // is in it there too: the board itself carries no controls.
+    cleanup();
+    act(() => useApp.setState({ devTeam: snapshot({ phase: 'planning' }) } as never));
+    render(<DevTeamPane />);
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Lead, Plans the work/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(useApp.getState().stopDevTeam).toHaveBeenCalled();
+    (useApp.getState().stopDevTeam as ReturnType<typeof vi.fn>).mockClear();
+    // Nothing is running: the box offers Send and nothing to stop.
+    for (const phase of ['spec-review', 'done'] as const) {
+      cleanup();
+      act(() => useApp.setState({ devTeam: snapshot({ phase, plan: null, tasks: [] }) } as never));
+      render(<DevTeamPane />);
+      expect(screen.queryByRole('button', { name: 'Stop' }), phase).toBeNull();
     }
   });
 
@@ -323,20 +338,20 @@ describe('DevTeamPane', () => {
     expect(screen.queryByText('Playable loop')).toBeNull();
   });
 
-  it('ticks the steps behind it, spins the one being worked, numbers the rest', () => {
+  it('ticks the steps behind it, burns the one being worked, numbers the rest', () => {
     render(<DevTeamPane />);
     const marks = screen.getAllByRole('listitem').map((item) => ({
       name: item.textContent,
       state: item.getAttribute('data-state'),
-      spinning: item.querySelector('.devteam-spin') !== null,
+      burning: item.querySelector('.flame-mark[data-flame="burn"]') !== null,
     }));
 
     expect(marks.map((mark) => mark.state)).toEqual(['done', 'done', 'active', 'waiting']);
-    expect(marks[2].spinning).toBe(true);
+    expect(marks[2].burning).toBe(true);
     expect(marks[3].name).toContain('4');
-    // A parked run has nothing turning, because nothing is.
+    // A parked run has nothing alight, because nothing is running.
     act(() => useApp.setState({ devTeam: snapshot({ phase: 'paused' }) }));
-    expect(document.querySelectorAll('.devteam-steps .devteam-spin')).toHaveLength(0);
+    expect(document.querySelectorAll('.devteam-steps .flame-mark')).toHaveLength(0);
   });
 
   it('says why the board is empty rather than showing an empty board', () => {
@@ -567,21 +582,19 @@ describe('DevTeamPane', () => {
     );
   });
 
-  it('stops and resumes a run from the strip over its conversation, and never offers Pause', () => {
+  it('leaves a parked run with a status line and a box, and no controls at all', () => {
     cleanup();
-    // An interview: a lead turn is running and there is no team, so this strip
-    // is the only place a hung one can be halted from.
-    act(() => useApp.setState({ devTeam: snapshot({ phase: 'interviewing', plan: null, tasks: [] }) } as never));
-    const { rerender } = render(<DevTeamPane />);
-    expect(screen.queryByRole('button', { name: 'Pause dev team' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Stop dev team' }));
-    expect(useApp.getState().stopDevTeam).toHaveBeenCalledOnce();
+    // Pause and Resume are both gone: every phase Pause applied to has a team,
+    // and a parked run is picked back up by being spoken to (devTeamRuntime).
+    // What is left is the truth about where the run got to.
+    act(() => useApp.setState({ devTeam: snapshot({ phase: 'paused', plan: null, tasks: [] }) } as never));
+    render(<DevTeamPane />);
 
-    act(() => useApp.setState({ devTeam: snapshot({ phase: 'paused', plan: null, tasks: [] }) }));
-    rerender(<DevTeamPane />);
-    expect(screen.queryByRole('button', { name: 'Pause dev team' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Resume dev team' }));
-    expect(useApp.getState().resumeDevTeam).toHaveBeenCalledOnce();
+    for (const name of ['Pause dev team', 'Resume dev team', 'Stop dev team', 'Stop']) {
+      expect(screen.queryByRole('button', { name }), name).toBeNull();
+    }
+    expect(screen.getByRole('status', { name: 'Dev team phase' }).textContent).toBe('Paused');
+    expect(screen.getByRole('textbox', { name: 'Message the lead' })).toBeTruthy();
   });
 
   it('explains that active team steering is text-only, only when a file is offered', () => {
