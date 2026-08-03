@@ -538,6 +538,46 @@ describe('chat channel', () => {
     after.close();
   });
 
+  it('keeps a running turn alive when the window goes to look at another conversation', async () => {
+    // Switching conversations used to retire the one you left the moment it had
+    // no window on it, which killed a turn mid-flight: its command half-run, its
+    // question unanswerable, its work gone. Nothing about clicking another row
+    // says stop, and the CLI this app is a window onto would have carried on.
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'hi' }));
+    const done = await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    const chatId = done.type === 'chat-event' ? done.chatId ?? '' : '';
+    drivers[0].silent = true;
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'go and work on it' }));
+    await until(() => drivers[0].sent.length === 2);
+
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-opened' && frame.chat.id !== chatId);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(drivers[0].stopped).toBe(false);
+
+    // And what it produces with nobody watching is on disk for whoever comes
+    // back to it.
+    drivers[0].queue.push({ type: 'text-delta', text: 'finished while you were away' });
+    drivers[0].queue.push({ type: 'done' });
+    await until(async () => JSON.stringify(await readTranscript(root, chatId)).includes('while you were away'));
+
+    socket.send(JSON.stringify({ type: 'chat-open', chatId }));
+    const back = await nextFrame(socket, (frame) => frame.type === 'chat-opened' && frame.chat.id === chatId);
+    expect(JSON.stringify(back.type === 'chat-opened' ? back.records : [])).toContain('while you were away');
+    expect(back.type === 'chat-opened' && back.turnActive).toBe(false);
+
+    // An idle conversation is still let go the moment its last window leaves:
+    // nothing is lost, the transcript is on disk, and the next turn binds a
+    // fresh backend. What is protected is work, not process count.
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-opened' && frame.chat.id !== chatId);
+    await until(() => drivers[0].stopped);
+
+    socket.close();
+  });
+
   it('keeps the driver alive across a socket drop, reattaches it, then expires it', async () => {
     drivers = [];
     const socket = await connect();

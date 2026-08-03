@@ -69,20 +69,30 @@ const entry = (message: string): ConsoleEntry => ({
 /** A socket that goes nowhere: these tests are about state, not frames. */
 class DeadSocket {
   static readonly OPEN = 1;
+  /** Every socket the store has opened, so a test can drop one. */
+  static readonly opened: DeadSocket[] = [];
   readyState = 0;
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  constructor(readonly url: string) {}
+  constructor(readonly url: string) {
+    DeadSocket.opened.push(this);
+  }
   send(): void {}
   close(): void {
     this.readyState = 3;
+  }
+  /** The transport dropping under the window: a lid, a sleep, a blip. */
+  drop(): void {
+    this.readyState = 3;
+    this.onclose?.();
   }
 }
 
 beforeEach(() => {
   localStorage.clear();
+  DeadSocket.opened.length = 0;
   vi.stubGlobal('WebSocket', DeadSocket);
   vi.mocked(apiChatProviders).mockResolvedValue(null);
 });
@@ -187,6 +197,61 @@ describe('closeWorkspace', () => {
     // The blank composer aimed at a folder nobody has open would start the next
     // message inside it.
     expect(useApp.getState().composeTarget).toBeNull();
+  });
+});
+
+describe('a socket that drops under a running turn', () => {
+  /**
+   * The window is not the agent. The server keeps a conversation's backend
+   * bound for an hour after the last socket goes, and the window reconnects in
+   * seconds — so a drop says nothing at all about whether the turn is over.
+   *
+   * This used to close the transcript out on `onclose`: running rows stopped
+   * and an unanswered ask was WITHDRAWN. A laptop lid was enough to destroy a
+   * question the agent was still waiting on, and the prompt never came back,
+   * because the withdrawal is what the window then rebuilt from.
+   */
+  it('leaves the turn and its open question exactly as they were', async () => {
+    vi.mocked(apiOpenWorkspace).mockResolvedValue({
+      ok: true,
+      info: { path: HERE, name: 'game', isHearthProject: true },
+    });
+    await useApp.getState().openWorkspace(HERE);
+    const socket = DeadSocket.opened.at(-1);
+    expect(socket).toBeTruthy();
+
+    useApp.setState({
+      chatBusy: true,
+      messages: [
+        {
+          id: 'm1',
+          role: 'agent',
+          streaming: true,
+          parts: [
+            { kind: 'command', id: 'c1', title: 'npm test', output: '', state: 'running' },
+            {
+              kind: 'input',
+              id: 'i2',
+              questions: [{ id: 'q0', label: 'Does that cast work?', type: 'text' }],
+              allowCancel: false,
+              resolution: null,
+            },
+          ],
+        },
+      ],
+    } as never);
+
+    socket!.drop();
+
+    const message = useApp.getState().messages[0];
+    expect(message.streaming).toBe(true);
+    expect(message.parts[0]).toMatchObject({ kind: 'command', state: 'running' });
+    expect(message.parts[1]).toMatchObject({ kind: 'input', resolution: null });
+    // Nothing can be sent down a dead socket, so the box stops queueing behind
+    // a turn it can no longer reach. What the turn IS doing is not claimed
+    // either way; the reconnect's replay answers that.
+    expect(useApp.getState().chatBusy).toBe(false);
+    expect(useApp.getState().wsStatus).toBe('disconnected');
   });
 });
 

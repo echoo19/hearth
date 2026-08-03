@@ -1450,7 +1450,7 @@ export function attachWebSocket(
       // the one a window that just asked for a new chat is being pointed at.
       const chat = await getChat(root, id);
       if (!chat) return;
-      leaveChat(socket, { stopIfLast: true });
+      leaveChat(socket, { onLast: 'linger' });
       socketChat.set(socket, id);
 
       // Snapshot and attachment are one operation on the same lane as live
@@ -1787,34 +1787,67 @@ export function attachWebSocket(
    * and its agent — only ends when the last watcher leaves, which is what makes
    * two windows on one chat work without one of them killing the other's turn.
    */
-  function leaveChat(socket: WebSocket, opts: { stopIfLast: boolean }): void {
+  /**
+   * Take `socket` off whatever conversation it was watching.
+   *
+   * `onLast` decides what happens to a session nobody is left watching:
+   *
+   *   retire — end it now. Correct for an explicit teardown (closing the
+   *            folder), where the answer to "who is this still running for" is
+   *            nobody, on purpose.
+   *   linger — keep it, and reap it on the same timer a dropped socket uses.
+   *
+   * Switching conversations used to retire, and that was a bug with teeth: the
+   * window is the only socket on a chat whose agent is mid-turn, you click
+   * another conversation to look something up, and the turn you left is killed
+   * on the spot — its command half-run, its question unanswerable, its work
+   * gone. Nothing about clicking another row says stop. A turn in flight lives
+   * on with nobody watching, exactly as it does in the CLI, and whatever it
+   * writes goes to disk for the window that comes back to it.
+   *
+   * A session with nothing running is still retired at once, because there is
+   * nothing to lose: the transcript is on disk and the next turn binds a fresh
+   * backend. What is protected is work, not process count.
+   */
+  function leaveChat(socket: WebSocket, opts: { onLast: 'retire' | 'linger' }): void {
     const chatId = socketChat.get(socket);
     if (chatId === undefined) return;
     for (const session of [...chatSessions.values()]) {
-      if (!session.sockets.delete(socket)) continue;
-      // Nothing to report: there is no window left to report it to.
-      if (opts.stopIfLast && session.sockets.size === 0) retireChatSession(session, null);
+      if (!session.sockets.delete(socket) || session.sockets.size > 0 || session.retired) continue;
+      if (opts.onLast === 'retire' || !session.turnActive) {
+        retireChatSession(session, null);
+        continue;
+      }
+      lingerChatSession(session);
     }
+  }
+
+  /** Reap a session nobody is watching, unless somebody comes back to it. */
+  function lingerChatSession(session: ChatSession): void {
+    if (session.lingerTimer) clearTimeout(session.lingerTimer);
+    session.lingerTimer = setTimeout(() => {
+      session.lingerTimer = undefined;
+      if (chatSessions.get(session.key) === session && session.sockets.size === 0) {
+        retireChatSession(session, null);
+      }
+    }, chatDetachLingerMs);
+    session.lingerTimer.unref?.();
   }
 
   /** Explicit teardown: cancel ends this socket's conversation backend. */
   function stopChat(socket: WebSocket): void {
-    leaveChat(socket, { stopIfLast: true });
+    leaveChat(socket, { onLast: 'retire' });
   }
 
-  /** A transport drop is not an explicit Stop: keep the agent for a reload. */
+  /** A transport drop is not an explicit Stop: keep the agent for a reload.
+   *  Even an idle one, because a dropped socket usually means the window is
+   *  coming straight back and rebinding costs a whole backend start. */
   function detachChat(socket: WebSocket): void {
     const chatId = socketChat.get(socket);
     if (chatId === undefined) return;
     for (const session of [...chatSessions.values()]) {
       if (!session.sockets.delete(socket) || session.sockets.size > 0 || session.retired) continue;
-      if (session.lingerTimer) clearTimeout(session.lingerTimer);
-      session.lingerTimer = setTimeout(() => {
-        session.lingerTimer = undefined;
-        if (chatSessions.get(session.key) === session && session.sockets.size === 0) {
-          retireChatSession(session, null);
-        }
-      }, chatDetachLingerMs);
+      lingerChatSession(session);
     }
   }
 

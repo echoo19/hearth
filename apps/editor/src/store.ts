@@ -1153,6 +1153,29 @@ export function settleMessage(message: ChatMessage): ChatMessage {
   return { ...message, parts, streaming: false };
 }
 
+/**
+ * The bubble an arriving event needs, if the transcript has none open.
+ *
+ * `applyChatEvent` folds into the LAST message and drops anything it cannot
+ * fold, which is right for a stale tail from a turn that has ended. It is
+ * catastrophic for a turn this window did not start: the runtime begins the
+ * planning turn when a spec is approved, and the review turn, and the report,
+ * and a SECOND WINDOW watching a conversation never has a bubble of its own at
+ * all. Every one of those turns streamed into a transcript that dropped it on
+ * the floor, and the words only appeared if you reopened the conversation and
+ * the replay read them back off disk. From the chair that is an agent that has
+ * stopped responding.
+ *
+ * Endings are excluded: `done` and `turn-complete` close a turn, and opening a
+ * bubble for one would leave an empty message under every finished turn.
+ */
+function bubbleFor(messages: ChatMessage[], event: ChatEvent): ChatMessage[] {
+  if (event.type === 'done' || event.type === 'turn-complete') return messages;
+  const last = messages[messages.length - 1];
+  if (last && last.role === 'agent' && last.streaming) return messages;
+  return [...messages, makeAgentMessage(Date.now())];
+}
+
 export function applyChatEvent(messages: ChatMessage[], incoming: ChatEvent, now: number = Date.now()): ChatMessage[] {
   const lastIndex = messages.length - 1;
   const last = lastIndex >= 0 ? messages[lastIndex] : null;
@@ -1969,11 +1992,15 @@ export const useApp = create<AppState>((set, get) => {
           chatIntent.chatId !== frame.chatId
         ) return;
         set((state) => {
-          const lane = state.devTeamLanes[frame.engineerId] ?? [makeAgentMessage()];
+          const event = normalizeChatEvent(frame.event);
+          // Same rule as the main transcript, and an engineer needs it more:
+          // every one of its turns is started by the runtime, and a task that
+          // is retried reports into a lane whose last turn has already ended.
+          const lane = bubbleFor(state.devTeamLanes[frame.engineerId] ?? [], event);
           return {
             devTeamLanes: {
               ...state.devTeamLanes,
-              [frame.engineerId]: applyChatEvent(lane, normalizeChatEvent(frame.event)),
+              [frame.engineerId]: applyChatEvent(lane, event),
             },
           };
         });
@@ -1995,7 +2022,7 @@ export const useApp = create<AppState>((set, get) => {
         // below are written once in the canonical vocabulary rather than once
         // per dialect.
         const event = normalizeChatEvent(frame.event);
-        set((state) => ({ messages: applyChatEvent(state.messages, event) }));
+        set((state) => ({ messages: applyChatEvent(bubbleFor(state.messages, event), event) }));
         if (event.type === 'turn-complete') {
           set({ chatBusy: false });
           // A finished turn moves this chat to the top of every list it is in.
@@ -2146,14 +2173,18 @@ export const useApp = create<AppState>((set, get) => {
       ws = null;
       set({ wsStatus: 'disconnected' });
       markAgentDisconnected();
-      // A conversation does not survive a socket drop (the driver holds an
-      // in-process agent), so an in-flight turn is over.
-      if (get().chatBusy) {
-        set((state) => ({
-          chatBusy: false,
-          messages: state.messages.map(settleMessage),
-        }));
-      }
+      // The TURN IS NOT OVER. This used to settle the transcript on the
+      // reasoning that a conversation cannot survive a socket drop, and that
+      // has not been true for a long time: the server keeps the agent bound for
+      // an hour and the window reconnects in seconds. Settling here closed out
+      // running rows and WITHDREW whatever the agent was waiting on, so a blip
+      // no worse than a laptop lid destroyed a question that was still on the
+      // other end of it.
+      //
+      // Nothing is claimed either way now. The composer refuses to send while
+      // disconnected, and the reconnect's replay is authoritative: it says
+      // whether the turn is still going and rebuilds the tail to match.
+      set({ chatBusy: false });
       scheduleReconnect(project, epoch);
     };
   }

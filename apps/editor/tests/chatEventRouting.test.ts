@@ -15,7 +15,7 @@
  * This is the window's half: believe the id when there is one.
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { makeAgentMessage, makeUserMessage, useApp } from '../src/store';
+import { makeAgentMessage, makeUserMessage, settleMessage, useApp } from '../src/store';
 
 const PROJECT = '/work/game';
 
@@ -57,6 +57,57 @@ const feed = (frame: Record<string, unknown>): void => {
 };
 
 beforeEach(() => resetStore());
+
+describe('a turn this window did not start', () => {
+  /**
+   * `applyChatEvent` folds into the last message and drops what it cannot fold,
+   * which is right for a stale tail and catastrophic for a live turn nobody
+   * here began. The runtime starts the dev team's planning turn when a spec is
+   * approved, and the review turn, and the report; a second window watching a
+   * conversation has no bubble of its own at all. Every one of those streamed
+   * into a transcript that threw it away, and the words appeared only if you
+   * reopened the conversation and the replay read them back off disk.
+   */
+  it('opens a bubble for itself rather than being dropped', () => {
+    resetStore({ messages: [makeUserMessage('go'), settleMessage(makeAgentMessage())], chatBusy: false });
+
+    feed({ type: 'chat-event', chatId: 'b', event: { type: 'message-delta', text: 'writing the plan' } });
+
+    expect(answer()).toBe('writing the plan');
+    expect(useApp.getState().messages).toHaveLength(3);
+    expect(useApp.getState().messages[2].streaming).toBe(true);
+  });
+
+  it('keeps a question it raises answerable, in a window that sent nothing', () => {
+    // The whole point. An ask that lands in a window with no open bubble used
+    // to vanish, and the run then waited forever on an answer nobody could give.
+    resetStore({ messages: [], chatBusy: false });
+
+    feed({
+      type: 'chat-event',
+      chatId: 'b',
+      event: {
+        type: 'input-request',
+        inputId: 'i1',
+        title: 'Claude needs your input',
+        questions: [{ id: 'q0', label: 'Which direction?', type: 'text' }],
+        allowCancel: false,
+      },
+    });
+
+    const parts = useApp.getState().messages.flatMap((message) => message.parts);
+    expect(parts).toContainEqual(expect.objectContaining({ kind: 'input', id: 'i1', resolution: null }));
+  });
+
+  it('does not leave an empty bubble under a turn that has ended', () => {
+    resetStore({ messages: [makeUserMessage('go'), settleMessage(makeAgentMessage())], chatBusy: false });
+
+    feed({ type: 'chat-event', chatId: 'b', event: { type: 'turn-complete' } });
+    feed({ type: 'chat-event', chatId: 'b', event: { type: 'done' } });
+
+    expect(useApp.getState().messages).toHaveLength(2);
+  });
+});
 
 describe('a chat event that names its conversation', () => {
   it('is ignored when it belongs to a conversation you are no longer reading', () => {

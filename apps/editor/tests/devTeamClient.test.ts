@@ -91,6 +91,21 @@ describe('dev team frame folding', () => {
     });
   });
 
+  it('goes on reporting after one of an engineer’s turns has ended', () => {
+    // A task that is retried reports into the lane it already used, whose last
+    // turn is over. The fold drops anything it cannot append to a streaming
+    // message, so without a fresh bubble the retry was invisible: the card sat
+    // there saying Working with an empty log under it.
+    receive({ type: 'devteam-event', chatId: 'team-chat', engineerId: 'engineer-1', event: { type: 'message-delta', text: 'First attempt' } });
+    receive({ type: 'devteam-event', chatId: 'team-chat', engineerId: 'engineer-1', event: { type: 'turn-complete' } });
+
+    receive({ type: 'devteam-event', chatId: 'team-chat', engineerId: 'engineer-1', event: { type: 'message-delta', text: 'Second attempt' } });
+
+    const lane = useApp.getState().devTeamLanes['engineer-1'];
+    expect(lane).toHaveLength(2);
+    expect(lane[1]).toMatchObject({ streaming: true, parts: [{ kind: 'text', text: 'Second attempt' }] });
+  });
+
   it('seeds each engineer lane and folds normalized chat events into it', () => {
     receive({ type: 'devteam-event', chatId: 'team-chat', engineerId: 'engineer-1', event: { type: 'text-delta', text: 'Working' } });
     receive({ type: 'devteam-event', chatId: 'team-chat', engineerId: 'engineer-2', event: { type: 'message-delta', text: 'Reviewing' } });
