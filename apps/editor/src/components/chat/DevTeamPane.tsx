@@ -259,14 +259,17 @@ function AgentCard({
   const since = startedAt === undefined ? undefined : Date.parse(startedAt);
   const elapsed = useElapsed(Number.isNaN(since) ? undefined : since, status === 'running');
   const counter = status === 'running' && elapsed !== null ? formatElapsed(elapsed) : null;
-  const waiting = asks > 0 ? `, ${asks} waiting ${asks === 1 ? 'question' : 'questions'}` : '';
+  const waiting = asks > 0 ? `${asks} waiting ${asks === 1 ? 'question' : 'questions'}` : '';
+  // The lead carries no role: "Lead" is the role, and "Lead / Tech lead" said
+  // one thing twice in the two places on the card that are meant to say two.
+  const label = [name, role, assignment, activity, waiting].filter(Boolean).join(', ');
 
   return (
     <button
       type="button"
       className="devteam-card"
       data-status={status}
-      aria-label={`${name}, ${role}, ${assignment}, ${activity}${waiting}`}
+      aria-label={label}
       onClick={onOpen}
     >
       <span className="devteam-card-mark" aria-hidden="true">
@@ -275,7 +278,7 @@ function AgentCard({
           : <Icon name={status === 'lead' ? 'review' : 'bot'} size={14} />}
       </span>
       <span className="devteam-card-name">{name}</span>
-      <span className="devteam-card-role">{role}</span>
+      {role && <span className="devteam-card-role">{role}</span>}
       <span className="devteam-card-task">{assignment}</span>
       <span className="devteam-card-state">
         <span className="devteam-card-status">{activity}</span>
@@ -470,7 +473,7 @@ function MemberView({
         </button>
         <span className="devteam-view-who">
           <strong>{member.name}</strong>
-          <span>{member.role}</span>
+          {member.role && <span>{member.role}</span>}
         </span>
         <span className="devteam-view-state" data-status={member.status}>{member.activity}</span>
       </header>
@@ -555,7 +558,7 @@ function TeamStage({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number
     id: LEAD_ID,
     isLead: true,
     name: 'Lead',
-    role: 'Tech lead',
+    role: '',
     assignment: 'Plans the work and reviews it',
     status: 'lead',
     activity: devTeamLeadActivity(messages, state.phase),

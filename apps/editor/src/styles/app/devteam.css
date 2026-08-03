@@ -704,20 +704,18 @@
   overflow-y: auto;
 }
 
-/* The transcript starts where the head above it starts. Left to centre itself
-   on its own measure inside a region this wide it landed 113px inboard of the
-   name of the person whose transcript it is, which is the same fourth-axis
-   problem the board was rebuilt to get rid of. */
-.devteam-view-body .chat-turns {
-  margin-left: 0;
-  margin-right: 0;
-}
-
+/* Centred in the region, the way every other transcript in the app is. Pinned
+   to the head's own left edge it hugged the left of a 1,000px region with the
+   whole right half empty, which reads as a column that has fallen over rather
+   than as one that is aligned. The head is a toolbar and spans; the reading
+   column is a reading column and centres. */
 .devteam-lane-turns {
   display: flex;
   flex-direction: column;
   gap: 14px;
   max-width: var(--chat-measure);
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .devteam-lane-turns .msg-text,

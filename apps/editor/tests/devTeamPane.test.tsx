@@ -264,7 +264,7 @@ describe('DevTeamPane', () => {
   it('puts the lead above its team in the same card everyone else wears', () => {
     render(<DevTeamPane />);
 
-    const lead = screen.getByRole('button', { name: /^Lead, Tech lead/ });
+    const lead = screen.getByRole('button', { name: /^Lead, Plans the work/ });
     expect(lead.className).toBe(cardOf('Build controls').className);
     // Named people with real roles, not a task with a robot beside it.
     expect(cardOf('Build controls').getAttribute('aria-label'))
@@ -394,10 +394,10 @@ describe('DevTeamPane', () => {
 
     expect(screen.getByRole('region', { name: /log$/ })).toBeTruthy();
     expect(screen.getAllByText('Wiring movement now.').length).toBeGreaterThan(0);
-    expect(screen.queryByRole('button', { name: /^Lead, Tech lead/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Lead, Plans the work/ })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to the team' }));
-    expect(screen.getByRole('button', { name: /^Lead, Tech lead/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Lead, Plans the work/ })).toBeTruthy();
     expect(screen.queryByRole('region', { name: /log$/ })).toBeNull();
   });
 
@@ -405,7 +405,7 @@ describe('DevTeamPane', () => {
     // A dev team run is an agent using subagents, so going into the lead has to
     // be the ordinary conversation with every ordinary control working.
     render(<DevTeamPane />);
-    fireEvent.click(screen.getByRole('button', { name: /^Lead, Tech lead/ }));
+    fireEvent.click(screen.getByRole('button', { name: /^Lead, Plans the work/ }));
 
     expect(screen.getByRole('region', { name: 'Lead log' }).textContent)
       .toContain('I am reviewing the first pass.');
@@ -450,7 +450,7 @@ describe('DevTeamPane', () => {
     view.rerender(<DevTeamPane />);
 
     expect(screen.queryByRole('region', { name: /log$/ })).toBeNull();
-    expect(screen.getByRole('button', { name: /^Lead, Tech lead/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Lead, Plans the work/ })).toBeTruthy();
   });
 
   it('tells you a headless member has reported nothing rather than showing a blank', () => {
@@ -623,7 +623,7 @@ describe('DevTeamPane', () => {
 
     // The team has dissolved: there is no board left, only the conversation and
     // the report, with the plan under it carrying what each task came to.
-    expect(screen.queryByRole('button', { name: /^Lead, Tech lead/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Lead, Plans the work/ })).toBeNull();
     expect(screen.getAllByText('I am reviewing the first pass.').length).toBeGreaterThan(0);
     const record = screen.getByText(/Run complete/).closest('details');
     expect(record?.hasAttribute('open')).toBe(true);
@@ -669,18 +669,18 @@ describe('DevTeamPane', () => {
     }));
     render(<DevTeamPane />);
 
-    expect(screen.getByRole('button', { name: /^Lead, Tech lead/ }).getAttribute('aria-label'))
-      .toBe('Lead, Tech lead, Plans the work and reviews it, Supervising');
+    expect(screen.getByRole('button', { name: /^Lead, Plans the work/ }).getAttribute('aria-label'))
+      .toBe('Lead, Plans the work and reviews it, Supervising');
   });
 
   it('names what the lead is doing rather than saying Supervising for three hours', () => {
     act(() => useApp.setState({ messages: [], devTeam: snapshot({ phase: 'reviewing' }) }));
     render(<DevTeamPane />);
-    expect(screen.getByRole('button', { name: /^Lead, Tech lead/ }).getAttribute('aria-label'))
+    expect(screen.getByRole('button', { name: /^Lead, Plans the work/ }).getAttribute('aria-label'))
       .toContain('Reviewing');
 
     act(() => useApp.setState({ messages: [{ ...leadMessage, streaming: true }] }));
-    expect(screen.getByRole('button', { name: /^Lead, Tech lead/ }).getAttribute('aria-label'))
+    expect(screen.getByRole('button', { name: /^Lead, Plans the work/ }).getAttribute('aria-label'))
       .toContain('Working');
   });
 
