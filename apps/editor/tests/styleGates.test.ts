@@ -329,6 +329,18 @@ describe('style gates', () => {
     expect(rule('.devteam-view-head')).toMatch(
       /padding:[^;]*max\(\s*var\(--chat-gutter\)\s*,\s*\(100% - var\(--chat-measure\)\) \/ 2\s*\)/,
     );
+
+    // Nothing in this mode is capped and then left where it fell. Every one of
+    // these was a shipped complaint about text stuck to the left of a space it
+    // was not filling: a measure without a centring margin only looks right
+    // while the window is narrow enough to hide it.
+    for (const selector of ['.devteam-main > *', '.devteam-board']) {
+      expect(rule(selector), selector).toMatch(/margin(-inline|-left)?:\s*(0 )?auto/);
+      expect(rule(selector), selector).not.toMatch(/margin-(left|right):\s*0/);
+    }
+    expect(rule(".devteam-pane[data-stage='conversation'] .composer-card")).not.toMatch(
+      /margin-(left|right):\s*0/,
+    );
   });
 
   it('Gate A: every font-size under styles/ (and the styles.css manifest) uses a --text-* token', () => {

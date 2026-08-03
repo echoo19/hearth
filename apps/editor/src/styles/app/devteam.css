@@ -27,20 +27,27 @@
   --devteam-rail-w: 13rem;
 }
 
-/* The head and the composer are the frame around the column; both used to
-   centre themselves on the conversation's measure while the board sat
-   left-aligned on a wider one, so the box you type into started 274px inboard
-   of every card you were reading. */
+/* The head is the frame around whichever shape is under it, so it takes that
+   shape's width: the board's when there is a team, the conversation's measure
+   when there is not. It used to be pinned left at the board's width in both,
+   which was right while the board itself was left-aligned and became the whole
+   of the alignment complaint once the board was centred: a run that had not
+   started yet drew its head across 1252px over a 736px column of text. */
 .chat-column[data-mode='devteam'] .conversation-head {
   width: 100%;
   max-width: calc(var(--devteam-measure) + var(--devteam-rail-w) + var(--chat-gutter) * 2);
-  margin: 0;
+  margin: 0 auto;
 }
 
+.chat-column[data-mode='devteam']:has(.devteam-pane[data-stage='conversation']) .conversation-head {
+  max-width: calc(var(--chat-measure) + var(--chat-gutter) * 2);
+}
+
+/* Centred, like the composer of every other conversation in the app. A dev
+   team run before it has a team is a chat and nothing else, and a chat in this
+   app sits down the middle. */
 .devteam-pane[data-stage='conversation'] .composer-card {
   max-width: var(--chat-measure);
-  margin-left: 0;
-  margin-right: 0;
 }
 
 /* The lead's own view carries the composer, and it is the ordinary chat's
@@ -84,12 +91,15 @@
 }
 
 /* Everything in the column starts at the same left edge and stops at the same
-   right one. This single rule is what the alignment complaint was about. */
+   right one, and the column is down the middle. The run strip, the transcript,
+   the spec and the report share one axis; they used to share it hard against
+   the left of a pane twice their width, which is where "the text is sticking
+   to the left" came from. */
 .devteam-main > * {
   width: 100%;
   max-width: var(--chat-measure);
-  margin-left: 0;
-  margin-right: 0;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .devteam-main > .chat-scroll,
@@ -204,6 +214,11 @@
   gap: 20px;
   width: 100%;
   max-width: var(--devteam-measure);
+  /* Down the middle of the stage, like everything else in this mode. It fills
+     at the sizes this was designed against and pins left the moment the window
+     is wider than the measure, which is the whole family of bug this file has
+     now been fixed for three times. */
+  margin-inline: auto;
 }
 
 /* The lead sits above its team, centred, in the same card everyone else wears.
@@ -958,7 +973,10 @@
 }
 
 .devteam-error {
-  margin: 0;
+  /* Not `margin: 0`: this sits in a centred column and a shorthand reset here
+     beats the column's own auto margins, which left the one red thing on the
+     screen as the one thing out of line with everything else. */
+  margin-block: 0;
   padding: 9px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
