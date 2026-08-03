@@ -360,21 +360,13 @@
   padding-bottom: 16px;
 }
 
-/* Prose gets a reading measure. Measured character-by-character over a real
-   agent paragraph, the column ran 85 characters to the line at its current
-   width and 111 at --chat-measure; sustained reading wants 65 to 75. Only the
-   running text is capped: code blocks, tables and every machinery row still
-   take the full column, because those are scanned rather than read. */
-.msg-agent .msg-text,
-.msg-agent > .md > p,
-.msg-agent > .md > ul,
-.msg-agent > .md > ol,
-.msg-agent > .md > blockquote,
-.msg-agent > .md > h1,
-.msg-agent > .md > h2,
-.msg-agent > .md > h3 {
-  max-width: 31rem;
-}
+/* Prose takes the column, the way everything else in it does.
+ *
+ * It used to be capped at a 31rem reading measure while the fold rows, code
+ * blocks and the composer went on taking the full --chat-measure. Two left
+ * edges and two right edges in one column is not a reading aid: it reads as
+ * text stuck to the left of a space it is not filling, which is what it was
+ * called the moment it shipped. One measure, and it is the column's. */
 
 /* --- Turns ---------------------------------------------------------------- */
 

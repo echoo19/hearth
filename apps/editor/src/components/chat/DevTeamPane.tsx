@@ -82,7 +82,7 @@ function usePhaseElapsed(state: DevTeamSnapshot | null): number | null {
 }
 
 /**
- * The three controls that govern a run, on the strip over a conversation.
+ * The controls that govern a run, on the strip over a conversation.
  *
  * They are NOT on the team board. That screen's job is to say how each agent
  * is doing, and a pair of buttons governing the whole run sat in it as the one
@@ -95,23 +95,20 @@ function usePhaseElapsed(state: DevTeamSnapshot | null): number | null {
  * control at all — and an interview is exactly where a lead turn can hang with
  * the pane saying "Working" and climbing. The runtime already accepts stop from
  * every phase and only ignores it when there is nothing running.
+ *
+ * Pause is not here. Every phase it applied to is a phase with a team, and a
+ * team is on the board, which has no controls: a button that no reachable state
+ * can render is worse than one honest way to halt a run.
  */
 function RunControls({ phase }: { phase: DevTeamSnapshot['phase'] }) {
-  const pause = useApp((s) => s.pauseDevTeam);
   const resume = useApp((s) => s.resumeDevTeam);
   const stop = useApp((s) => s.stopDevTeam);
-  const canPause = ['planning', 'building', 'reviewing', 'wrapping'].includes(phase);
   const canResume = phase === 'paused' || phase === 'interrupted';
   const canStop = phase !== 'idle' && phase !== 'done';
-  if (!canPause && !canResume && !canStop) return null;
+  if (!canResume && !canStop) return null;
 
   return (
     <div className="devteam-controls">
-      {canPause && (
-        <Button size="sm" variant="quiet" icon="pause" aria-label="Pause dev team" onClick={pause}>
-          Pause
-        </Button>
-      )}
       {canResume && (
         <Button size="sm" variant="primary" icon="play" aria-label="Resume dev team" onClick={resume}>
           Resume

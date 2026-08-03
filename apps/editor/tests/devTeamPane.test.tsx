@@ -171,8 +171,9 @@ describe('dev team presentation helpers', () => {
 
   it('is a conversation until a team exists and again once it has dissolved', () => {
     // The interview and the spec are one person and one agent working something
-    // out; the report is written when the engineers have all gone home. Only
-    // the stretch in between is a thing being managed.
+    // out; the report is read when the engineers have all gone home. The stretch
+    // in between is a thing being managed, and wrapping up is the end of it: the
+    // build finishing is reported where the work is, on the board.
     const stage = (phase: DevTeamSnapshot['phase'], hasPlan = true) =>
       devTeamStage({ phase, plan: hasPlan ? plan : null });
 
@@ -182,7 +183,7 @@ describe('dev team presentation helpers', () => {
     expect(stage('planning', false)).toBe('team');
     expect(stage('building')).toBe('team');
     expect(stage('reviewing')).toBe('team');
-    expect(stage('wrapping')).toBe('conversation');
+    expect(stage('wrapping')).toBe('team');
     expect(stage('done')).toBe('conversation');
     // A parked run goes wherever it was parked. Showing an empty board over the
     // interview that explains why is exactly the wrong way round.
@@ -205,6 +206,10 @@ describe('dev team presentation helpers', () => {
     expect(at({ spec: null, approvals: [] })).toEqual(['waiting', 'waiting', 'waiting', 'waiting']);
     // Nothing turns on a parked run; the one being worked spins only while it is.
     expect(at({ phase: 'building' } as Partial<DevTeamSnapshot>)).toEqual(['done', 'done', 'active', 'waiting']);
+    // Wrapping up is not part of the build. Every engineer has finished by then,
+    // and a rail still spinning on Build while every card on the board says
+    // Finished is the run's own progress bar contradicting it.
+    expect(at({ phase: 'wrapping' } as Partial<DevTeamSnapshot>)).toEqual(['done', 'done', 'done', 'active']);
     expect(at({ phase: 'done' } as Partial<DevTeamSnapshot>)).toEqual(['done', 'done', 'done', 'done']);
   });
 });
@@ -562,17 +567,19 @@ describe('DevTeamPane', () => {
     );
   });
 
-  it('pauses, stops and resumes a run from the strip over its conversation', () => {
+  it('stops and resumes a run from the strip over its conversation, and never offers Pause', () => {
     cleanup();
-    act(() => useApp.setState({ devTeam: snapshot({ phase: 'wrapping', plan: null, tasks: [] }) } as never));
+    // An interview: a lead turn is running and there is no team, so this strip
+    // is the only place a hung one can be halted from.
+    act(() => useApp.setState({ devTeam: snapshot({ phase: 'interviewing', plan: null, tasks: [] }) } as never));
     const { rerender } = render(<DevTeamPane />);
-    fireEvent.click(screen.getByRole('button', { name: 'Pause dev team' }));
+    expect(screen.queryByRole('button', { name: 'Pause dev team' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Stop dev team' }));
-    expect(useApp.getState().pauseDevTeam).toHaveBeenCalledOnce();
     expect(useApp.getState().stopDevTeam).toHaveBeenCalledOnce();
 
     act(() => useApp.setState({ devTeam: snapshot({ phase: 'paused', plan: null, tasks: [] }) }));
     rerender(<DevTeamPane />);
+    expect(screen.queryByRole('button', { name: 'Pause dev team' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Resume dev team' }));
     expect(useApp.getState().resumeDevTeam).toHaveBeenCalledOnce();
   });
@@ -630,6 +637,21 @@ describe('DevTeamPane', () => {
     expect(record?.hasAttribute('open')).toBe(false);
     // The earlier run's handoff stays behind the fold; only the live one opens.
     expect(screen.getByText('Use arrow keys.').closest('details')?.hasAttribute('open')).toBe(false);
+  });
+
+  it('moves the rail onto the last step while the lead writes the report', () => {
+    // The run's last visible act is the build finishing, and it used to happen
+    // on the one screen with no steps on it: wrapping dropped straight to the
+    // transcript, so the rail never moved off Build and the report simply
+    // appeared. The board holds until there is a report to show.
+    cleanup();
+    act(() => useApp.setState({ devTeam: snapshot({ phase: 'wrapping' }) } as never));
+    render(<DevTeamPane />);
+
+    expect(screen.getByRole('button', { name: /^Lead, Plans the work/ })).toBeTruthy();
+    const steps = [...screen.getByRole('list', { name: 'Dev team progress' }).children];
+    expect(steps.map((step) => step.getAttribute('data-state'))).toEqual(['done', 'done', 'done', 'active']);
+    expect(steps[3].getAttribute('aria-current')).toBe('step');
   });
 
   it('returns to the ordinary transcript with the closing handoff already open when done', () => {

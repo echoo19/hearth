@@ -138,9 +138,13 @@ export function isTeamBoardPhase(phase: DevTeamPhase): boolean {
  * - `team` — everything between the approval and the report, when there is a
  *   lead with engineers under it and the run is a thing being managed.
  *
- * `wrapping` is a conversation phase, not a team one: the engineers have all
- * finished and the lead is writing the handoff into the transcript, so the
- * transcript is what should be on screen.
+ * `wrapping` is a team phase. It was a conversation one, on the reasoning that
+ * the engineers had finished and the lead was writing the handoff, so the
+ * transcript should be on screen — but that put the run's last visible act,
+ * the build finishing, on the one screen with no steps on it. The board is
+ * where the work is reported, so the work finishing is reported there: every
+ * engineer settles to Finished and the rail moves off Build and onto Done.
+ * The report is what ends it, and the report is a conversation.
  *
  * A parked run goes wherever it was parked. Without a plan there was never a
  * team, and showing an empty board over the interview that explains why is
@@ -154,6 +158,7 @@ export function devTeamStage(
     case 'planning':
     case 'building':
     case 'reviewing':
+    case 'wrapping':
       return 'team';
     case 'paused':
     case 'interrupted':
@@ -237,7 +242,11 @@ export function devTeamStepStates(
   let reached: number;
   if (phase === 'idle' || phase === 'interviewing' || phase === 'drafting-spec') reached = 0;
   else if (phase === 'spec-review') reached = 1;
-  else if (phase === 'done') reached = 3;
+  // Wrapping up is not part of the build. The engineers have all finished and
+  // the lead is writing the report, so the rail says the build is done and the
+  // last step is the one running: the rail sitting on Build while every card on
+  // the board said Finished was the run's own progress bar disagreeing with it.
+  else if (phase === 'wrapping' || phase === 'done') reached = 3;
   else if (parked && !state?.spec) reached = 0;
   else if (parked && !state?.approvals.some((a) => a.specVersion === state.specVersion)) reached = 1;
   else reached = 2;
