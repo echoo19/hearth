@@ -451,10 +451,14 @@ interface Member {
 function MemberView({
   member,
   keyboardActive,
+  running,
   onBack,
 }: {
   member: Member;
   keyboardActive: boolean;
+  /** The team is still working, so anything typed is steering rather than a
+   *  turn of its own, and a file cannot be handed to the lead mid-run. */
+  running: boolean;
   onBack: () => void;
 }) {
   const approve = useApp((s) => s.approveEngineer);
@@ -507,6 +511,17 @@ function MemberView({
           </div>
         )}
       </div>
+      {/* Opening the lead IS the ordinary conversation, so it has the ordinary
+          composer under it. The board does not: it is a status board, and
+          nothing on it is a thing you talk to. Neither does an engineer, which
+          is headless and read-only apart from the asks in its own log. */}
+      {member.isLead && (
+        <Composer
+          label="Message the lead"
+          placeholder="Message the lead…"
+          attachmentDisabledReason={running ? 'Steering is text-only while the team is running.' : undefined}
+        />
+      )}
     </section>
   );
 }
@@ -606,6 +621,7 @@ function TeamStage({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number
         {open ? (
           <MemberView
             member={open}
+            running={state.phase !== 'paused' && state.phase !== 'interrupted'}
             // Only one ask in the whole run may own Enter and Escape, and it is
             // the one being looked at: a shortcut that answers a question
             // offscreen is worse than no shortcut.
@@ -719,7 +735,6 @@ function RunRecord(props: RunRecordProps) {
 function composerCopy(state: DevTeamSnapshot | null): { label: string; placeholder: string } {
   if (!state) return { label: 'Message the lead', placeholder: 'Describe what you want to make' };
   if (state.phase === 'spec-review') return { label: 'Message the lead', placeholder: 'Describe a revision…' };
-  if (devTeamStage(state) === 'team') return { label: 'Tell the team', placeholder: 'Tell the team…' };
   return { label: 'Message the lead', placeholder: 'Message the lead…' };
 }
 
@@ -758,11 +773,15 @@ export function DevTeamPane() {
         </div>
       </div>
       )}
-      <Composer
-        label={copy.label}
-        placeholder={copy.placeholder}
-        attachmentDisabledReason={done ? undefined : 'Steering is text-only while the team is running.'}
-      />
+      {/* The board and an engineer's log have no composer: neither is a thing
+          you talk to. The lead's own view brings one with it. */}
+      {stage === 'conversation' && (
+        <Composer
+          label={copy.label}
+          placeholder={copy.placeholder}
+          attachmentDisabledReason={done ? undefined : 'Steering is text-only while the team is running.'}
+        />
+      )}
     </div>
   );
 }

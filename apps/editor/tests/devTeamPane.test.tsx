@@ -271,7 +271,8 @@ describe('DevTeamPane', () => {
       .toMatch(/^\w+, Gameplay builder, Build controls, Needs you, 1 waiting question$/);
     expect(cardOf('Shape the look').getAttribute('aria-label'))
       .toMatch(/^\w+, Visual maker, Shape the look, Working$/);
-    expect(screen.getByRole('textbox', { name: 'Tell the team' }).getAttribute('placeholder')).toBe('Tell the team…');
+    // Nothing on the board is a thing you talk to, so it has no composer.
+    expect(screen.queryByRole('textbox')).toBeNull();
   });
 
   it('keeps every agent that exists on the board, and no task that is not one', () => {
@@ -409,7 +410,22 @@ describe('DevTeamPane', () => {
 
     expect(screen.getByRole('region', { name: 'Lead log' }).textContent)
       .toContain('I am reviewing the first pass.');
-    expect(screen.getByRole('textbox', { name: 'Tell the team' })).toBeTruthy();
+    expect(screen.getByRole('textbox', { name: 'Message the lead' }).getAttribute('placeholder'))
+      .toBe('Message the lead…');
+  });
+
+  it('gives the composer to the lead alone, never to the board or an engineer', () => {
+    render(<DevTeamPane />);
+    expect(screen.queryByRole('textbox')).toBeNull();
+
+    fireEvent.click(cardOf('Build controls'));
+    // An engineer is headless and read-only: the only thing you can answer is
+    // an ask inside its own log.
+    expect(screen.queryByRole('textbox')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the team' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Lead, Plans the work/ }));
+    expect(screen.getByRole('textbox', { name: 'Message the lead' })).toBeTruthy();
   });
 
   it('keeps you where you are when the member you opened finishes', () => {
@@ -563,6 +579,7 @@ describe('DevTeamPane', () => {
 
   it('explains that active team steering is text-only, only when a file is offered', () => {
     render(<DevTeamPane />);
+    fireEvent.click(screen.getByRole('button', { name: /^Lead, Plans the work/ }));
     expect(screen.queryByText('Steering is text-only while the team is running.')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Add context' }));
     expect(screen.getByRole('menuitem', { name: 'Add photos & files…' }).getAttribute('aria-disabled')).toBe('true');

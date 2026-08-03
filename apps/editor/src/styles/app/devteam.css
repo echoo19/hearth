@@ -43,10 +43,12 @@
   margin-right: 0;
 }
 
-.devteam-pane[data-stage='team'] .composer-card {
-  max-width: calc(var(--devteam-measure) + var(--devteam-rail-w));
-  margin-left: 0;
-  margin-right: 0;
+/* The lead's own view carries the composer, and it is the ordinary chat's
+   composer in the ordinary chat's place: centred on the reading measure,
+   directly under the transcript it belongs to. The board and an engineer's log
+   have none at all. */
+.devteam-view .composer-card {
+  max-width: var(--chat-measure);
 }
 
 .devteam-pane {
@@ -58,6 +60,12 @@
   grid-template-rows: minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
+}
+
+/* No second row: the team screen has no composer of its own, and whichever
+   agent you open decides whether there is one at all. */
+.devteam-pane[data-stage='team'] {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 /* --- The conversation shape ----------------------------------------------- */
@@ -637,7 +645,7 @@
 
 .devteam-view {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
 }
