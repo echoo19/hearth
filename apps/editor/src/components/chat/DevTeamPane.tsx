@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   devTeamActivity,
   devTeamLeadActivity,
   devTeamPhaseLabel,
+  devTeamStage,
   devTeamTaskLabel,
-  isTeamBoardPhase,
   pendingLaneAsk,
 } from '../../chat/devteam';
 import { useApp } from '../../store';
@@ -22,8 +22,8 @@ import { useElapsed } from './WorkingRow';
  * nothing to show means the turn is not coming back.
  *
  * `building` is deliberately absent. It can legitimately run for a very long
- * time, and while it does there are engineer lanes on screen reporting what
- * they are doing, so the pane is not silent and the person is not stranded.
+ * time, and while it does there are engineers on screen reporting what they are
+ * doing, so the pane is not silent and the person is not stranded.
  */
 const LEAD_TURN_PHASES = new Set<DevTeamSnapshot['phase']>([
   'interviewing',
@@ -45,142 +45,26 @@ const LEAD_TURN_PHASES = new Set<DevTeamSnapshot['phase']>([
 const STALL_AFTER_MS = 3 * 60 * 1000;
 
 /**
- * The four handshakes a run passes through, in the order it passes them.
+ * A member of the team exists while it is on the job.
  *
- * "Specification" rather than "Spec" because the rail is a column with room
- * for the word, and the abbreviation only ever existed to fit a horizontal
- * strip that no longer exists.
+ * `done` is absent on purpose: a finished engineer has nothing left to manage,
+ * and leaving it on the board is what turned a sixteen-task run into a wall of
+ * cards where thirteen of them said "QUEUED" and none of them were anybody.
+ * `pending` is absent for the same reason from the other end — nobody has been
+ * summoned for it yet. Both still appear in the plan, which is where a task
+ * that is not a person belongs.
+ *
+ * `error` and `interrupted` stay. They are the ones that stopped without
+ * finishing, which is exactly what a person managing the run has to see.
  */
-const STEPS = ['Interview', 'Specification', 'Build', 'Done'] as const;
+const LIVE_STATUS = new Set<DevTeamTaskRecord['status']>(['running', 'waiting', 'error', 'interrupted']);
 
-/**
- * Which step is lit.
- *
- * `paused` and `interrupted` do not say where the run got to, and defaulting
- * them to Build told a run that hung during its INTERVIEW that it had reached
- * the build. What the snapshot does carry is how far the handshakes got: no
- * spec means the interview never finished, a spec with no plan means it was
- * waiting on the plan.
- */
-function stepIndex(
-  state: Pick<DevTeamSnapshot, 'phase' | 'spec' | 'plan' | 'approvals' | 'specVersion'> | null,
-): number {
-  const phase = state?.phase ?? 'idle';
-  if (phase === 'idle' || phase === 'interviewing' || phase === 'drafting-spec') return 0;
-  if (phase === 'spec-review') return 1;
-  if (phase === 'done') return 3;
-  if (phase === 'paused' || phase === 'interrupted') {
-    if (!state?.spec) return 0;
-    // Approval, not the plan, is what marks the end of the Specification step.
-    // Keying on `plan` put a run that was interrupted while PLANNING back on
-    // Specification, because planning is exactly the stretch where a spec is
-    // approved and a plan does not exist yet. That is the longest a lead turn
-    // ever runs, so it was also the state most likely to be looked at.
-    if (!state.approvals.some((approval) => approval.specVersion === state.specVersion)) return 1;
-  }
-  return 2;
-}
+/** The lead's own entry id. Not a task id, and task ids cannot collide with it
+ *  because the schema requires them to start with an alphanumeric. */
+const LEAD_ID = '\u0000lead';
 
-/**
- * The run's own column: how far it has got, what it is doing, and the two
- * controls that govern it.
- *
- * It was a horizontal strip above the board, and that strip was the reason the
- * board never read as a place where work is being managed. Four dotted words
- * in a row say "here is a progress bar"; a numbered column with the finished
- * steps ticked off says "here is a job, and here is where it is up to". The
- * horizontal version also had nowhere to put the phase name except beside the
- * steps, where it printed a fifth word in the same treatment as the four.
- *
- * The steps are numbered because a run has an ORDER that matters (you cannot
- * build before a spec is approved), and numbers state an order that four dots
- * only imply. A finished step trades its number for a tick, which is the one
- * moment the count stops being the useful fact about it.
- */
-function RunRail({ state, elapsed }: { state: DevTeamSnapshot | null; elapsed: number | null }) {
-  const pause = useApp((s) => s.pauseDevTeam);
-  const resume = useApp((s) => s.resumeDevTeam);
-  const stop = useApp((s) => s.stopDevTeam);
-  const phase = state?.phase ?? 'idle';
-  const active = stepIndex(state);
-  const canPause = ['planning', 'building', 'reviewing', 'wrapping'].includes(phase);
-  const canResume = phase === 'paused' || phase === 'interrupted';
-  // Stop is offered for the whole life of a run, not just the phases that can
-  // be paused. It used to be derived from those, which left an interview with
-  // no control at all — and an interview is exactly where a lead turn can hang
-  // with the board saying "Working" and climbing. A run you cannot stop is a
-  // run that can strand. The runtime already accepts stop from every phase and
-  // only ignores it when there is nothing running (see DevTeamRuntime.stop).
-  const canStop = phase !== 'idle' && phase !== 'done';
-  // Reviewing, wrapping, paused and interrupted all sit on the Build step, so
-  // the phase name is the only thing that says which. When it merely repeats
-  // the step it is attached to, it is printing the same word twice.
-  const detail = devTeamPhaseLabel(phase) === STEPS[active] ? '' : devTeamPhaseLabel(phase);
-  const counter = elapsed === null ? null : formatElapsed(elapsed);
-  const finished = state?.tasks.filter((task) => task.status === 'done').length ?? 0;
-
-  return (
-    <aside className="devteam-rail" aria-label="Run status">
-      <ol className="devteam-steps" aria-label="Dev team progress">
-        {STEPS.map((step, index) => {
-          const stepState = index < active ? 'done' : index === active ? 'current' : 'upcoming';
-          return (
-            <li key={step} data-state={stepState} aria-current={index === active ? 'step' : undefined}>
-              <span className="devteam-step-mark" aria-hidden="true">
-                {stepState === 'done' ? <Icon name="check" size={11} /> : index + 1}
-              </span>
-              <span className="devteam-step-body">
-                <span className="devteam-step-name">{step}</span>
-                {/* Only the step actually being worked carries a detail line,
-                    so the column has exactly one place worth looking at. */}
-                {stepState === 'current' && (detail || counter) && (
-                  <span className="devteam-step-detail" role="status" aria-label="Dev team phase">
-                    {detail}
-                    {/* The counter is the fact the board was missing: it is what
-                        tells a turn that is thinking apart from one that has
-                        stopped. Not announced, because a screen reader reading a
-                        stopwatch once a second is interruption, not
-                        information. */}
-                    {counter && (
-                      <span className="devteam-step-clock" aria-hidden="true">
-                        {detail ? ' · ' : ''}
-                        {counter}
-                      </span>
-                    )}
-                  </span>
-                )}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
-      {state && state.tasks.length > 0 && (
-        <p className="devteam-rail-count">
-          {finished} of {state.tasks.length} {state.tasks.length === 1 ? 'task' : 'tasks'} finished
-        </p>
-      )}
-      {(canPause || canResume || canStop) && (
-        <div className="devteam-controls">
-          {canPause && (
-            <Button size="sm" variant="quiet" icon="pause" aria-label="Pause dev team" onClick={pause}>
-              Pause
-            </Button>
-          )}
-          {canResume && (
-            <Button size="sm" variant="primary" icon="play" aria-label="Resume dev team" onClick={resume}>
-              Resume
-            </Button>
-          )}
-          {canStop && (
-            <Button size="sm" variant="danger" icon="stop" aria-label="Stop dev team" onClick={stop}>
-              Stop
-            </Button>
-          )}
-        </div>
-      )}
-    </aside>
-  );
-}
+/** The one panel below the board, whichever member is being read. */
+const PANEL_ID = 'devteam-log';
 
 /**
  * How long the current phase has been running, ticking, or null when the run
@@ -197,11 +81,78 @@ function usePhaseElapsed(state: DevTeamSnapshot | null): number | null {
 }
 
 /**
+ * The three controls that govern a run, wherever it is being run from.
+ *
+ * Stop is offered for the whole life of a run, not just the phases that can be
+ * paused. It used to be derived from those, which left an interview with no
+ * control at all — and an interview is exactly where a lead turn can hang with
+ * the pane saying "Working" and climbing. The runtime already accepts stop from
+ * every phase and only ignores it when there is nothing running.
+ */
+function RunControls({ phase }: { phase: DevTeamSnapshot['phase'] }) {
+  const pause = useApp((s) => s.pauseDevTeam);
+  const resume = useApp((s) => s.resumeDevTeam);
+  const stop = useApp((s) => s.stopDevTeam);
+  const canPause = ['planning', 'building', 'reviewing', 'wrapping'].includes(phase);
+  const canResume = phase === 'paused' || phase === 'interrupted';
+  const canStop = phase !== 'idle' && phase !== 'done';
+  if (!canPause && !canResume && !canStop) return null;
+
+  return (
+    <div className="devteam-controls">
+      {canPause && (
+        <Button size="sm" variant="quiet" icon="pause" aria-label="Pause dev team" onClick={pause}>
+          Pause
+        </Button>
+      )}
+      {canResume && (
+        <Button size="sm" variant="primary" icon="play" aria-label="Resume dev team" onClick={resume}>
+          Resume
+        </Button>
+      )}
+      {canStop && (
+        <Button size="sm" variant="danger" icon="stop" aria-label="Stop dev team" onClick={stop}>
+          Stop
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What a run looks like while it is still just a conversation.
+ *
+ * The interview and the specification are a chat and nothing more: one person
+ * and one agent working out what to make. Everything the console needs to add
+ * to that is a single line saying the lead is on it and offering the way out —
+ * so that is all this is. A four-step progress rail over a two-message
+ * conversation was describing a pipeline to someone who was still typing the
+ * first sentence of it.
+ */
+function RunStrip({ phase, elapsed }: { phase: DevTeamSnapshot['phase']; elapsed: number | null }) {
+  const counter = elapsed === null ? null : formatElapsed(elapsed);
+  const parked = phase === 'paused' || phase === 'interrupted';
+
+  return (
+    <div className="devteam-strip">
+      <span className="devteam-strip-state" data-parked={parked || undefined}>
+        <span className="devteam-strip-pulse" aria-hidden="true" />
+        <span role="status" aria-label="Dev team phase">{devTeamPhaseLabel(phase)}</span>
+      </span>
+      {counter && (
+        <span className="devteam-strip-clock" aria-hidden="true">{counter}</span>
+      )}
+      <RunControls phase={phase} />
+    </div>
+  );
+}
+
+/**
  * The way out of a step that is not going to finish on its own.
  *
  * This exists because of a run that sat in `planning` for over an hour with a
  * complete, schema-valid plan.json already on disk. The pane said "The lead is
- * preparing the plan", which was not true, and offered Stop, which would have
+ * writing the plan", which was not true, and offered Stop, which would have
  * thrown that plan away. The person had no way to tell a hung turn from a slow
  * one and nothing to press that would help.
  *
@@ -280,17 +231,113 @@ function laneTail(messages: readonly ChatMessage[], record?: DevTeamTaskRecord):
 }
 
 /**
- * One member of the team, as a card.
+ * The lead, at the top of its own team.
  *
- * They are headless: nothing they do is visible anywhere else in the app, and
- * a person managing them needs to see who is on the job, how each one is
- * doing, and then the actual log of one of them. A row that expanded in place
- * answered the last of those and made the first two harder, because a board of
- * full width rows is read one line at a time and an opened one buries the rest.
+ * It is not one card among the others and must not look like one: it is the
+ * agent you actually talk to, the one that hires and fires the rest, and the
+ * only one still here from the interview. Pressing it puts the ordinary
+ * conversation back in the panel below, which is what "click into the main
+ * agent and chat with it" means.
  *
- * The card carries every fact worth scanning: who, what they are for, the state
- * (as a tracked-caps word, coloured), the last thing observed, and whether they
- * are waiting on an answer. Pressing it shows the log underneath the grid.
+ * Its foot carries the two facts that belong to the run as a whole rather than
+ * to any one member — how much of the plan is finished, and the controls that
+ * govern it. Those sit outside the button, because a button inside a button is
+ * not a thing a browser will render.
+ */
+function LeadPanel({
+  phase,
+  activity,
+  tail,
+  elapsed,
+  asks,
+  finished,
+  total,
+  selected,
+  onSelect,
+}: {
+  phase: DevTeamSnapshot['phase'];
+  activity: string;
+  tail: string;
+  elapsed: number | null;
+  asks: number;
+  finished: number;
+  total: number;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const counter = elapsed === null ? null : formatElapsed(elapsed);
+  const waiting = asks > 0 ? `, ${asks} waiting ${asks === 1 ? 'question' : 'questions'}` : '';
+  const percent = total === 0 ? 0 : Math.round((finished / total) * 100);
+
+  return (
+    <section
+      className="devteam-lead"
+      data-phase={phase}
+      data-selected={selected || undefined}
+      // The lead is mid-turn, as opposed to watching a build that other people
+      // are doing. Only then does its mark have anything to be lively about.
+      data-live={elapsed !== null || undefined}
+    >
+      <button
+        type="button"
+        className="devteam-lead-main"
+        aria-expanded={selected}
+        aria-controls={PANEL_ID}
+        aria-label={`Lead lane, Plan and review, ${activity}${tail ? `, ${tail}` : ''}${waiting}`}
+        onClick={onSelect}
+      >
+        <span className="devteam-lead-mark" aria-hidden="true">
+          <Icon name="review" size={16} />
+        </span>
+        <span className="devteam-lead-who">
+          <strong>Lead</strong>
+          <span>Plans the work, briefs the team, reviews what comes back</span>
+        </span>
+        <span className="devteam-lead-state">
+          <span className="devteam-lane-activity">{activity}</span>
+          {counter && <span className="devteam-lead-clock" aria-hidden="true">{counter}</span>}
+        </span>
+        {asks > 0 && (
+          <span
+            className="devteam-ask-badge"
+            aria-label={`${asks} waiting ${asks === 1 ? 'question' : 'questions'}`}
+          >
+            {asks}
+          </span>
+        )}
+      </button>
+      <div className="devteam-lead-foot">
+        {total > 0 && (
+          <div className="devteam-progress">
+            <span
+              className="devteam-progress-track"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={total}
+              aria-valuenow={finished}
+              aria-label="Tasks finished"
+            >
+              <span className="devteam-progress-fill" style={{ width: `${percent}%` }} />
+            </span>
+            <span className="devteam-progress-text">
+              {finished} of {total} {total === 1 ? 'task' : 'tasks'} finished
+            </span>
+          </div>
+        )}
+        <RunControls phase={phase} />
+      </div>
+    </section>
+  );
+}
+
+/**
+ * One engineer, as a card.
+ *
+ * They are headless: nothing they do is visible anywhere else in the app, and a
+ * person managing them needs to see who is on the job, how each one is doing,
+ * and then the actual log of one of them. The card carries every fact worth
+ * scanning: who, what they are for, the state as a tracked-caps word, coloured,
+ * the last thing observed, and whether they are waiting on an answer.
  */
 function TeamCard({
   name,
@@ -299,21 +346,26 @@ function TeamCard({
   activity,
   tail,
   asks,
+  startedAt,
   selected,
-  panelId,
   onSelect,
 }: {
   name: string;
   focus?: string;
-  /** The lane's data-status: a task status, or 'lead' for the lead. */
-  status: string;
+  status: DevTeamTaskRecord['status'];
   activity: string;
   tail: string;
   asks: number;
+  startedAt?: string;
   selected: boolean;
-  panelId: string;
   onSelect: () => void;
 }) {
+  // How long this one has been at it. Every orchestration board worth using
+  // carries a per-worker clock, and without one a card that is thinking and a
+  // card that has wedged look exactly alike.
+  const since = startedAt === undefined ? undefined : Date.parse(startedAt);
+  const elapsed = useElapsed(Number.isNaN(since) ? undefined : since, status === 'running');
+  const counter = status === 'running' && elapsed !== null ? formatElapsed(elapsed) : null;
   const waiting = asks > 0 ? `, ${asks} waiting ${asks === 1 ? 'question' : 'questions'}` : '';
   return (
     <button
@@ -321,17 +373,16 @@ function TeamCard({
       className="devteam-card"
       data-status={status}
       aria-expanded={selected}
-      aria-controls={panelId}
+      aria-controls={PANEL_ID}
       aria-label={`${name} lane${focus ? `, ${focus}` : ''}, ${activity}${tail ? `, ${tail}` : ''}${waiting}`}
       onClick={onSelect}
     >
       <span className="devteam-card-head">
-        {/* Who this is, as a glyph, tinted by how it is doing. One mark carries
-            both facts: the shape says lead or engineer and the colour says
-            running, waiting, finished or failed, so a grid of them can be
-            scanned without reading a word. */}
+        {/* One mark carries two facts: the shape says engineer and the tint says
+            running, waiting or stopped, so a row of them can be scanned without
+            reading a word. */}
         <span className="devteam-lane-mark" aria-hidden="true">
-          <Icon name={status === 'lead' ? 'review' : 'bot'} size={13} />
+          <Icon name="bot" size={13} />
         </span>
         <span className="devteam-card-who">
           <strong>{name}</strong>
@@ -348,8 +399,9 @@ function TeamCard({
       </span>
       <span className="devteam-card-foot">
         <span className="devteam-lane-activity">{activity}</span>
-        {tail && <span className="devteam-lane-tail">{tail}</span>}
+        {counter && <span className="devteam-lane-clock" aria-hidden="true">{counter}</span>}
       </span>
+      {tail && <span className="devteam-lane-tail">{tail}</span>}
     </button>
   );
 }
@@ -357,55 +409,28 @@ function TeamCard({
 /**
  * The log of the one member currently being looked at.
  *
- * It sits under the grid rather than inside a card, so choosing a different
- * member does not move the grid under the pointer, and so a long transcript
- * cannot push the rest of the team off the screen above it.
+ * It sits under the board rather than inside a card, so choosing a different
+ * member does not move the board under the pointer, and so a long transcript
+ * cannot push the rest of the team off the screen above it. It is never empty:
+ * something is always selected, and by default that is the lead, whose log is
+ * the ordinary conversation.
  */
-function LaneLog({
-  id,
+function MemberLog({
   name,
-  messages,
-  engineerId,
-  asks,
-  keyboardActive,
-  onClose,
+  subtitle,
+  children,
 }: {
-  id: string;
   name: string;
-  messages: readonly ChatMessage[];
-  engineerId?: string;
-  asks: ReturnType<typeof pendingLaneAsk>;
-  keyboardActive: boolean;
-  onClose: () => void;
+  subtitle: string;
+  children: React.ReactNode;
 }) {
-  const approve = useApp((s) => s.approveEngineer);
-  const answer = useApp((s) => s.answerEngineerInput);
   return (
-    <section className="devteam-log" id={id} aria-label={`${name} log`}>
+    <section className="devteam-log" id={PANEL_ID} aria-label={`${name} log`}>
       <header className="devteam-log-head">
         <h3>{name}</h3>
-        <Button size="sm" variant="quiet" icon="close" onClick={onClose}>
-          Close
-        </Button>
+        <span className="devteam-log-sub">{subtitle}</span>
       </header>
-      <div className="devteam-log-body">
-        {messages.length > 0 ? (
-          <MessageTurns
-            messages={messages}
-            className="devteam-lane-turns"
-            controls={engineerId ? {
-              activeApprovalId: keyboardActive && asks.active?.kind === 'approval' ? asks.active.id : null,
-              activeInputId: keyboardActive && asks.active?.kind === 'input' ? asks.active.id : null,
-              onApproval: (approvalId, decision, choiceId) => approve(engineerId, approvalId, decision, choiceId),
-              onInput: (inputId, action, answers) => answer(engineerId, inputId, action, answers),
-            } : undefined}
-          />
-        ) : (
-          <p className="devteam-lane-empty">
-            Nothing has been reported yet. This one is headless, so whatever it does shows up here.
-          </p>
-        )}
-      </div>
+      <div className="devteam-log-body">{children}</div>
     </section>
   );
 }
@@ -422,40 +447,8 @@ const TASK_GLYPH: Partial<Record<DevTeamTaskRecord['status'], string>> = {
   waiting: 'warning',
 };
 
-/**
- * What the Plan region shows before there is a plan.
- *
- * It was one grey sentence at the top of an otherwise empty column, which told
- * you what was supposed to be happening and nothing about whether it still
- * was. The counter is the difference: a number that climbs says the run is
- * alive, and a number that has climbed too far is the thing the stall notice
- * then acts on.
- */
-function PlanPending({ elapsed }: { elapsed: number | null }) {
-  const counter = elapsed === null ? null : formatElapsed(elapsed);
-  return (
-    <p className="devteam-board-note">
-      <span className="devteam-board-note-flame" aria-hidden="true">
-        <Icon name="fire" size={13} />
-      </span>
-      The lead is writing the plan.
-      {counter && (
-        <span className="devteam-board-note-clock" aria-hidden="true">
-          {counter}
-        </span>
-      )}
-    </p>
-  );
-}
-
-function Milestones({
-  state,
-  elapsed = null,
-}: {
-  state: Pick<DevTeamSnapshot, 'plan' | 'tasks' | 'currentMilestone'>;
-  elapsed?: number | null;
-}) {
-  if (!state.plan) return <PlanPending elapsed={elapsed} />;
+function Milestones({ state }: { state: Pick<DevTeamSnapshot, 'plan' | 'tasks' | 'currentMilestone'> }) {
+  if (!state.plan) return null;
   const records = new Map(state.tasks.map((task) => [task.taskId, task]));
   return (
     <nav className="devteam-milestones" aria-label="Build milestones">
@@ -487,61 +480,112 @@ function Milestones({
   );
 }
 
-/** The lead's own entry id. Not a task id, and task ids cannot collide with it
- *  because the schema requires them to start with an alphanumeric. */
-const LEAD_ID = '\u0000lead';
+/**
+ * The board's own state, in a line.
+ *
+ * "3 on the job, 0 working" was what a run with three failed engineers said,
+ * which is both true and useless: on the job is not a state anybody is in, and
+ * a count of zero is not a fact worth printing. What a person wants from this
+ * line is which of the three things is happening and to how many.
+ */
+function crewRollCall(crew: readonly { status: DevTeamTaskRecord['status'] }[]): string {
+  const count = (status: DevTeamTaskRecord['status']) =>
+    crew.filter((member) => member.status === status).length;
+  const stopped = count('error') + count('interrupted');
+  const parts = [
+    count('running') > 0 ? `${count('running')} working` : null,
+    count('waiting') > 0 ? `${count('waiting')} waiting on you` : null,
+    stopped > 0 ? `${stopped} stopped` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.join(' · ');
+}
 
-function TeamBoard({ state, elapsed = null }: { state: DevTeamSnapshot; elapsed?: number | null }) {
+/**
+ * Why nobody is on the board.
+ *
+ * An empty roster means four quite different things and a person cannot tell
+ * them apart from the emptiness itself. The clock on the planning case is what
+ * separates a lead that is thinking from one that has stopped, and it is the
+ * fact the stall notice then acts on.
+ */
+function TeamEmpty({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number | null }) {
+  const counter = elapsed === null ? null : formatElapsed(elapsed);
+  const parked = state.phase === 'paused' || state.phase === 'interrupted';
+  const text = !state.plan
+    ? 'The lead is writing the plan. The team appears here as it is brought on.'
+    : parked
+      ? 'The run is parked. Nobody is working until it is picked back up.'
+      : state.phase === 'reviewing'
+        ? 'Everyone has handed their work back. The lead is reviewing it.'
+        : 'Nobody is on the job right now. Engineers appear here as the lead brings them on.';
+
+  return (
+    <p className="devteam-board-note">
+      <span className="devteam-board-note-flame" aria-hidden="true">
+        <Icon name={state.plan ? 'team' : 'fire'} size={13} />
+      </span>
+      {text}
+      {counter && (
+        <span className="devteam-board-note-clock" aria-hidden="true">{counter}</span>
+      )}
+    </p>
+  );
+}
+
+/**
+ * The screen a run turns into once its specification is approved.
+ *
+ * The lead is at the top and stays there; the engineers it has summoned sit
+ * under it and leave when they are finished; whichever one is selected has its
+ * log below. That shape is the whole point: the team is a thing the lead
+ * assembles and dissolves as the build goes, and a board that kept every task
+ * on it forever could not show that.
+ */
+function TeamStage({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number | null }) {
   const messages = useApp((s) => s.messages);
   const lanes = useApp((s) => s.devTeamLanes);
+  const approve = useApp((s) => s.approveEngineer);
+  const answer = useApp((s) => s.answerEngineerInput);
+
   const roles = new Map(state.plan?.roles.map((role) => [role.id, role]));
   const tasks = new Map(state.plan?.milestones.flatMap((milestone) => milestone.tasks).map((task) => [task.id, task]));
 
-  // One list, lead first, so selection and keyboard ownership are decided in a
-  // single place rather than negotiated between rows that cannot see each other.
-  const members = [
-    {
-      id: LEAD_ID,
-      name: 'Lead',
-      focus: 'Plan and review',
-      status: 'lead',
-      messages,
-      engineerId: undefined as string | undefined,
-      activity: devTeamLeadActivity(messages, state.phase),
-      record: undefined as DevTeamTaskRecord | undefined,
-    },
-    ...state.tasks.map((record) => {
-      const task = tasks.get(record.taskId);
-      const role = task ? roles.get(task.roleId) : undefined;
-      const own = lanes[record.engineerId] ?? [];
-      return {
-        // Two pending tasks share an empty engineer id, and an engineer id only
-        // exists once the task is dispatched. The task id is unique by schema
-        // and stable for the life of the run.
-        id: record.taskId,
-        name: task?.title ?? role?.name ?? 'Engineer',
-        focus: role?.name ?? role?.focus,
-        status: record.status as string,
-        messages: own,
-        engineerId: record.engineerId,
-        activity: devTeamActivity(own, record.status),
-        record,
-      };
-    }),
-  ].map((member) => {
-    const asks = pendingLaneAsk(member.messages);
+  const leadAsks = pendingLaneAsk(messages);
+  const leadActivity = devTeamLeadActivity(messages, state.phase);
+  const leadObserved = laneTail(messages);
+
+  const crew = state.tasks.filter((record) => LIVE_STATUS.has(record.status)).map((record) => {
+    const task = tasks.get(record.taskId);
+    const role = task ? roles.get(task.roleId) : undefined;
+    const own = lanes[record.engineerId] ?? [];
+    const asks = pendingLaneAsk(own);
+    const activity = devTeamActivity(own, record.status);
     // A member with no prose to report falls back to its own status, which is
-    // the word the state column is already showing: "QUEUED  Queued". Two
+    // the word the state column is already showing: "WORKING  Working". Two
     // places saying one thing reads as two facts and is worth less than one.
-    const observed = laneTail(member.messages, member.record);
-    return { ...member, asks, tail: observed === member.activity ? '' : observed };
+    const observed = laneTail(own, record);
+    return {
+      // An engineer id only exists once the task is dispatched, and two of them
+      // can share an empty one. The task id is unique by schema and stable for
+      // the life of the run.
+      id: record.taskId,
+      name: task?.title ?? role?.name ?? 'Engineer',
+      focus: role?.name ?? role?.focus,
+      status: record.status,
+      messages: own,
+      engineerId: record.engineerId,
+      startedAt: record.startedAt,
+      activity,
+      asks,
+      tail: observed === activity ? '' : observed,
+    };
   });
 
-  const blocked = members.find((member) => member.asks.count > 0);
+  const blocked = crew.find((member) => member.asks.count > 0);
   const blockedId = blocked?.id ?? null;
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string>(LEAD_ID);
 
-  // A member that cannot proceed without an answer is the whole board's
+  // An engineer that cannot proceed without an answer is the whole board's
   // business, so it shows itself. It does not PIN itself: someone who wants to
   // read a different log while one is waiting can still click away, and when
   // this one is settled the next blocked member takes its place.
@@ -549,58 +593,108 @@ function TeamBoard({ state, elapsed = null }: { state: DevTeamSnapshot; elapsed?
     if (blockedId) setPicked(blockedId);
   }, [blockedId]);
 
-  // The lead's own turn is the thing worth reading while it reviews or wraps.
+  // Review is the lead's own turn, and its transcript is the thing worth
+  // reading while it runs.
   useEffect(() => {
-    if (state.phase === 'reviewing' || state.phase === 'wrapping') setPicked(LEAD_ID);
+    if (state.phase === 'reviewing') setPicked(LEAD_ID);
   }, [state.phase]);
 
-  const selected = members.find((member) => member.id === picked) ?? null;
-  const panelId = 'devteam-log';
+  // The selected engineer can finish and leave the board mid-read. Falling back
+  // here rather than in an effect means there is never a frame with nothing
+  // selected and no log at all.
+  const selected = crew.find((member) => member.id === picked) ?? null;
+  const finished = state.tasks.filter((task) => task.status === 'done').length;
+  const roll = crewRollCall(crew);
 
   return (
     <div className="devteam-board">
-      {/* Two named regions rather than two unlabelled lists. A console says
-          what you are looking at before it shows it to you, and these two are
-          genuinely different things: one is what was agreed, the other is what
-          is happening. */}
-      <h2 className="devteam-section">
-        <Icon name="checkpoint" size={11} />
-        Plan
-      </h2>
-      <Milestones state={state} elapsed={elapsed} />
-      <h2 className="devteam-section">
-        <Icon name="team" size={11} />
-        Team
-      </h2>
-      <div className="devteam-lanes" aria-label="Team activity">
-        {members.map((member) => (
-          <TeamCard
-            key={member.id}
-            name={member.name}
-            focus={member.focus}
-            status={member.status}
-            activity={member.activity}
-            tail={member.tail}
-            asks={member.asks.count}
-            selected={member.id === picked}
-            panelId={panelId}
-            onSelect={() => setPicked((current) => (current === member.id ? null : member.id))}
-          />
-        ))}
+      <LeadPanel
+        phase={state.phase}
+        activity={leadActivity}
+        tail={leadObserved}
+        elapsed={elapsed}
+        asks={leadAsks.count}
+        finished={finished}
+        total={state.tasks.length}
+        selected={selected === null}
+        onSelect={() => setPicked(LEAD_ID)}
+      />
+
+      {/* Indented under the lead and joined to it by a guide line, because that
+          is the actual relationship: these exist because the lead summoned
+          them, and they leave when it is done with them. Two sibling sections
+          of equal weight said the opposite. */}
+      <div className="devteam-crew">
+        <h2 className="devteam-section">
+          <Icon name="team" size={11} />
+          Team
+          {roll && <span className="devteam-section-count">{roll}</span>}
+        </h2>
+        {crew.length > 0 ? (
+          <div className="devteam-lanes" aria-label="Team activity">
+            {crew.map((member) => (
+              <TeamCard
+                key={member.id}
+                name={member.name}
+                focus={member.focus}
+                status={member.status}
+                activity={member.activity}
+                tail={member.tail}
+                asks={member.asks.count}
+                startedAt={member.startedAt}
+                selected={member.id === picked}
+                onSelect={() => setPicked(member.id)}
+              />
+            ))}
+          </div>
+        ) : (
+          <TeamEmpty state={state} elapsed={elapsed} />
+        )}
       </div>
-      {selected && (
-        <LaneLog
-          id={panelId}
-          name={selected.name}
-          messages={selected.messages}
-          engineerId={selected.engineerId}
-          asks={selected.asks}
-          // Only one ask on the whole board may own Enter and Escape, and it is
-          // the one being looked at: a shortcut that answers a question offscreen
-          // is worse than no shortcut.
-          keyboardActive={selected.id === blockedId}
-          onClose={() => setPicked(null)}
-        />
+
+      {state.plan && (
+        <details className="devteam-plan-fold">
+          <summary>
+            <Icon name="checkpoint" size={11} />
+            Plan
+            <span>{finished} of {state.tasks.length} finished</span>
+          </summary>
+          <Milestones state={state} />
+        </details>
+      )}
+
+      {selected ? (
+        <MemberLog name={selected.name} subtitle={selected.focus ?? 'Engineer'}>
+          {selected.messages.length > 0 ? (
+            <MessageTurns
+              messages={selected.messages}
+              className="devteam-lane-turns"
+              controls={selected.engineerId ? {
+                // Only one ask on the whole board may own Enter and Escape, and
+                // it is the one being looked at: a shortcut that answers a
+                // question offscreen is worse than no shortcut.
+                activeApprovalId: selected.id === blockedId && selected.asks.active?.kind === 'approval'
+                  ? selected.asks.active.id
+                  : null,
+                activeInputId: selected.id === blockedId && selected.asks.active?.kind === 'input'
+                  ? selected.asks.active.id
+                  : null,
+                onApproval: (approvalId, decision, choiceId) =>
+                  approve(selected.engineerId, approvalId, decision, choiceId),
+                onInput: (inputId, action, answers) =>
+                  answer(selected.engineerId, inputId, action, answers),
+              } : undefined}
+            />
+          ) : (
+            <p className="devteam-lane-empty">
+              Nothing has been reported yet. This one is headless, so whatever it does shows up here.
+            </p>
+          )}
+        </MemberLog>
+      ) : (
+        <MemberLog name="Lead" subtitle="Your conversation with the lead">
+          <MessageList />
+        </MemberLog>
       )}
     </div>
   );
@@ -625,7 +719,9 @@ function RunRecord(props: RunRecordProps) {
       <div className="devteam-run-body">
         {state.wrap && <Markdown text={state.wrap} live={false} />}
         {!state.wrap && state.summary && <Markdown text={state.summary} live={false} />}
-        {props.historical ? <Milestones state={state} /> : <TeamBoard state={props.state} />}
+        {/* The team has dissolved by the time this is read, so what is left to
+            show is the plan with its outcomes on it, not a board of nobody. */}
+        <Milestones state={state} />
       </div>
     </details>
   );
@@ -634,7 +730,7 @@ function RunRecord(props: RunRecordProps) {
 function composerCopy(state: DevTeamSnapshot | null): { label: string; placeholder: string } {
   if (!state) return { label: 'Message the lead', placeholder: 'Describe what you want to make' };
   if (state.phase === 'spec-review') return { label: 'Message the lead', placeholder: 'Describe a revision…' };
-  if (isTeamBoardPhase(state.phase)) return { label: 'Tell the team', placeholder: 'Tell the team…' };
+  if (devTeamStage(state) === 'team') return { label: 'Tell the team', placeholder: 'Tell the team…' };
   return { label: 'Message the lead', placeholder: 'Message the lead…' };
 }
 
@@ -644,33 +740,24 @@ export function DevTeamPane() {
   const elapsed = usePhaseElapsed(state);
   const stalled = elapsed !== null && elapsed >= STALL_AFTER_MS;
   const copy = composerCopy(state);
-  // A board needs something to draw. `planning` earns one because it says the
-  // plan is being written; a run parked before a plan exists does not, and used
-  // to render an empty grid over the conversation that explains it — which is
-  // exactly what a person reopening an interrupted interview needs to read.
-  const board = state ? isTeamBoardPhase(state.phase) && (state.plan !== null || state.phase === 'planning') : false;
-  const done = state?.phase === 'done';
+  const stage = devTeamStage(state);
+  const phase = state?.phase ?? 'idle';
+  const done = phase === 'done';
   const approvedSpec = state !== null && state.spec !== null && state.approvals.some(
     (approval) => approval.specVersion === state.specVersion,
   );
 
   return (
-    <div className="devteam-pane">
-      {/* Two columns, and only two. The run's state and its controls live in a
-          fixed column on the left; everything the team produced lives in one
-          scrolling column on the right, sharing a single left edge.
-
-          The old shape was a full-width header strip over a two-column board
-          whose LEFT column held the milestones. When there was no plan yet
-          that column held one sentence, vertically centred against a lane list
-          of one row, with the approved-specification fold floating above both
-          on a third alignment — three things, three left edges, none of them
-          agreeing, and a large empty area under all of it. Nothing was
-          mis-positioned; there was just no column structure for anything to be
-          positioned against. */}
-      <div className="devteam-console">
-        <RunRail state={state} elapsed={elapsed} />
-        <div className="devteam-main">
+    // One column, and one only. A run is a conversation that grows a team in
+    // the middle of it and loses the team again at the end, so the pane has two
+    // shapes rather than one shape with a permanent chrome column beside it.
+    // The four-step rail that used to sit there was describing a pipeline over
+    // the top of whichever step you were actually in.
+    <div className="devteam-pane" data-stage={stage}>
+      <div className="devteam-main">
+        {stage === 'conversation' && phase !== 'idle' && phase !== 'done' && (
+          <RunStrip phase={phase} elapsed={elapsed} />
+        )}
         {stalled && state && <StallNotice elapsed={elapsed!} phase={state.phase} />}
         {state && state.steering.length > 0 && (
           <p className="devteam-steering-note" role="status">
@@ -679,7 +766,7 @@ export function DevTeamPane() {
               : `${state.steering.length} notes are queued for the lead. They are folded in at the next review.`}
           </p>
         )}
-        {permissionMode === 'ask' && board && (
+        {permissionMode === 'ask' && stage === 'team' && (
           <p className="devteam-ask-warning" role="status">
             Ask mode pauses engineers for each command and file change. Automatic mode is smoother for team runs.
           </p>
@@ -689,7 +776,7 @@ export function DevTeamPane() {
             {state.history.map((run) => <RunRecord key={run.runId} state={run} historical />)}
           </div>
         )}
-        {state && approvedSpec && board && (
+        {state && approvedSpec && stage === 'team' && (
           <details className="devteam-spec-record">
             <summary>
               <Icon name="script" size={11} />
@@ -701,22 +788,15 @@ export function DevTeamPane() {
           </details>
         )}
         {state?.error && <p className="devteam-error" role="alert">{state.error}</p>}
-        {state?.phase === 'spec-review' ? (
-          <div className="devteam-flow">
-            <MessageList />
-            <SpecReview state={state} />
-          </div>
-        ) : board ? (
-          <TeamBoard state={state!} elapsed={elapsed} />
-        ) : done ? (
-          <div className="devteam-flow">
-            <MessageList />
-            <RunRecord state={state!} />
-          </div>
+        {stage === 'team' ? (
+          <TeamStage state={state!} elapsed={elapsed} />
         ) : (
-          <MessageList />
+          <div className="devteam-flow">
+            <MessageList />
+            {phase === 'spec-review' && <SpecReview state={state!} />}
+            {done && <RunRecord state={state!} />}
+          </div>
         )}
-        </div>
       </div>
       <Composer
         label={copy.label}

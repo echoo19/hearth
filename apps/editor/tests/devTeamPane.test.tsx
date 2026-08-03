@@ -3,7 +3,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DevTeamPane } from '../src/components/chat/DevTeamPane';
-import { devTeamActivity, devTeamPhaseLabel, pendingLaneAsk } from '../src/chat/devteam';
+import { devTeamActivity, devTeamPhaseLabel, devTeamStage, pendingLaneAsk } from '../src/chat/devteam';
 import { useApp } from '../src/store';
 import type { ChatMessage, DevTeamSnapshot } from '../src/types';
 
@@ -35,7 +35,7 @@ const snapshot = (over: Partial<DevTeamSnapshot> = {}): DevTeamSnapshot => ({
   plan,
   tasks: [
     { taskId: 'controls', engineerId: 'engineer-controls', status: 'running', files: ['src/input.ts'] },
-    { taskId: 'look', engineerId: 'engineer-look', status: 'done', summary: 'Finished two sprites.' },
+    { taskId: 'look', engineerId: 'engineer-look', status: 'running' },
   ],
   approvals: [{ specVersion: 1, approvedAt: '2026-07-31T00:00:00.000Z' }],
   history: [],
@@ -71,6 +71,8 @@ const engineerLane: ChatMessage[] = [{
   ],
   streaming: true,
 }];
+
+const lanes = () => screen.getAllByRole('button', { name: /lane/i });
 
 beforeEach(() => {
   useApp.setState({
@@ -134,6 +136,28 @@ describe('dev team presentation helpers', () => {
       count: 2,
     });
   });
+
+  it('is a conversation until a team exists and again once it has dissolved', () => {
+    // The interview and the spec are one person and one agent working something
+    // out; the report is written when the engineers have all gone home. Only
+    // the stretch in between is a thing being managed.
+    const stage = (phase: DevTeamSnapshot['phase'], hasPlan = true) =>
+      devTeamStage({ phase, plan: hasPlan ? plan : null });
+
+    expect(stage('idle')).toBe('conversation');
+    expect(stage('interviewing')).toBe('conversation');
+    expect(stage('spec-review')).toBe('conversation');
+    expect(stage('planning', false)).toBe('team');
+    expect(stage('building')).toBe('team');
+    expect(stage('reviewing')).toBe('team');
+    expect(stage('wrapping')).toBe('conversation');
+    expect(stage('done')).toBe('conversation');
+    // A parked run goes wherever it was parked. Showing an empty board over the
+    // interview that explains why is exactly the wrong way round.
+    expect(stage('interrupted', false)).toBe('conversation');
+    expect(stage('interrupted')).toBe('team');
+    expect(devTeamStage(null)).toBe('conversation');
+  });
 });
 
 describe('DevTeamPane', () => {
@@ -155,78 +179,87 @@ describe('DevTeamPane', () => {
     }
   });
 
-  it('renders a lead-first calm board with milestone and engineer status', () => {
+  it('shows the interview as an ordinary chat with one line of run status', () => {
+    // "For interview and spec it just looks like a normal chat." A four-step
+    // progress rail over a two-message conversation was describing a pipeline
+    // to someone still typing the first sentence of it.
+    cleanup();
+    act(() => useApp.setState({
+      devTeam: snapshot({ phase: 'interviewing', plan: null, tasks: [], approvals: [] }),
+    } as never));
     render(<DevTeamPane />);
 
-    // The lit step IS the phase readout while they agree, so there is nothing
-    // for a phase line to add and it is not rendered at all. It used to render
-    // as an empty element, which is a different way of saying the same thing
-    // and a worse one: an element that exists to say nothing still takes a
-    // place in the reading order.
-    expect(screen.getByRole('listitem', { current: 'step' }).textContent).toContain('Build');
-    expect(screen.queryByRole('status', { name: 'Dev team phase' })).toBeNull();
-    const lanes = screen.getAllByRole('button', { name: /lane/i });
-    expect(lanes[0].textContent).toContain('Lead');
-    expect(screen.getByText('Playable loop')).toBeTruthy();
-    expect(screen.getAllByText('Build controls').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('I am reviewing the first pass.').length).toBeGreaterThan(0);
+    expect(screen.getByRole('status', { name: 'Dev team phase' }).textContent).toBe('Interview');
+    expect(screen.queryAllByRole('button', { name: /lane/i })).toHaveLength(0);
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Message the lead' })).toBeTruthy();
+  });
+
+  it('becomes a lead-over-team board once the spec is approved', () => {
+    render(<DevTeamPane />);
+
+    // The lead is first and stays first: it is the one you talk to and the one
+    // that summons and dismisses the rest.
+    expect(lanes()[0].getAttribute('aria-label')).toMatch(/^Lead lane/);
+    expect(screen.getByRole('progressbar', { name: 'Tasks finished' }).getAttribute('aria-valuemax')).toBe('2');
     const engineer = screen.getByRole('button', { name: /Build controls lane/i });
     expect(engineer.getAttribute('aria-label')).toBe(
       'Build controls lane, Gameplay builder, Waiting for you, Wiring movement now., 1 waiting question',
     );
-    expect(screen.getAllByText('Waiting for you').length).toBeGreaterThan(0);
+    expect(screen.getByText('Playable loop')).toBeTruthy();
     expect(screen.getByText(/Ask mode pauses engineers/)).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'Tell the team' }).getAttribute('placeholder')).toBe('Tell the team…');
   });
 
-  it('lights Build for a run interrupted after its spec was approved', () => {
-    // Planning is the stretch where the spec is approved and no plan exists
-    // yet, and it is the longest a lead turn ever runs, so it is the state most
-    // likely to be looked at. Deriving the step from `plan` sent it back to
-    // Specification, a step it had already finished.
+  it('keeps only the members still on the job, and leaves the rest in the plan', () => {
+    // A sixteen-task run put sixteen cards on the board, thirteen of them
+    // reading QUEUED. A queued task is not a person yet and a finished one is
+    // not a person any more; both belong in the plan, which is where a task
+    // that is not somebody you can manage lives.
     cleanup();
     act(() => useApp.setState({
-      devTeam: snapshot({ phase: 'interrupted', plan: null, tasks: [] }),
+      devTeam: snapshot({
+        tasks: [
+          { taskId: 'controls', engineerId: 'engineer-controls', status: 'done', summary: 'Controls landed.' },
+          { taskId: 'look', engineerId: 'engineer-look', status: 'running' },
+        ],
+      }),
+      devTeamLanes: { 'engineer-controls': [], 'engineer-look': [] },
     } as never));
     render(<DevTeamPane />);
 
-    expect(screen.getByRole('listitem', { current: 'step' }).textContent).toContain('Build');
+    expect(screen.queryByRole('button', { name: /Build controls lane/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /Shape the look lane/i })).toBeTruthy();
+    // Still accounted for: the plan carries the outcome, and the meter counts it.
+    expect(screen.getByRole('progressbar', { name: 'Tasks finished' }).getAttribute('aria-valuenow')).toBe('1');
+    const planned = screen.getAllByText('Build controls').map((node) => node.closest('li')).find(Boolean);
+    expect(planned?.getAttribute('data-status')).toBe('done');
   });
 
-  it('lights Specification for a run interrupted before anyone approved one', () => {
-    cleanup();
-    act(() => useApp.setState({
-      devTeam: snapshot({ phase: 'interrupted', plan: null, tasks: [], approvals: [] }),
-    } as never));
-    render(<DevTeamPane />);
-
-    expect(screen.getByRole('listitem', { current: 'step' }).textContent).toContain('Specification');
-  });
-
-  it('names the phase on the lit step when the two do not already agree', () => {
-    // Reviewing, wrapping, paused and interrupted all sit on the Build step,
-    // and the phase name is the only thing that says which of them it is. It
-    // hangs off the step it belongs to rather than sitting beside the whole
-    // column, so there is exactly one place in the rail worth looking at.
-    cleanup();
-    act(() => useApp.setState({ devTeam: snapshot({ phase: 'reviewing' }) } as never));
-    render(<DevTeamPane />);
-
-    const step = screen.getByRole('listitem', { current: 'step' });
-    expect(step.textContent).toContain('Build');
-    const phase = screen.getByRole('status', { name: 'Dev team phase' });
-    expect(phase.textContent).toBe(devTeamPhaseLabel('reviewing'));
-    expect(step.contains(phase)).toBe(true);
+  it('says why the board is empty rather than showing an empty board', () => {
+    const cases: [Partial<DevTeamSnapshot>, RegExp][] = [
+      [{ phase: 'planning', plan: null, tasks: [] }, /writing the plan/],
+      [{ phase: 'reviewing', tasks: [] }, /reviewing it/],
+      [{ phase: 'paused', tasks: [] }, /parked/],
+    ];
+    for (const [over, text] of cases) {
+      cleanup();
+      act(() => useApp.setState({ devTeam: snapshot(over) } as never));
+      render(<DevTeamPane />);
+      expect(screen.getByText(text), String(text)).toBeTruthy();
+    }
   });
 
   it('offers a way out once a single lead turn has run far too long', () => {
-    // The pane used to show "The lead is preparing the plan" at minute one and
-    // at hour two with no way to tell those apart and nothing to press but
-    // Stop, which discards whatever the turn had already written.
+    // The pane used to show "The lead is writing the plan" at minute one and at
+    // hour two with no way to tell those apart and nothing to press but Stop,
+    // which discards whatever the turn had already written.
     const recoverDevTeam = vi.fn();
     cleanup();
     act(() => useApp.setState({
       recoverDevTeam,
-      devTeam: snapshot({ phase: 'planning', plan: null, phaseSince: Date.now() - 20 * 60 * 1000 }),
+      devTeam: snapshot({ phase: 'planning', plan: null, tasks: [], phaseSince: Date.now() - 20 * 60 * 1000 }),
     } as never));
     render(<DevTeamPane />);
 
@@ -238,14 +271,14 @@ describe('DevTeamPane', () => {
   it('says nothing about stalling while a turn is merely taking its time', () => {
     cleanup();
     act(() => useApp.setState({
-      devTeam: snapshot({ phase: 'planning', plan: null, phaseSince: Date.now() - 20 * 1000 }),
+      devTeam: snapshot({ phase: 'planning', plan: null, tasks: [], phaseSince: Date.now() - 20 * 1000 }),
     } as never));
     render(<DevTeamPane />);
 
     expect(screen.queryByRole('button', { name: /Pick the run back up/ })).toBeNull();
   });
 
-  it('never calls a long build stalled, because its lanes are still reporting', () => {
+  it('never calls a long build stalled, because its members are still reporting', () => {
     // `building` is the one long phase that is not a single turn. Nagging about
     // it would fire on every healthy run that takes more than three minutes.
     cleanup();
@@ -258,9 +291,9 @@ describe('DevTeamPane', () => {
   });
 
   it('shows one member log at a time and swaps it when another card is picked', () => {
-    // The team is headless: the grid is the only place they exist, and the log
+    // The team is headless: the board is the only place they exist, and the log
     // is the only way to see what one of them actually did. Reading one must
-    // not bury the others, so exactly one log is open and the grid stays put.
+    // not bury the others, so exactly one log is open and the board stays put.
     render(<DevTeamPane />);
 
     const controls = screen.getByRole('button', { name: /Build controls lane/i });
@@ -273,12 +306,44 @@ describe('DevTeamPane', () => {
     fireEvent.click(look);
     expect(look.getAttribute('aria-expanded')).toBe('true');
     expect(controls.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByRole('region', { name: 'Shape the look log' })).toBeTruthy();
     expect(screen.getAllByRole('region', { name: /log$/ })).toHaveLength(1);
+  });
+
+  it('puts the ordinary conversation back in the panel when the lead is picked', () => {
+    // "Click into the main agent and chat with it the same." The lead's log is
+    // not a summary of the run, it is the run's actual conversation.
+    render(<DevTeamPane />);
+    fireEvent.click(screen.getByRole('button', { name: /Lead lane/i }));
+
+    expect(screen.getByRole('region', { name: 'Lead log' }).textContent)
+      .toContain('I am reviewing the first pass.');
+    expect(screen.getByRole('button', { name: /Build controls lane/i }).getAttribute('aria-expanded'))
+      .toBe('false');
+  });
+
+  it('falls back to the lead when the member being read finishes and leaves', () => {
+    // A card can vanish mid-read: the whole point of the board is that members
+    // leave when they are done. There must never be a frame with nothing
+    // selected and no log at all.
+    cleanup();
+    act(() => useApp.setState({ devTeamLanes: { 'engineer-controls': [], 'engineer-look': [] } } as never));
+    const view = render(<DevTeamPane />);
+    fireEvent.click(screen.getByRole('button', { name: /Shape the look lane/i }));
     expect(screen.getByRole('region', { name: 'Shape the look log' })).toBeTruthy();
 
-    // Pressing the open one again closes it: nothing is forced open forever.
-    fireEvent.click(look);
-    expect(screen.queryByRole('region', { name: /log$/ })).toBeNull();
+    act(() => useApp.setState({
+      devTeam: snapshot({
+        tasks: [
+          { taskId: 'controls', engineerId: 'engineer-controls', status: 'running' },
+          { taskId: 'look', engineerId: 'engineer-look', status: 'done', summary: 'Sprites done.' },
+        ],
+      }),
+    }));
+    view.rerender(<DevTeamPane />);
+
+    expect(screen.queryByRole('button', { name: /Shape the look lane/i })).toBeNull();
+    expect(screen.getByRole('region', { name: 'Lead log' })).toBeTruthy();
   });
 
   it('tells you a headless member has reported nothing rather than showing a blank', () => {
@@ -379,15 +444,17 @@ describe('DevTeamPane', () => {
   });
 
   it('opens the lead lane when review begins without moving keyboard focus', () => {
+    cleanup();
+    act(() => useApp.setState({ devTeamLanes: { 'engineer-controls': [], 'engineer-look': [] } } as never));
     render(<DevTeamPane />);
-    const lead = screen.getByRole('button', { name: /Lead lane/i });
     const composer = screen.getByRole('textbox', { name: 'Tell the team' });
     composer.focus();
-    expect(lead.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: /Build controls lane/i }));
+    expect(screen.getByRole('button', { name: /Lead lane/i }).getAttribute('aria-expanded')).toBe('false');
 
     act(() => useApp.setState({ devTeam: snapshot({ phase: 'reviewing' }) }));
 
-    expect(lead.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByRole('button', { name: /Lead lane/i }).getAttribute('aria-expanded')).toBe('true');
     expect(document.activeElement).toBe(composer);
   });
 
@@ -461,6 +528,9 @@ describe('DevTeamPane', () => {
     }));
     render(<DevTeamPane />);
 
+    // The team has dissolved: there is no board left, only the conversation and
+    // the report, with the plan under it carrying what each task came to.
+    expect(screen.queryAllByRole('button', { name: /lane/i })).toHaveLength(0);
     expect(screen.getAllByText('I am reviewing the first pass.').length).toBeGreaterThan(0);
     const record = screen.getByText(/Run complete/).closest('details');
     expect(record?.hasAttribute('open')).toBe(true);
@@ -468,27 +538,6 @@ describe('DevTeamPane', () => {
     expect(record?.querySelector('.devteam-run-chevron')?.textContent).toBe('›');
     expect(screen.queryByText('Steering is text-only while the team is running.')).toBeNull();
     expect(screen.getByRole('textbox', { name: 'Message the lead' })).toBeTruthy();
-  });
-
-  it('gives every task its own lane before an engineer has been assigned', () => {
-    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    act(() => useApp.setState({
-      devTeam: snapshot({
-        phase: 'planning',
-        tasks: [
-          { taskId: 'controls', engineerId: '', status: 'pending' },
-          { taskId: 'look', engineerId: '', status: 'pending' },
-        ],
-      }),
-      devTeamLanes: {},
-    }));
-    render(<DevTeamPane />);
-
-    expect(screen.getByRole('button', { name: /Build controls lane/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Shape the look lane/i })).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: /lane/i }).length).toBe(3);
-    expect(errors.mock.calls.map((call) => String(call[0])).join(' ')).not.toContain('same key');
-    errors.mockRestore();
   });
 
   it('names lanes by the task so two people in one role stay apart', () => {
@@ -509,13 +558,13 @@ describe('DevTeamPane', () => {
     }));
     render(<DevTeamPane />);
 
-    const lanes = screen.getAllByRole('button', { name: /lane/i }).map((lane) => lane.getAttribute('aria-label'));
+    const labels = lanes().map((lane) => lane.getAttribute('aria-label'));
     // "Working, Working" until the lane stopped reporting its own status as if
     // it were an observation. A lane with no prose to show falls back to its
     // status for the tail, and that is the word the activity column is already
     // showing, so the fallback said nothing twice.
-    expect(lanes).toContain('Build controls lane, Gameplay builder, Working');
-    expect(lanes).toContain('Tune the camera lane, Gameplay builder, Finished, Finished two sprites.');
+    expect(labels).toContain('Build controls lane, Gameplay builder, Working');
+    expect(labels).toContain('Tune the camera lane, Gameplay builder, Working');
   });
 
   it('does not report the person\'s own steering note as the lead\'s activity', () => {
@@ -565,8 +614,10 @@ describe('DevTeamPane', () => {
     expect(screen.getByText('2 notes are queued for the lead. They are folded in at the next review.')).toBeTruthy();
   });
 
-  it('shows what each milestone is for', () => {
+  it('keeps the whole plan reachable behind one fold', () => {
     render(<DevTeamPane />);
+    const fold = screen.getByText('Plan').closest('details');
+    expect(fold?.hasAttribute('open')).toBe(false);
     expect(screen.getByText('A first complete pass')).toBeTruthy();
     const item = screen.getAllByText('Build controls').map((node) => node.closest('li')).find(Boolean);
     expect(item?.getAttribute('title')).toBe('Implement interaction');

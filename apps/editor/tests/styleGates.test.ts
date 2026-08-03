@@ -219,17 +219,19 @@ describe('style gates', () => {
   });
 
   /**
-   * The failure this guards is a real one: at a narrow width the dev-team
-   * console used to push its controls past the right edge, so Pause and Stop
-   * became unreachable on exactly the runs a person most wants to stop.
+   * The failure this guards is a real one: at a narrow width the dev-team board
+   * used to push its controls past the right edge, so Pause and Stop became
+   * unreachable on exactly the runs a person most wants to stop. A second
+   * measured failure at 520px was a fixed track squeezing the only line still
+   * showing words down to a single character.
    *
-   * Written against the INTENT rather than the markup. The previous version
-   * asserted `flex-wrap: wrap` on `.devteam-phase`, a selector that no longer
-   * exists, and it would have failed the moment the header strip became a
-   * column even though the overflow it was written about was fixed rather than
-   * reintroduced. What has to stay true is: the run's own column stops being a
-   * fixed track, the controls stop being a full-width stack, and the plan wraps
-   * rather than scrolling sideways.
+   * Written against the INTENT rather than the markup, because this pane has
+   * been restructured twice and each time a shape-locked version of this test
+   * failed on a layout that had in fact fixed the overflow rather than
+   * reintroducing it. What has to stay true: the board becomes one column, the
+   * lead's identity stops sharing a row with its status, the crew loses its
+   * indent, the controls keep their natural width, and the plan wraps rather
+   * than scrolling sideways.
    */
   it('keeps the narrow dev-team controls reachable without horizontal overflow', () => {
     const css = fs.readFileSync(path.join(STYLES_DIR, 'app/devteam.css'), 'utf8');
@@ -238,32 +240,28 @@ describe('style gates', () => {
     expect(start).toBeGreaterThan(-1);
     const narrow = css.slice(start, end);
 
-    // The two-column console collapses to one track.
-    expect(narrow).toMatch(/\.devteam-console\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/);
-    // The controls lay out along the row and keep their natural width, rather
-    // than staying a column of full-width buttons in a horizontal strip.
-    expect(narrow).toMatch(/\.devteam-controls\s*\{[^}]*flex-direction:\s*row/);
-    expect(narrow).toMatch(/\.devteam-controls \.btn\s*\{[^}]*width:\s*auto/);
+    // Narrow mode also arrives without the viewport being narrow: the project
+    // rail can leave the conversation in a sliver of a wide window, and that is
+    // the case the media query alone never sees. Both paths do the same work.
+    const measured = css.slice(0, start);
+    for (const block of [narrow, measured]) {
+      // The cards stack rather than forcing a sideways scroll past the 15rem
+      // minimum the grid asks for.
+      expect(block).toMatch(/\.devteam-lanes\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/);
+      // The lead's status drops to its own row instead of squeezing the line
+      // that carries its name and its description.
+      expect(block).toMatch(/\.devteam-lead-state\s*\{[^}]*grid-column:\s*2 \/ -1/);
+      // The crew's indent and its guide line cost width that is not there.
+      expect(block).toMatch(/\.devteam-crew\s*\{[^}]*padding-left:\s*0/);
+      // The controls lay out along the row and keep their natural width, rather
+      // than becoming a column of full-width buttons.
+      expect(block).toMatch(/\.devteam-controls\s*\{[^}]*flex-direction:\s*row/);
+      expect(block).toMatch(/\.devteam-controls \.btn\s*\{[^}]*width:\s*auto/);
+    }
+
     // The plan wraps; it must never become a sideways scroller.
     expect(narrow).toMatch(/\.devteam-milestones\s*\{[^}]*flex-wrap:\s*wrap/);
     expect(narrow).not.toMatch(/\.devteam-milestones\s*\{[^}]*overflow-x:\s*auto/);
-
-    // The step that is actually running keeps its own name. Measured at a
-    // 520px window: laid out as a row, the `minmax(0, 1fr)` name track that is
-    // right in a fixed-width column let the live step squeeze to one character,
-    // so the console read "3  E" over "P" instead of "Build" over "PLANNING".
-    // Both the row and the column form of the rail have to opt out of it.
-    for (const block of [narrow, css.slice(0, start)]) {
-      expect(block).toMatch(/\.devteam-steps li\s*\{[^}]*grid-template-columns:\s*22px auto/);
-      expect(block).toMatch(/\.devteam-steps li\s*\{[^}]*flex:\s*none/);
-      expect(block).toMatch(/\.devteam-steps\s*\{[^}]*flex-wrap:\s*wrap/);
-    }
-
-    // The same collapse has to happen when the app measures itself narrow with
-    // a wide viewport, which is the case the media query alone never sees.
-    expect(css).toMatch(
-      /\.app-shell\.is-narrow \.devteam-console\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/,
-    );
   });
 
   it('Gate A: every font-size under styles/ (and the styles.css manifest) uses a --text-* token', () => {

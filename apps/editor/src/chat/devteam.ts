@@ -55,15 +55,30 @@ export function devTeamActivity(
   return 'Working';
 }
 
-/** The lead's own lane. It has no task record, so "Available" would be a lie
- *  while a milestone is being built — the lead is watching it. */
+/**
+ * The lead's own lane. It has no task record, so its state has to come from the
+ * run's phase — "Available" would be a lie while a milestone is being built,
+ * because the lead is watching it.
+ *
+ * The phase is named rather than flattened to one word. "Supervising" for every
+ * phase of a team run meant the panel said the same thing for three hours while
+ * the lead planned, watched, reviewed and wrote up, which is four different
+ * jobs and the only place any of them was legible.
+ */
 export function devTeamLeadActivity(
   messages: readonly ChatMessage[],
   phase?: DevTeamPhase,
 ): string {
   if (messages.some((message) => message.streaming)) return 'Working';
-  if (phase && isTeamBoardPhase(phase)) return 'Supervising';
-  return 'Available';
+  switch (phase) {
+    case 'planning': return 'Planning';
+    case 'building': return 'Supervising';
+    case 'reviewing': return 'Reviewing';
+    case 'wrapping': return 'Wrapping up';
+    case 'paused': return 'Paused';
+    case 'interrupted': return 'Stopped';
+    default: return 'Available';
+  }
 }
 
 export function pendingLaneAsk(messages: readonly ChatMessage[]): {
@@ -99,4 +114,42 @@ export function devTeamSidebarAnnotation(snapshot: DevTeamSnapshot | null): stri
 
 export function isTeamBoardPhase(phase: DevTeamPhase): boolean {
   return ['planning', 'building', 'reviewing', 'wrapping', 'paused', 'interrupted'].includes(phase);
+}
+
+/**
+ * Which of the two shapes the pane takes.
+ *
+ * A dev team run is a conversation that grows a team in the middle of it and
+ * loses it again at the end, and those are genuinely different screens rather
+ * than one screen with a switch on it:
+ *
+ * - `conversation` — the interview and the specification, which are one person
+ *   and one agent working something out, and the closing report, by which time
+ *   the team has dissolved and the lead is the only one left to talk to.
+ * - `team` — everything between the approval and the report, when there is a
+ *   lead with engineers under it and the run is a thing being managed.
+ *
+ * `wrapping` is a conversation phase, not a team one: the engineers have all
+ * finished and the lead is writing the handoff into the transcript, so the
+ * transcript is what should be on screen.
+ *
+ * A parked run goes wherever it was parked. Without a plan there was never a
+ * team, and showing an empty board over the interview that explains why is
+ * exactly the wrong way round.
+ */
+export function devTeamStage(
+  state: Pick<DevTeamSnapshot, 'phase' | 'plan'> | null,
+): 'conversation' | 'team' {
+  if (!state) return 'conversation';
+  switch (state.phase) {
+    case 'planning':
+    case 'building':
+    case 'reviewing':
+      return 'team';
+    case 'paused':
+    case 'interrupted':
+      return state.plan ? 'team' : 'conversation';
+    default:
+      return 'conversation';
+  }
 }
