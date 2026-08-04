@@ -332,6 +332,30 @@ describe('pipe tables', () => {
     expect(flatten(found.rows[0][0])).toBe('a | b');
   });
 
+  it('leaves a bare dash run alone under a sentence that mentions a pipe', () => {
+    // The delimiter row has to carry a pipe of its own. Without that rule
+    // `---` is a valid one-column alignment row, and the sentence above it —
+    // any sentence with a `|` in it — became a one-column table's heading
+    // while the rule itself was swallowed.
+    const source = 'Press the | key to open it\n---';
+    const blocks = parseMarkdown(source);
+    expect(blocks.map((block) => block.kind)).toEqual(['paragraph']);
+    expect(isPlainProse(blocks, source)).toBe(true);
+  });
+
+  it('does not count an escaped pipe as the delimiter row having one', () => {
+    const blocks = parseMarkdown('| Keys |\n\\|---\\|\n');
+    expect(blocks.every((block) => block.kind !== 'table')).toBe(true);
+  });
+
+  it('still draws a one-column table written with pipes', () => {
+    const found = table('| Keys |\n|---|\n| Space |\n');
+    if (found?.kind !== 'table') throw new Error('not a table');
+    expect(found.align).toEqual([null]);
+    expect(found.head.map((cell) => flatten(cell))).toEqual(['Keys']);
+    expect(flatten(found.rows[0][0])).toBe('Space');
+  });
+
   it('ends a paragraph that runs into one', () => {
     const blocks = parseMarkdown('Here is the cast:\n| # | Who |\n|---|---|\n| 1 | Mochi |\n');
     expect(blocks.map((block) => block.kind)).toEqual(['paragraph', 'table']);

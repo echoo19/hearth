@@ -235,9 +235,29 @@ function tableCells(line: string): string[] {
   return cells.map((cell) => cell.trim());
 }
 
-/** The `|---|:--:|` line, and what it says about each column's alignment. */
+/** True when `line` has a pipe in it that is not spoken for by a backslash. */
+function hasUnescapedPipe(line: string): boolean {
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] === '\\') {
+      index += 1;
+      continue;
+    }
+    if (line[index] === '|') return true;
+  }
+  return false;
+}
+
+/**
+ * The `|---|:--:|` line, and what it says about each column's alignment.
+ *
+ * The delimiter row is what makes a table a table, and it has to carry a pipe
+ * of its own — the GFM rule, and here a load-bearing one. Without it a bare
+ * `---` reads as a valid one-column alignment row, so any sentence above it
+ * that happens to mention a `|` turns into a one-column table with the
+ * sentence as its heading, and the rule underneath is eaten.
+ */
 function tableAlignment(line: string): ('left' | 'center' | 'right' | null)[] | null {
-  if (!line.includes('|') && !line.includes('-')) return null;
+  if (!hasUnescapedPipe(line)) return null;
   const cells = tableCells(line);
   if (cells.length === 0) return null;
   const align: ('left' | 'center' | 'right' | null)[] = [];
