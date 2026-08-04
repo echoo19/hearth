@@ -17,6 +17,9 @@
  * The store still holds the truth. This paces the READING of it and nothing
  * else: no character is invented, dropped or reordered, and the moment a turn
  * ends the whole of it is on screen.
+ *
+ * And it is motion, so it answers to prefers-reduced-motion like everything
+ * else that moves: with the setting on, text lands whole rather than crawling.
  */
 import { useEffect, useRef, useState } from 'react';
 
@@ -60,7 +63,35 @@ export function nextReveal(shown: number, total: number, dtMs: number): number {
  * message reusing the element) is likewise taken as-is — the alternative is
  * showing characters that are no longer in the transcript.
  */
+const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
+
+/**
+ * Whether the reader has asked for less movement, kept current if they change
+ * their mind mid-turn.
+ *
+ * Laying text down at a rate IS motion, whatever it is made of — the eye
+ * tracks a moving edge across the line exactly as it tracks a sliding panel.
+ * The setting is not a style preference; for some readers it is the difference
+ * between text they can follow and text that makes them ill. So the pacing is
+ * the thing that goes, not the text.
+ */
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.(REDUCED_MOTION)?.matches === true,
+  );
+  useEffect(() => {
+    const query = typeof window === 'undefined' ? undefined : window.matchMedia?.(REDUCED_MOTION);
+    if (!query) return;
+    const onChange = (event: MediaQueryListEvent): void => setReduced(event.matches);
+    setReduced(query.matches);
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
+  return reduced;
+}
+
 export function useSmoothStream(text: string, live: boolean): string {
+  const reduced = usePrefersReducedMotion();
   const [shown, setShown] = useState(text.length);
   const shownRef = useRef(shown);
   shownRef.current = shown;
@@ -74,7 +105,9 @@ export function useSmoothStream(text: string, live: boolean): string {
       setShown(text.length);
       return;
     }
-    if (!live) {
+    // Not live, or motion is unwanted: the whole of it, now. A reader who has
+    // turned motion off gets the text, not a slower version of the crawl.
+    if (!live || reduced) {
       setShown(text.length);
       return;
     }
@@ -92,7 +125,9 @@ export function useSmoothStream(text: string, live: boolean): string {
     };
     frame = requestAnimationFrame(step);
     return () => cancelAnimationFrame(frame);
-  }, [text, live]);
+    // `reduced` is a dependency so a crawl already under way is snapped shut
+    // the moment the setting changes, rather than finishing at leisure.
+  }, [text, live, reduced]);
 
   // Never claim more than exists: a shorter `text` arriving between renders
   // would otherwise slice past its end for one frame.
