@@ -86,6 +86,35 @@ driven headlessly at the game, good for finding crashes rather than for telling
 you whether the game is any good. You do not press anything for it and it has
 no screen. [playtesting.md](./playtesting.md) covers it.
 
+## 7. Put it somewhere people can play it
+
+Your game is a folder of static web files, which is exactly what a web host
+wants. [The Hearth Catalog](https://catalog.hearthengine.com) is one: free
+hosting, no account needed to play, and every game runs on an origin of its
+own so it is walled off from the rest of the site.
+
+Hearth does not publish for you — there is no button in the app for this yet.
+There are three ways in, and the last one is the one to hand your agent:
+
+- The uploader at
+  [catalog.hearthengine.com/dashboard/new](https://catalog.hearthengine.com/dashboard/new)
+  takes a folder or a zip.
+- The HTTP API under `/api/v1`, with a token from `/dashboard/tokens`.
+- A dependency-free script. From your project folder:
+
+```bash
+curl -fsSL https://catalog.hearthengine.com/publish.mjs -o publish.mjs
+node publish.mjs --token hpub_… --title "My Game" --tags "action,arcade"
+```
+
+Ask your agent to do that last one and it will: it has a terminal, it is
+already sitting in the folder, and the publish docs at
+[catalog.hearthengine.com/docs/publish](https://catalog.hearthengine.com/docs/publish)
+are written for an agent to follow unassisted.
+
+Anything that runs in a browser is welcome there, whether Hearth made it or
+not.
+
 ## Running from source instead
 
 ```bash

@@ -48,11 +48,20 @@ apps/editor/release/
 scratch/
 # Internal SDD/agent workflow artifacts. /.superpowers/, /.claude/, and
 # /.worktrees/ are anchored to the repo root only, so example projects' own
-# .claude/skills scaffolding stays tracked. docs/superpowers/ is deliberately
-# left unanchored — a nested copy (e.g. apps/editor/docs/superpowers/) is the
-# same internal artifact and must not slip through just because it isn't at
-# the root.
+# .claude/skills scaffolding stays tracked.
+#
+# The superpowers pattern needs the leading **/ and it is not decoration: a
+# gitignore pattern with a slash anywhere but the end is ANCHORED to the
+# directory holding the .gitignore, so a bare `docs/superpowers/` matches only
+# the copy at the repo root. It was written that way on purpose to catch nested
+# copies and silently did not — `apps/editor/docs/superpowers/` held seven
+# internal specs and plans, untracked and unignored, one `git add -A` away from
+# a public repo. Check with `git check-ignore -v <path>`, never by reading it.
 /.superpowers/
-docs/superpowers/
+**/docs/superpowers/
 /.claude/
 /.worktrees/
+
+# The Supabase CLI drops this wherever it is run; the catalog's project lives
+# in its own repo and nothing here needs it.
+**/supabase/.temp/
