@@ -172,6 +172,21 @@ describe('working out where a path sits', () => {
   });
 });
 
+describe('a table wider than the column it sits in', () => {
+  it('gives its scroller a tab stop and a name, so the far columns are reachable', () => {
+    // The box scrolls sideways. Without a tab stop, everything past the right
+    // edge is available to a mouse and to nothing else — and a focusable box
+    // with no name is announced as an unlabelled group, which is barely
+    // better than being unreachable.
+    const container = show('| # | Who |\n|---|---|\n| 1 | Mochi |\n');
+    const scroller = container.querySelector('.md-table-scroll');
+    expect(scroller).toBeTruthy();
+    expect(scroller?.getAttribute('tabindex')).toBe('0');
+    expect(scroller?.getAttribute('role')).toBe('group');
+    expect(scroller?.getAttribute('aria-label')).toBeTruthy();
+  });
+});
+
 describe('in the transcript', () => {
   function turn(role: ChatMessage['role'], text: string): ChatMessage {
     return { id: `m-${role}`, role, parts: [{ kind: 'text', text }], streaming: false };

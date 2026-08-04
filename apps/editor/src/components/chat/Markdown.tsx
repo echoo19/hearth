@@ -195,10 +195,15 @@ function CodeBlock({ lang, text, pending }: { lang: string; text: string; pendin
  * column it is read in is not, and a table that widens the page pushes every
  * paragraph around it off the screen. Alignment rides on a data attribute
  * rather than an inline style, so the whole look stays in the stylesheet.
+ *
+ * The scroller is focusable and named. A region that scrolls but cannot be
+ * reached by keyboard hides its overflowing columns from anyone not using a
+ * pointer, which is the whole right-hand side of a wide table; a tab stop with
+ * a name is what makes the arrow keys reach them.
  */
 function Table({ table }: { table: MdTable }) {
   return (
-    <div className="md-table-scroll md-block">
+    <div className="md-table-scroll md-block" role="group" aria-label="Table, scrollable" tabIndex={0}>
       <table className="md-table">
         <thead>
           <tr>
