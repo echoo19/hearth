@@ -464,6 +464,12 @@ describe('dev team websocket integration', () => {
     expect((await readDevTeamState(harness.root, chatId)).phase).toBe('planning');
     expect(harness.drivers[1].sent).toHaveLength(1);
 
+    // Taken away again for the rest of this test. A plan sitting on disk when a
+    // parked run is picked back up is now adopted rather than re-planned (see
+    // the runtime's salvage tests); what is under test here is the rebind
+    // handshake itself, which needs a planning turn to still be owed.
+    await fsp.rm(path.join(harness.root, '.hearth', 'devteam', chatId, 'plan.json'));
+
     harness.drivers[1].holdStop = true;
     inbox.socket.send(JSON.stringify({
       type: 'chat-send', text: 'second provider detail', agent: { provider: 'anthropic', model: 'model-c' },
@@ -483,6 +489,15 @@ describe('dev team websocket integration', () => {
     expect((await readDevTeamState(harness.root, chatId)).phase).toBe('planning');
     expect(harness.drivers[2].sent).toHaveLength(1);
 
+    // The replacement's own planning turn writes the plan and hands it back.
+    await fsp.writeFile(path.join(harness.root, '.hearth', 'devteam', chatId, 'plan.json'), JSON.stringify({
+      version: 1,
+      roles: [{ id: 'maker', name: 'Maker', focus: 'Build.' }],
+      milestones: [{
+        id: 'm1', title: 'Build', goal: 'Build.',
+        tasks: [{ id: 't1', title: 'Implement', roleId: 'maker', detail: 'Implement.', scope: ['src'] }],
+      }],
+    }));
     harness.drivers[2].emit({ type: 'turn-complete' });
     await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'building');
     expect((await readDevTeamState(harness.root, chatId)).steering).toEqual([]);
@@ -787,6 +802,57 @@ describe('dev team websocket integration', () => {
       'Keep the interface quiet.',
       'And keep it small.',
     ]);
+    inbox.socket.close();
+  });
+
+  /**
+   * The same receipt, for two different events. A note filed against a running
+   * build waits for the next handoff; a note typed at a parked run is what
+   * started it moving again, and telling that person their note is waiting is
+   * simply untrue.
+   */
+  it('marks the receipt when the note picked a parked run back up', async () => {
+    const harness = await makeHarness();
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'build the thing' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    await until(() => harness.drivers[0].sent.length === 1);
+    const runDir = path.join(harness.root, '.hearth', 'devteam', chatId);
+    await fsp.mkdir(runDir, { recursive: true });
+    await fsp.writeFile(path.join(runDir, 'spec.md'), '# Spec\nBuild it.\n');
+    harness.drivers[0].emit({ type: 'turn-complete' });
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'spec-review');
+    inbox.socket.send(JSON.stringify({ type: 'devteam-approve-spec' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'planning');
+    await until(() => harness.drivers[0].sent.length === 2);
+    await fsp.writeFile(
+      path.join(runDir, 'plan.json'),
+      JSON.stringify({
+        version: 1,
+        roles: [{ id: 'builder', name: 'Builder', focus: 'Implement the project.' }],
+        milestones: [{
+          id: 'm1', title: 'Build', goal: 'Finish the project.',
+          tasks: [{ id: 'task1', title: 'Implement', roleId: 'builder', detail: 'Implement the approved specification.' }],
+        }],
+      }),
+    );
+    harness.drivers[0].emit({ type: 'turn-complete' });
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'building');
+    await until(() => harness.drivers.length === 2 && harness.drivers[1].sent.length === 1);
+
+    // A note against the running build is filed, and says so.
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'Keep the interface quiet.' }));
+    const queued = await inbox.next((frame) => frame.type === 'devteam-steering-accepted');
+    expect(queued).toEqual({ type: 'devteam-steering-accepted', chatId });
+
+    inbox.socket.send(JSON.stringify({ type: 'devteam-stop' }));
+    await until(async () => (await readDevTeamState(harness.root, chatId)).phase === 'interrupted');
+
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'carry on' }));
+    const restarted = await inbox.next((frame) => frame.type === 'devteam-steering-accepted');
+    expect(restarted).toEqual({ type: 'devteam-steering-accepted', chatId, resumed: true });
+    expect((await readDevTeamState(harness.root, chatId)).phase).toBe('building');
     inbox.socket.close();
   });
 

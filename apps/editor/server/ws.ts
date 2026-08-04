@@ -1175,9 +1175,13 @@ export function attachWebSocket(
    * driver, and the only thing that ends the turn a window optimistically
    * started for it.
    */
-  function broadcastDevTeamSteeringAccepted(root: string, chatId: string): void {
+  function broadcastDevTeamSteeringAccepted(root: string, chatId: string, resumed: boolean): void {
     const sockets = watchersOf(root, chatId).filter((socket) => !isOpeningChat(socket, chatId));
-    broadcast(new Set(sockets), { type: 'devteam-steering-accepted', chatId });
+    broadcast(new Set(sockets), {
+      type: 'devteam-steering-accepted',
+      chatId,
+      ...(resumed ? { resumed: true } : {}),
+    });
   }
 
   function broadcastDevTeamEvent(root: string, chatId: string, engineerId: string, event: ChatEvent): void {
@@ -1839,6 +1843,11 @@ export function attachWebSocket(
    * agent is not connected." and parked the run. Nothing about clicking another
    * row says stop, least of all to a build that is still running.
    */
+  /** Parked, in either of the two ways a run can be. */
+  function isParkedPhase(phase: DevTeamSnapshot['phase'] | undefined): boolean {
+    return phase === 'paused' || phase === 'interrupted';
+  }
+
   function devTeamRunLive(key: string): boolean {
     const phase = devTeamRuntimes.get(key)?.snapshot().phase;
     return phase !== undefined && DEV_TEAM_ACTIVE_PHASES.has(phase);
@@ -2211,6 +2220,12 @@ export function attachWebSocket(
                         // receipt sent while that turn was streaming would
                         // settle the very bubble the turn is about to fill.
                         const sendsBefore = devTeamLeadSends.get(key) ?? 0;
+                        // A note typed at a parked run RESTARTS it, and the
+                        // receipt has to say which of the two happened. "The
+                        // lead reads this at the next handoff" is false for a
+                        // run that was standing still and is now moving because
+                        // of this message.
+                        const parkedBefore = isParkedPhase(runtime?.snapshot().phase);
                         let handled: boolean | undefined;
                         try {
                           handled = await runtime?.handleUserMessage(text);
@@ -2231,7 +2246,11 @@ export function attachWebSocket(
                           // state forever, the composer shows Stop with nothing
                           // to stop, and every further note queues in the client
                           // and is never sent at all.
-                          broadcastDevTeamSteeringAccepted(root, target);
+                          broadcastDevTeamSteeringAccepted(
+                            root,
+                            target,
+                            parkedBefore && !isParkedPhase(runtime?.snapshot().phase),
+                          );
                         }
                       } else {
                         // A real StubDriver is the connect-an-agent refusal for
