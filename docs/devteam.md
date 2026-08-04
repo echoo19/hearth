@@ -27,10 +27,11 @@ and the mode will not start until a supported agent is connected.
 
 Messages sent while planning or building are durable steering notes. Hearth
 folds them into the lead's next planning, review, or wrap turn instead of
-interrupting an engineer mid-edit. The board says how many notes are waiting, so
-a note that has not been picked up yet is visible rather than silent. Steering is
-text-only: attachment controls return when the run is done and the composer
-becomes an ordinary lead chat.
+interrupting an engineer mid-edit. A note that is queued rather than answered
+gets a receipt in the transcript ("Noted. The lead reads this at the next
+handoff."), so an absorbed message is never silent. Steering is text-only:
+attachment controls return when the run is done and the composer becomes an
+ordinary lead chat.
 
 ## Scheduling and controls
 
@@ -40,14 +41,17 @@ together, and a task with no scope runs alone, so a plan that declares no scopes
 runs one task at a time. This scheduling reduces write collisions but is not a
 filesystem lock.
 
-**Pause** stops new dispatch while already-running engineer turns finish, and
-applies once the run is planning or building. **Resume** continues from the
-saved phase. **Stop** interrupts running engineers, withdraws their unanswered
-approvals and questions, and leaves the run interrupted and resumable — it does
-not end the run. What you type after Stop is kept as steering for the resumed
-run, so use Resume to carry on; to build something different, start a new dev
-team conversation. A crash, quit, lead-driver failure, or exhausted plan-repair
-budget also produces an interrupted run that can be resumed after reopening.
+The run's controls live on the board's rail, beside the steps. **Stop**
+interrupts running engineers, withdraws their unanswered approvals and
+questions, and leaves the run interrupted and resumable; it does not end the
+run. **Pause** appears during a build and stops new dispatch while
+already-running engineer turns finish. A parked run offers **Resume**, and a
+message to the lead does the same thing: it picks the run back up from the
+saved phase and carries what you typed into that turn. During a lead turn, the
+composer's own Stop halts the run the same way. To build something different,
+start a new dev team conversation. A crash, quit, lead-driver failure, or
+exhausted plan-repair budget also produces an interrupted run that can be
+resumed after reopening.
 
 If a task fails, the lead reviews the milestone knowing which tasks failed and
 may add remediation work by rewriting `plan.json`. A milestone runs again at most
