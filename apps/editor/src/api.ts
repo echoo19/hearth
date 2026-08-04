@@ -816,3 +816,84 @@ export async function apiUsage(): Promise<UsageReport | null> {
   const body = await getJson<{ usage: UsageReport }>('/api/usage', 'apiUsage');
   return body?.usage ?? null;
 }
+
+// ---------------------------------------------------------------------------
+// Catalog
+//
+// Publishing the open game to catalog.hearthengine.com. Two scopes, and they
+// are deliberately different: the token is the person's and lives in
+// `~/.hearth/`, while WHICH listing a folder updates is the folder's and lives
+// in its `.hearth/`. See server/catalogPublish.ts.
+//
+// The raw token only ever travels one way. Nothing here can read it back —
+// `apiCatalogAccount` answers with the username it resolves to, which is the
+// only part a screen has any use for.
+// ---------------------------------------------------------------------------
+
+import type {
+  CatalogAccount,
+  CatalogProjectInfo,
+  PublishRequest,
+  PublishResult,
+} from '../server/catalogPublish';
+
+export type {
+  CatalogAccount,
+  CatalogProjectInfo,
+  PublishedRef,
+  PublishRequest,
+  PublishResult,
+} from '../server/catalogPublish';
+
+/** Is a catalog token stored on this machine, and whose is it. */
+export async function apiCatalogAccount(): Promise<CatalogAccount | null> {
+  const body = await getJson<{ account: CatalogAccount }>('/api/catalog/account', 'apiCatalogAccount');
+  return body?.account ?? null;
+}
+
+/**
+ * Store a token. Verified against the catalog before it is written, so a typo
+ * fails here rather than at the end of an upload.
+ */
+export async function apiCatalogConnect(
+  token: string,
+): Promise<{ ok: boolean; username?: string; error?: string }> {
+  const res = await postJson<{ ok: boolean; username?: string; error?: string }>(
+    '/api/catalog/account',
+    { token },
+    'apiCatalogConnect',
+  );
+  return res;
+}
+
+/** Forget the stored token. */
+export async function apiCatalogDisconnect(): Promise<{ ok: boolean; error?: string }> {
+  return postJson<{ ok: boolean; error?: string }>(
+    '/api/catalog/account/clear',
+    {},
+    'apiCatalogDisconnect',
+  );
+}
+
+/** What publishing this folder would send, and where it went last time. */
+export async function apiCatalogProject(project: string): Promise<CatalogProjectInfo | null> {
+  const body = await getJson<{ info: CatalogProjectInfo }>(
+    `/api/catalog/project?project=${encodeURIComponent(project)}`,
+    'apiCatalogProject',
+  );
+  return body?.info ?? null;
+}
+
+/**
+ * Publish (or re-publish) the folder. Never rejects: a refusal and a dead
+ * server both arrive as `ok: false` with a sentence, like every other POST here.
+ */
+export async function apiCatalogPublish(
+  request: PublishRequest,
+): Promise<{ ok: boolean; result?: PublishResult; error?: string }> {
+  return postJson<{ ok: boolean; result?: PublishResult; error?: string }>(
+    '/api/catalog/publish',
+    request,
+    'apiCatalogPublish',
+  );
+}

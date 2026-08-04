@@ -77,6 +77,7 @@ describe('the pane registry', () => {
       'personalization',
       'agents',
       'usage',
+      'publishing',
       'skills',
     ]);
   });
@@ -146,6 +147,7 @@ describe('the panel', () => {
       'Personalization',
       'Agents',
       'Usage',
+      'Publishing',
     ]);
     expect(within(customize).getAllByRole('button').map((button) => button.textContent)).toEqual(['Skills']);
   });

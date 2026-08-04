@@ -12,7 +12,8 @@
  * the label.
  *
  * Two headings, and they mean different things. `settings` is Hearth itself:
- * how it works, who answers, what it costs. `customize` is what you have
+ * how it works, who answers, what it costs, where a finished game goes.
+ * `customize` is what you have
  * taught it. Skills sits under the second one and is a signpost rather than a
  * pane — see SkillsPane.tsx for why that is the honest shape.
  */
@@ -20,6 +21,7 @@ import type { ComponentType } from 'react';
 import { AgentsPane } from './AgentsPane';
 import { GeneralPane } from './GeneralPane';
 import { PersonalizationPane } from './PersonalizationPane';
+import { PublishingPane } from './PublishingPane';
 import { SkillsPane } from './SkillsPane';
 import { UsagePane } from './UsagePane';
 
@@ -68,6 +70,21 @@ export const SETTINGS_PANES: readonly SettingsPane[] = [
     group: 'settings',
     keywords: ['tokens', 'cost', 'spend', 'limits', 'credits', 'billing'],
     Component: UsagePane,
+  },
+  {
+    // Last of the four, because it is the one you reach for once rather than
+    // the ones you live in: a token is pasted here on the day you first
+    // publish and then never again. The publish dialog is the surface that
+    // sends people to it.
+    id: 'publishing',
+    label: 'Publishing',
+    icon: 'upload',
+    group: 'settings',
+    // The words someone arrives with, which are the words on the token itself
+    // and the words for the act. Not "distribute", not "deploy": nothing in
+    // the product calls it either of those, so nobody would type them.
+    keywords: ['catalog', 'token', 'upload', 'share', 'account', 'hpub', 'game url'],
+    Component: PublishingPane,
   },
   {
     id: 'skills',

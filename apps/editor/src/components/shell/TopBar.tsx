@@ -20,6 +20,7 @@ import { hearthNative } from '../../native';
 import { IconButton } from '../ui/Button';
 import { Switch } from '../ui/Switch';
 import { Tooltip } from '../ui/Tooltip';
+import { PublishDialog } from '../publish/PublishDialog';
 import type { ChatDriverKind } from '../../types';
 
 /**
@@ -119,6 +120,11 @@ export function TopBar({ narrow, paneOpen = false }: { narrow: boolean; paneOpen
   // the folder that is still open underneath them.
   const place = useApp((s) => globalPlace(s));
   const native = hearthNative();
+  // Owned here rather than at the shell, unlike ProjectNamer: nothing else in
+  // the app asks to publish, so there is no second caller for the two to drift
+  // apart from. `.topbar > *` already opts every child out of the drag region,
+  // so the dialog is clickable where it sits.
+  const [publishOpen, setPublishOpen] = useState(false);
 
   const slow = useSlowConnection(wsStatus);
   const capability = capabilityLabel(wsStatus, driver, ready, slow);
@@ -203,6 +209,27 @@ export function TopBar({ narrow, paneOpen = false }: { narrow: boolean; paneOpen
       )}
 
       <span className="topbar-spacer" />
+
+      {/* Publishing is a thing you do to THIS folder's game, which is why it
+          is up here with the rest of the project's chrome and not in Settings
+          — Settings is the account, and the account is not what gets
+          published. It sits inboard of the playtest toggle so that the toggle
+          keeps the edge position it has always had; the frequent control does
+          not move to make room for the rare one.
+
+          Quiet, like everything else on this strip. A game worth publishing is
+          published a handful of times, and a louder affordance would be
+          spending the conversation's space on it every minute in between. */}
+      <IconButton
+        // `upload` rather than `export`: the export glyph is already the
+        // Export-game action, and one picture meaning two verbs on one strip
+        // is the confusion the `column` note below is about.
+        icon="upload"
+        label="Publish to the catalog"
+        iconSize={13}
+        onClick={() => setPublishOpen(true)}
+      />
+      <PublishDialog open={publishOpen} onClose={() => setPublishOpen(false)} />
 
       {/* The one control for the playtest column. It reads as a toggle rather
           than as a link to a place, because that is what it is — the column is

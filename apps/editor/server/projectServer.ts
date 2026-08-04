@@ -3412,6 +3412,17 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     return (await import('./skillsRoutes.js')).routeSkills(req, res, url.pathname);
   }
 
+  // Publishing to the catalog owns its own route module. It straddles both
+  // scopes — the token is the person's, the listing a folder points at is the
+  // folder's — so it takes `ctx` for the open-folder jail and does the rest of
+  // its own validation.
+  if (url.pathname.startsWith('/api/catalog/')) {
+    const mod = await import('./catalogPublish.js');
+    if (mod.ownsCatalogPath(url.pathname)) {
+      return mod.routeCatalog(ctx, req, res, url.pathname);
+    }
+  }
+
   // Which agent CLIs are installed is a fact about the machine, not the folder
   // — and the composer's picker asks it on Home too, where there is no folder
   // to scope it to. Like skills, it takes no `project`; unlike skills it only

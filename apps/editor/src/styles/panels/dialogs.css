@@ -572,3 +572,500 @@ kbd.shortcut-keys {
 .skill-rail-row.is-off .folder-name {
   opacity: 0.55;
 }
+
+
+/* ---------------------------------------------------------------------------
+   Publish to the catalog (components/publish/*)
+
+   A form, so it is wider than a prompt and narrower than the skills panel:
+   560px keeps the text inputs inside a comfortable measure, where the 720px
+   `is-wide` would stretch a one-line tagline field across the whole dialog.
+
+   THE STRUCTURAL RULE HERE, and the reason the body and the footer are two
+   separate boxes rather than one flowing column: `.publish-body` is its own
+   scroll container, so nothing that appears inside it can move
+   `.modal-actions`. This app has shipped the bug where a validation line
+   appears under a field, everything below it shifts down, and the click
+   already travelling toward the submit button lands on a div — a press that
+   does nothing, with no way for the person to tell why. An error banner, a
+   cover preview, a chip wrapping onto a second line: none of them can reach
+   the button from in here. `.publish-field-error` then holds its own line
+   whether or not it has anything to say, so the fields do not move under the
+   pointer either.
+   --------------------------------------------------------------------------- */
+
+dialog.modal.is-publish {
+  width: min(560px, 92vw);
+  max-width: min(560px, 92vw);
+}
+
+.publish-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.publish-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* Matches .modal-body's inset so the form lines up with every other dialog
+     in the app. */
+  padding: 2px 22px 6px;
+  /* Tall enough that the next field always peeks above the fold — a body cut
+     cleanly at a field boundary reads as the end of the dialog, and the Tags
+     and Cover fields below it stop existing. */
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+  /* A scroll that reaches the end should stop, not start scrolling the app
+     behind the dialog. */
+  overscroll-behavior: contain;
+}
+
+.publish-body p {
+  margin: 0;
+}
+
+.publish-fields,
+.publish-state,
+.publish-done {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.publish-state {
+  gap: 10px;
+}
+
+/* The quiet second voice: what this means, under the thing it is about. */
+.publish-note {
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.publish-as {
+  margin-bottom: 2px;
+}
+
+/* Screen-reader-only. The app has no shared utility for this, so it is scoped
+   to this surface rather than invented globally from one call site. */
+.publish-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- What would be sent ---------------------------------------------------
+
+   One contained region, not a grid of cards: it is a single set of facts about
+   one thing, and boxing each fact separately would turn three words into three
+   objects. */
+
+.publish-manifest-block {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+
+.publish-manifest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 0;
+}
+
+.publish-manifest > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.publish-manifest dt {
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+}
+
+.publish-manifest dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+
+/* A filename is a value, so it is set in the value face — an underscore and a
+   hyphen have to be different shapes when someone is checking which page the
+   catalog will open. */
+.publish-manifest dd.is-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.publish-existing {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+/* Full ink, not the muted note voice. This is the sentence that stops someone
+   publishing their game a second time beside itself, and it has to be read. */
+.publish-existing-lead {
+  color: var(--ink);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* --- An address ----------------------------------------------------------- */
+
+.publish-url {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+}
+
+.publish-url-label {
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+}
+
+.publish-url-text {
+  /* Wide enough that the actions wrap to their own line before the address
+     breaks mid-path: a URL split across two lines at `/g/` reads as two
+     broken strings rather than one address. */
+  flex: 1 1 18rem;
+  min-width: 0;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.publish-url-text:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.publish-url-actions {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+
+/* An anchor standing in for a button still has to be the same object as the
+   button beside it. */
+.publish-url-actions a.btn {
+  text-decoration: none;
+}
+
+/* On the result screen the address IS the content, so it gets a frame and a
+   readable size rather than sitting inline as a footnote — and the actions
+   drop to their own row so the address gets the full width. A URL that wraps
+   mid-path reads as two broken strings, which is the last thing to hand
+   someone at the end of a publish. */
+.publish-done .publish-url {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+
+.publish-done .publish-url-actions {
+  margin-left: auto;
+}
+
+/* The row version sets `flex: 1 1 18rem` to win width against the buttons.
+   This one is a COLUMN, where that basis becomes 18rem of height and stretches
+   a one-line address into a 288px-tall link. */
+.publish-done .publish-url-text {
+  flex: 0 0 auto;
+}
+
+.publish-done .publish-url-text {
+  font-size: var(--text-sm);
+}
+
+.publish-done-lead {
+  color: var(--ink);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.publish-done:focus {
+  outline: none;
+}
+
+.publish-done:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+
+/* --- Refusals -------------------------------------------------------------
+
+   A full border rather than a coloured edge stripe, and the sentence in the
+   status colour so it reads as the status rather than as decoration around
+   ordinary text. */
+
+.publish-error {
+  padding: 10px 12px;
+  border: 1px solid var(--err-soft);
+  border-radius: var(--radius);
+  background: var(--err-faint);
+  color: var(--err);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* Holds its line whether or not it has one to say. See the structural note at
+   the top of this section — this is the half of the fix that keeps the FIELDS
+   from moving, the scroll container is the half that keeps the BUTTON from
+   moving. */
+.publish-field-error {
+  min-height: calc(var(--text-xs) * 1.35);
+  margin: 0;
+  color: var(--err);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+}
+
+/* --- Longer prose --------------------------------------------------------- */
+
+.publish-textarea {
+  /* .textarea is sized as a single-line control; a multi-line one grows. */
+  height: auto;
+  min-height: 4.8rem;
+  padding: 9px 12px;
+  line-height: 1.55;
+  resize: vertical;
+  font-family: var(--font-ui);
+}
+
+.publish-textarea.is-short {
+  min-height: 3.8rem;
+}
+
+/* --- Tags ----------------------------------------------------------------- */
+
+.tag-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-0);
+  transition: border-color var(--t) var(--ease-out);
+}
+
+.tag-field:hover:not(.is-disabled) {
+  border-color: oklch(0.48 0.018 285);
+}
+
+/* The box owns the focus treatment, because the thing being focused is the
+   field and not the bare input inside it. */
+.tag-field:focus-within {
+  border-color: var(--accent);
+}
+
+.tag-field.is-disabled {
+  opacity: 0.6;
+}
+
+.tag-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--ctl-h-xs);
+  padding: 0 2px 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink);
+  font-size: var(--text-xs);
+  max-width: 100%;
+}
+
+.tag-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  /* 20px inside a 24px chip. Small, but it is a secondary control inside a
+     row-level object, and it is paired with Backspace as the keyboard route
+     to the same thing rather than being the only way to remove a tag. */
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-mute);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.tag-chip-remove:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+.tag-input.input {
+  height: var(--ctl-h-sm);
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+}
+
+.tag-input.input:hover:not(:disabled) {
+  border-color: transparent;
+}
+
+/* The bordered box already answers the focus; a second ring inside it would
+   be two focus indicators for one control. */
+.tag-input.input:focus-visible {
+  outline: none;
+}
+
+/* --- Cover ---------------------------------------------------------------- */
+
+.publish-cover {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.publish-cover-preview {
+  display: flex;
+  justify-content: center;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-0);
+}
+
+.publish-cover-preview img {
+  max-width: 100%;
+  max-height: 140px;
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+}
+
+/* --- In flight ------------------------------------------------------------
+
+   Ember, because an upload in progress is the action this dialog exists for —
+   this is the accent carrying a command, not decorating a panel. */
+
+.publish-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 0 4px;
+}
+
+.publish-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+
+.publish-bar > span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: publish-slide 1.5s ease-in-out infinite;
+}
+
+.publish-progress-lead {
+  color: var(--ink);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+@keyframes publish-slide {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(370%);
+  }
+}
+
+.publish-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 0 10px;
+}
+
+.publish-skeleton-line {
+  height: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  animation: publish-pulse 1.5s ease-in-out infinite;
+}
+
+.publish-skeleton-line.is-short {
+  width: 58%;
+}
+
+@keyframes publish-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Neither of these may keep moving for someone who asked things not to. The
+   bar becomes a full, half-lit track: still clearly "working", and still not
+   claiming a position it does not know. */
+@media (prefers-reduced-motion: reduce) {
+  .publish-bar > span {
+    width: 100%;
+    animation: none;
+    opacity: 0.55;
+  }
+
+  .publish-skeleton-line {
+    animation: none;
+  }
+}
