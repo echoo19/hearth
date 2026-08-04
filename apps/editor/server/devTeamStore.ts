@@ -120,6 +120,17 @@ export interface DevTeamState extends DevTeamSnapshot {
   resumePhase: DevTeamPhase | null;
   planDigest: string | null;
   retryCount: number;
+  /**
+   * What was wrong with the plan the lead last handed back, and nothing else.
+   *
+   * `error` is the run's status line: a stop, a rebind, a stall and a schema
+   * complaint all land in it. Resume read that one field to decide whether to
+   * send a repair prompt, so stopping a run during plan repair and then
+   * speaking to it told the lead "The plan at .../plan.json is invalid: Dev
+   * team run stopped." — a complaint about nothing, at the cost of one of three
+   * repair attempts. Only a real validation failure is written here.
+   */
+  planError: string | null;
   /** Milestone id -> how many times its plan has been repaired after a failed
    *  task, so one bad task cannot loop the run forever. */
   milestoneRepairs: Record<string, number>;
@@ -295,6 +306,9 @@ const stateSchema: z.ZodType<DevTeamState> = z.object({
   summary: z.string().nullable(),
   wrap: z.string().nullable(),
   error: z.string().nullable(),
+  // Defaulted for the same reason as phaseSince: runs written before it existed
+  // must still load, and "not known" is the honest reading of its absence.
+  planError: z.string().nullable().default(null),
   // Defaulted, not required: every run written before this field existed must
   // still load. A null reads as "not known", which the pane states as such
   // rather than inventing a start time.
@@ -322,6 +336,7 @@ function emptyState(over: Partial<DevTeamState> = {}): DevTeamState {
     summary: null,
     wrap: null,
     error: null,
+    planError: null,
     phaseSince: null,
     ...over,
   };
@@ -511,6 +526,7 @@ export function approveDevTeamSpec(root: string, chatId: string): Promise<DevTea
       approvals: [...current.approvals, { specVersion, approvedAt }],
       retryCount: 0,
       error: null,
+      planError: null,
     };
     await writeAtomic(path.join(devTeamRunDir(root, id), 'state.json'), `${JSON.stringify(next, null, 2)}\n`);
     return next;

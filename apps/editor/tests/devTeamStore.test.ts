@@ -58,6 +58,7 @@ function state(over: Partial<DevTeamState> = {}): DevTeamState {
     summary: null,
     wrap: null,
     error: null,
+    planError: null,
     ...over,
   };
 }

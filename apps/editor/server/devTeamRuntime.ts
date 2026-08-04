@@ -186,6 +186,7 @@ function initialState(): DevTeamState {
     summary: null,
     wrap: null,
     error: null,
+    planError: null,
   };
 }
 
@@ -561,13 +562,25 @@ export class DevTeamRuntime {
     const phase = recorded !== null && !parkedPhase(recorded) && recorded !== 'idle' && recorded !== 'done'
       ? recorded
       : this.state.plan
-        ? 'building'
+        ? this.buildFinished()
+          // Everything the plan asks for is done and there is no milestone
+          // after this one, so there is nothing to build and nothing left to
+          // review: the only turn still owed is the wrap. Deriving 'building'
+          // here sent the run back through a review of the final milestone it
+          // had already reviewed.
+          ? 'wrapping'
+          : 'building'
         : this.state.spec
           ? 'planning'
           : 'interviewing';
+    // The plan complaint, not the run's status line. `error` also carries a
+    // stop, a rebind and a stall, and repairing a plan against "Dev team run
+    // stopped." tells the lead its plan is invalid for a reason that is not
+    // about the plan — and spends one of three repair attempts saying it.
+    const planError = this.state.planError;
     const retryError = this.state.error;
     const needsRepair =
-      this.state.retryCount > 0 && retryError !== null && (phase === 'planning' || phase === 'reviewing');
+      this.state.retryCount > 0 && planError !== null && (phase === 'planning' || phase === 'reviewing');
     const retainedOperation = this.leadOperationForPhase(phase);
     const operation =
       retainedOperation
@@ -592,7 +605,14 @@ export class DevTeamRuntime {
     }
     this.state.phase = phase;
     this.state.resumePhase = null;
-    this.state.error = needsRepair ? retryError : null;
+    // The status line keeps its wording while it is still about the plan. When
+    // the run was parked between the failure and the repair, `error` says why
+    // it was parked, which is not what the repair turn is being asked to fix.
+    this.state.error = needsRepair
+      ? retryError !== null && retryError.includes(planError!)
+        ? retryError
+        : `Plan validation failed: ${planError!}`
+      : null;
     await this.persist();
     if (retainedOperation) return;
     if (operation && !this.operationCurrent(operation)) return;
@@ -617,14 +637,14 @@ export class DevTeamRuntime {
         // because `needsRepair` above already claims the case where the plan
         // on disk is the one we know to be broken.
         //
-        // Not when something is queued for the lead. Planning is also
-        // interrupted by a REBIND — the person changed the agent mid-turn and
-        // said something while doing it — and taking the old plan there would
-        // hold their note back until the next review when they have just this
-        // second typed it. Someone who has spoken gets a turn that hears them.
-        const existing = this.state.steering.length > 0
-          ? { plan: null, error: null }
-          : await this.readPlanResult();
+        // Taken whether or not a note is waiting. Every route a person has into
+        // resume goes through `handleUserMessage`, which files their message
+        // BEFORE resuming — so a guard that skipped the salvage while steering
+        // was queued skipped it always, and the lead was paid to plan again
+        // every single time. A queued note is not lost by taking the plan: it
+        // stays in the queue and reaches the lead at its next turn, which is
+        // the milestone review, exactly as a note typed during a build does.
+        const existing = await this.readPlanResult();
         if (existing.plan && this.operationCurrent(operation!)) {
           this.removeLead(operation!);
           this.adoptPlan(existing.plan);
@@ -938,6 +958,7 @@ export class DevTeamRuntime {
     this.state.currentMilestone = 0;
     this.state.retryCount = 0;
     this.state.error = null;
+    this.state.planError = null;
   }
 
   /**
@@ -974,7 +995,10 @@ export class DevTeamRuntime {
       // A plan that is present but wrong is worth saying out loud: it is the
       // difference between "the lead never answered" and "the lead answered
       // badly", and only the second is worth a repair turn on Resume.
-      if (result.error) this.state.retryCount = Math.max(this.state.retryCount, 1);
+      if (result.error) {
+        this.state.retryCount = Math.max(this.state.retryCount, 1);
+        this.state.planError = result.error;
+      }
       await this.stopActive(
         result.error
           ? `The lead stopped responding and the plan it left is not valid: ${result.error}`
@@ -991,7 +1015,8 @@ export class DevTeamRuntime {
     if (!this.leadCompletionCurrent(operation, paused, phase)) return;
     if (!result.plan) {
       this.state.retryCount += 1;
-      this.state.error = `Plan validation failed: ${result.error ?? 'unknown error'}`;
+      this.state.planError = result.error ?? 'unknown error';
+      this.state.error = `Plan validation failed: ${this.state.planError}`;
       if (this.state.retryCount >= MAX_DEV_TEAM_PLAN_RETRIES) {
         this.state.resumePhase = 'planning';
         this.state.phase = 'interrupted';
@@ -1031,6 +1056,7 @@ export class DevTeamRuntime {
     if (!this.state.plan || digest(candidate) === this.state.planDigest) {
       this.state.retryCount = 0;
       this.state.error = null;
+      this.state.planError = null;
       return true;
     }
     const old = this.state.plan;
@@ -1066,6 +1092,7 @@ export class DevTeamRuntime {
     this.state.tasks = records;
     this.state.retryCount = 0;
     this.state.error = null;
+    this.state.planError = null;
     return true;
   }
 
@@ -1155,6 +1182,7 @@ export class DevTeamRuntime {
 
   private async rejectReviewPlan(error: string, paused: boolean): Promise<false> {
     this.state.retryCount += 1;
+    this.state.planError = error;
     this.state.error = `Plan amendment validation failed: ${error}`;
     if (this.state.retryCount >= MAX_DEV_TEAM_PLAN_RETRIES) {
       this.state.phase = 'interrupted';
@@ -1267,6 +1295,21 @@ export class DevTeamRuntime {
 
   private taskRecord(taskId: string): DevTeamTaskRecord | undefined {
     return this.state.tasks.find((record) => record.taskId === taskId);
+  }
+
+  /**
+   * Every task the plan asks for is done, and there is no milestone after the
+   * one the run is on: the build has nothing left to do. Asked only when the
+   * recorded phase to resume into was lost, to tell a run waiting on its wrap
+   * apart from one with work still ahead of it.
+   */
+  private buildFinished(): boolean {
+    const plan = this.state.plan;
+    if (!plan) return false;
+    if (this.state.currentMilestone < plan.milestones.length - 1) return false;
+    return plan.milestones.every((milestone) =>
+      milestone.tasks.every((task) => this.taskRecord(task.id)?.status === 'done'),
+    );
   }
 
   private async dispatch(task: DevTeamTask, record: DevTeamTaskRecord): Promise<void> {

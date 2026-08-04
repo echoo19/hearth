@@ -435,17 +435,84 @@ describe('dev team lead state machine', () => {
     await putPlan(written);
 
     // A new instance over the same folder is what a restart looks like from
-    // here. It hydrates lazily, on the first call that needs state, and
-    // resume() is such a call: hydrate parks the active phase and resume then
-    // picks it up in the same turn.
+    // here. It hydrates lazily, on the first call that needs state, and being
+    // spoken to is such a call: hydrate parks the active phase and the message
+    // picks it back up in the same turn.
+    //
+    // Through the message rather than resume() directly, because that is the
+    // only route a person has: `handleUserMessage` files what they typed BEFORE
+    // resuming, so a salvage skipped whenever steering was waiting was a
+    // salvage that never ran once.
     const restarted = runtime();
     const promptCount = leadPrompts.length;
 
-    await restarted.resume();
+    expect(await restarted.handleUserMessage('Keep the scope small.')).toBe(true);
 
     await vi.waitFor(() => expect(restarted.snapshot().phase).toBe('building'), WAIT_FOR);
     expect(restarted.snapshot()).toMatchObject({ plan: written, error: null });
     expect(leadPrompts).toHaveLength(promptCount);
+    // The note is not lost by taking the plan: it is still queued, and reaches
+    // the lead at the milestone review like any note typed during a build.
+    expect((await readDevTeamState(root, chatId)).steering.map((item) => item.text)).toEqual([
+      'Keep the scope small.',
+    ]);
+  });
+
+  it('re-plans rather than salvaging when the plan on disk is invalid', async () => {
+    const first = runtime();
+    await reachPlanning(first);
+    await putPlan({ version: 1, roles: [], milestones: [] });
+
+    const restarted = runtime();
+    const promptCount = leadPrompts.length;
+
+    expect(await restarted.handleUserMessage('Keep the scope small.')).toBe(true);
+
+    await vi.waitFor(() => expect(leadPrompts).toHaveLength(promptCount + 1), WAIT_FOR);
+    expect(restarted.snapshot().phase).toBe('planning');
+    expect(leadPrompts.at(-1)).toContain('Keep the scope small.');
+  });
+
+  /**
+   * Stop parks the run and writes why in `error`. Resume then read that one
+   * field to decide it was looking at a plan complaint, and told the lead "The
+   * plan at .../plan.json is invalid: Dev team run stopped." — a repair turn
+   * against a message about nothing, charged to a budget of three.
+   */
+  it('does not repair a plan against the reason the run was parked', async () => {
+    const run = runtime();
+    await reachPlanning(run);
+    await putPlan({ version: 1, roles: [], milestones: [] });
+    await settleLead(run, 'Plan written.');
+    expect(await readDevTeamState(root, chatId)).toMatchObject({ retryCount: 1 });
+    expect(leadPrompts.at(-1)).toMatch(/invalid/i);
+
+    await run.stop();
+    expect(run.snapshot()).toMatchObject({ phase: 'interrupted', error: 'Dev team run stopped.' });
+    const promptCount = leadPrompts.length;
+
+    expect(await run.handleUserMessage('continue')).toBe(true);
+
+    await vi.waitFor(() => expect(leadPrompts).toHaveLength(promptCount + 1), WAIT_FOR);
+    expect(leadPrompts.at(-1)).not.toContain('Dev team run stopped.');
+    // The real complaint is still what the repair turn is given, and the budget
+    // is where the failed turn left it.
+    expect(leadPrompts.at(-1)).toMatch(/invalid/i);
+    expect(run.snapshot()).toMatchObject({ phase: 'planning', error: expect.stringMatching(/plan/i) });
+    expect(await readDevTeamState(root, chatId)).toMatchObject({ retryCount: 1 });
+  });
+
+  it('does not turn a stop before any plan failure into a repair turn', async () => {
+    const run = runtime();
+    await reachPlanning(run);
+    await run.stop();
+    const promptCount = leadPrompts.length;
+
+    expect(await run.handleUserMessage('continue')).toBe(true);
+
+    await vi.waitFor(() => expect(leadPrompts).toHaveLength(promptCount + 1), WAIT_FOR);
+    expect(leadPrompts.at(-1)).not.toMatch(/invalid/i);
+    expect(run.snapshot()).toMatchObject({ phase: 'planning', error: null });
   });
 
   it('queues planning direction into repair exactly once after its tracked completion', async () => {
@@ -521,6 +588,32 @@ describe('dev team lead state machine', () => {
     const reopened = runtime();
     expect(await reopened.handleUserMessage('continue')).toBe(true);
     await vi.waitFor(() => expect(reopened.snapshot().phase).toBe('building'), WAIT_FOR);
+  });
+
+  it('resumes a run parked twice during the wrap into the wrap, not another review', async () => {
+    const run = runtime();
+    await reachBuilding(run, plan([{ id: 'a', title: 'A', roleId: role.id, detail: 'A' }]));
+    await complete(drivers[0], 'A done.');
+    await waitForReview(run);
+    await settleLead(run, 'Review complete.');
+    await vi.waitFor(() => expect(run.snapshot().phase).toBe('wrapping'), WAIT_FOR);
+    await run.stop();
+    await writeDevTeamState(root, chatId, {
+      ...(await readDevTeamState(root, chatId)),
+      resumePhase: 'interrupted',
+    });
+
+    const reopened = runtime();
+    const promptCount = leadPrompts.length;
+    expect(await reopened.handleUserMessage('continue')).toBe(true);
+
+    // Falling back to 'building' put a finished run through a second review of
+    // the milestone it had already reviewed. With every task done and no
+    // milestone after this one, the only turn still owed is the wrap.
+    await vi.waitFor(() => expect(reopened.snapshot().phase).toBe('wrapping'), WAIT_FOR);
+    expect(leadPrompts).toHaveLength(promptCount + 1);
+    expect(leadPrompts.at(-1)).toContain('closing handoff');
+    expect(leadPrompts.at(-1)).not.toContain('Review milestone');
   });
 
 
