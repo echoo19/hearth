@@ -1166,11 +1166,35 @@ export function settleMessage(message: ChatMessage): ChatMessage {
  * the replay read them back off disk. From the chair that is an agent that has
  * stopped responding.
  *
- * Endings are excluded: `done` and `turn-complete` close a turn, and opening a
- * bubble for one would leave an empty message under every finished turn.
+ * Only events that genuinely START content open one. Everything else — the
+ * endings, and every event that resolves or continues a part it did not create
+ * — falls through to `applyChatEvent`, which drops it against a settled tail.
+ * That drop is the old behaviour and it is the right one: a session being torn
+ * down emits its last `approval-resolved` AFTER `turn-complete` by design (see
+ * the 'chat-event' case), so opening a bubble for a resolution minted an empty
+ * message that the resolution then wrote back still streaming — an eternal
+ * flame and a ticking Working row under a conversation that had finished, with
+ * the real approval part above it never updating.
  */
+const OPENS_A_BUBBLE: ReadonlySet<ChatEvent['type']> = new Set([
+  'message-delta',
+  'text-delta',
+  'reasoning-delta',
+  'tool-begin',
+  'tool-start',
+  'file-change',
+  'approval-request',
+  'input-request',
+  'subagent-start',
+  'plan-update',
+  'image',
+  'notice',
+  // A turn that fails in a window that never started it still has to say so.
+  'error',
+]);
+
 function bubbleFor(messages: ChatMessage[], event: ChatEvent): ChatMessage[] {
-  if (event.type === 'done' || event.type === 'turn-complete') return messages;
+  if (!OPENS_A_BUBBLE.has(event.type)) return messages;
   const last = messages[messages.length - 1];
   if (last && last.role === 'agent' && last.streaming) return messages;
   return [...messages, makeAgentMessage(Date.now())];

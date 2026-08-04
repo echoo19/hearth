@@ -107,6 +107,31 @@ describe('a turn this window did not start', () => {
 
     expect(useApp.getState().messages).toHaveLength(2);
   });
+
+  /**
+   * The teardown tail, in the order it actually arrives. A session being torn
+   * down emits its last `approval-resolved` AFTER `turn-complete` by design, and
+   * a rule that opened a bubble for anything that was not an ending minted an
+   * empty message for that resolution and then wrote it back still streaming:
+   * an eternal flame and a ticking Working row under a finished conversation.
+   * A resolution has nothing to start, so it is dropped, as it always was.
+   */
+  it('does not mint a phantom bubble for a resolution arriving after the ending', () => {
+    resetStore({ messages: [makeUserMessage('go'), settleMessage(makeAgentMessage())], chatBusy: false });
+
+    feed({ type: 'chat-event', chatId: 'b', event: { type: 'turn-complete' } });
+    feed({
+      type: 'chat-event',
+      chatId: 'b',
+      event: { type: 'approval-resolved', approvalId: 'a1', decision: 'allow' },
+    });
+    feed({ type: 'chat-event', chatId: 'b', event: { type: 'input-resolved', inputId: 'i1', action: 'submitted' } });
+    feed({ type: 'chat-event', chatId: 'b', event: { type: 'tool-end', toolId: 't1', status: 'ok' } });
+
+    const messages = useApp.getState().messages;
+    expect(messages).toHaveLength(2);
+    expect(messages.some((message) => message.streaming)).toBe(false);
+  });
 });
 
 describe('a chat event that names its conversation', () => {
