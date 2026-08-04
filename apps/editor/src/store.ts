@@ -1993,18 +1993,25 @@ export const useApp = create<AppState>((set, get) => {
         if (frame.chatId !== get().activeChatId) return;
         set((state) => {
           const last = state.messages[state.messages.length - 1];
-          const filed: ChatMessage = {
-            ...last,
-            parts: [{ kind: 'notice', text: 'Noted. The lead reads this at the next handoff.' }],
-            streaming: false,
+          // A note that reached a PARKED run is not filed for later — it is the
+          // thing that started the run moving again, and a receipt that says
+          // "at the next handoff" would be describing a wait that is over.
+          const notice: ChatPart = {
+            kind: 'notice',
+            text: frame.resumed
+              ? 'Picked the run back up with your note.'
+              : 'Noted. The lead reads this at the next handoff.',
           };
-          return {
-            chatBusy: false,
-            messages:
-              last && last.role === 'agent' && last.parts.length === 0
-                ? [...state.messages.slice(0, -1), filed]
-                : state.messages,
-          };
+          // The empty trailing bubble this window opened for the turn is the
+          // natural home for the receipt. If the lead had already written into
+          // it, the receipt gets a message of its own rather than being
+          // dropped: this is the one send nobody answers, so it has to be
+          // acknowledged every time.
+          const filed: ChatMessage[] =
+            last && last.role === 'agent' && last.parts.length === 0
+              ? [...state.messages.slice(0, -1), { ...last, parts: [notice], streaming: false }]
+              : [...state.messages, { ...makeAgentMessage(Date.now()), parts: [notice], streaming: false }];
+          return { chatBusy: false, messages: filed };
         });
         drainQueue();
         return;

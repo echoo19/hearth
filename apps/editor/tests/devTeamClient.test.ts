@@ -229,7 +229,22 @@ describe('dev team frame folding', () => {
     expect(useApp.getState().messages).toHaveLength(2);
   });
 
-  it('keeps a streaming agent bubble that already has content', () => {
+  it('says the run picked back up when the note woke a parked one', () => {
+    useApp.setState({ wsStatus: 'connected' });
+    receive({ type: 'devteam-state', chatId: 'team-chat', state: SNAPSHOT });
+    useApp.getState().sendChat('carry on with the inspector');
+
+    receive({ type: 'devteam-steering-accepted', chatId: 'team-chat', resumed: true });
+
+    expect(useApp.getState().messages[1].parts).toEqual([
+      { kind: 'notice', text: 'Picked the run back up with your note.' },
+    ]);
+  });
+
+  it('gives the receipt a message of its own when the lead already wrote into the bubble', () => {
+    // The ack used to file only into an EMPTY trailing bubble, so a note sent
+    // while the lead was mid-sentence got no acknowledgement at all — the one
+    // send in the app nobody answers, answered by nothing.
     useApp.setState({ wsStatus: 'connected' });
     useApp.getState().sendChat('a note');
     receive({ type: 'chat-event', chatId: 'team-chat', event: { type: 'message-delta', text: 'the lead is talking' } });
@@ -237,8 +252,13 @@ describe('dev team frame folding', () => {
     receive({ type: 'devteam-steering-accepted', chatId: 'team-chat' });
 
     expect(useApp.getState().chatBusy).toBe(false);
-    expect(useApp.getState().messages).toHaveLength(2);
+    expect(useApp.getState().messages).toHaveLength(3);
     expect(useApp.getState().messages[1].parts).toEqual([{ kind: 'text', text: 'the lead is talking' }]);
+    expect(useApp.getState().messages[2]).toMatchObject({
+      role: 'agent',
+      streaming: false,
+      parts: [{ kind: 'notice', text: expect.stringContaining('next handoff') }],
+    });
   });
 
   it('drops a stale team cache entry when that id opens as a terminal', () => {
