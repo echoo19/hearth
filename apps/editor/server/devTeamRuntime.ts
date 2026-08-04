@@ -127,7 +127,7 @@ interface LeadOperation {
 // deliberately absent: both are ordinary back-and-forth with the person, they
 // survive a restart untouched, and rewriting them as interrupted only forced a
 // Resume click before someone could answer the question they were just asked.
-const ACTIVE_PHASES = new Set<DevTeamPhase>([
+export const ACTIVE_PHASES = new Set<DevTeamPhase>([
   // `interviewing` belongs here and `spec-review` does not, and the difference
   // is whether anything is RUNNING. An interview has a lead turn in flight —
   // that is what buildInterviewResumePrompt exists to restart. A spec review is

@@ -90,7 +90,7 @@ import {
   writeDevTeamState,
   type DevTeamSnapshot,
 } from './devTeamStore.js';
-import { DevTeamRuntime, type DevTeamEngineerRequest } from './devTeamRuntime.js';
+import { ACTIVE_PHASES as DEV_TEAM_ACTIVE_PHASES, DevTeamRuntime, type DevTeamEngineerRequest } from './devTeamRuntime.js';
 import { type ProjectServerContext, resolveToolPaths } from './projectServer.js';
 import { PtyManager, ScrollbackBuffer, type PtyBackend, type PtyHandle } from './ptyManager.js';
 import { ensureHearthShim, hearthPtyEnv } from './hearthShim.js';
@@ -233,7 +233,7 @@ export type WsFrame =
   // A steering note is absorbed into the run's state rather than sent to the
   // lead's driver, so no turn ever starts and no `done` ever arrives. Without
   // this the composer waits forever for a turn that was never begun.
-  | { type: 'devteam-steering-accepted'; chatId: string }
+  | { type: 'devteam-steering-accepted'; chatId: string; resumed?: boolean }
   | { type: 'devteam-event'; chatId: string; engineerId: string; event: ChatEvent }
   // `turnActive` says the agent is mid-turn RIGHT NOW, so the window rebuilds
   // the tail of the transcript as live rather than as history. Without it a
@@ -1814,7 +1814,7 @@ export function attachWebSocket(
     if (chatId === undefined) return;
     for (const session of [...chatSessions.values()]) {
       if (!session.sockets.delete(socket) || session.sockets.size > 0 || session.retired) continue;
-      if (opts.onLast === 'retire' || !session.turnActive) {
+      if (opts.onLast === 'retire' || (!session.turnActive && !devTeamRunLive(session.key))) {
         retireChatSession(session, null);
         continue;
       }
@@ -1822,14 +1822,36 @@ export function attachWebSocket(
     }
   }
 
+  /**
+   * A dev team run is doing work this session is required for, even though the
+   * lead itself is idle.
+   *
+   * `turnActive` sees one thing: whether the LEAD driver is mid-turn. During a
+   * build it is false — the planning turn ended and the live work is in the
+   * engineer drivers — so switching to another conversation retired the lead,
+   * and the runtime's next handoff (milestone review, wrap) threw "The lead
+   * agent is not connected." and parked the run. Nothing about clicking another
+   * row says stop, least of all to a build that is still running.
+   */
+  function devTeamRunLive(key: string): boolean {
+    const phase = devTeamRuntimes.get(key)?.snapshot().phase;
+    return phase !== undefined && DEV_TEAM_ACTIVE_PHASES.has(phase);
+  }
+
   /** Reap a session nobody is watching, unless somebody comes back to it. */
   function lingerChatSession(session: ChatSession): void {
     if (session.lingerTimer) clearTimeout(session.lingerTimer);
     session.lingerTimer = setTimeout(() => {
       session.lingerTimer = undefined;
-      if (chatSessions.get(session.key) === session && session.sockets.size === 0) {
-        retireChatSession(session, null);
+      if (chatSessions.get(session.key) !== session || session.sockets.size > 0) return;
+      // A build outlasts the linger window, and the run needs its lead at the
+      // next milestone whether or not a window is watching. Wait again rather
+      // than kill the run on a timer.
+      if (devTeamRunLive(session.key)) {
+        lingerChatSession(session);
+        return;
       }
+      retireChatSession(session, null);
     }, chatDetachLingerMs);
     session.lingerTimer.unref?.();
   }

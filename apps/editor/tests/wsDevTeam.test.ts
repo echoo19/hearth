@@ -692,6 +692,61 @@ describe('dev team websocket integration', () => {
     inbox.socket.close();
   });
 
+  /**
+   * Switching conversations during a build used to kill the run.
+   *
+   * The lead's own turn ended when planning did — the live work is in the
+   * engineer drivers, which `turnActive` cannot see — so leaving the chat found
+   * an idle session and retired it. The build carried on until the milestone
+   * finished, and then the handoff to the lead threw "The lead agent is not
+   * connected." and parked the run with nothing running.
+   */
+  it('keeps the lead session while a build is running and the window looks elsewhere', async () => {
+    const harness = await makeHarness();
+    const inbox = await harness.connect();
+    const chatId = await newDevTeam(inbox);
+    inbox.socket.send(JSON.stringify({ type: 'chat-send', text: 'build the thing' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'interviewing');
+    await until(() => harness.drivers[0].sent.length === 1);
+    const runDir = path.join(harness.root, '.hearth', 'devteam', chatId);
+    await fsp.mkdir(runDir, { recursive: true });
+    await fsp.writeFile(path.join(runDir, 'spec.md'), '# Spec\nBuild it.\n');
+    harness.drivers[0].emit({ type: 'turn-complete' });
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'spec-review');
+    inbox.socket.send(JSON.stringify({ type: 'devteam-approve-spec' }));
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'planning');
+    await until(() => harness.drivers[0].sent.length === 2);
+    await fsp.writeFile(
+      path.join(runDir, 'plan.json'),
+      JSON.stringify({
+        version: 1,
+        roles: [{ id: 'builder', name: 'Builder', focus: 'Implement the project.' }],
+        milestones: [{
+          id: 'm1', title: 'Build', goal: 'Finish the project.',
+          tasks: [{ id: 'task1', title: 'Implement', roleId: 'builder', detail: 'Implement the approved specification.' }],
+        }],
+      }),
+    );
+    harness.drivers[0].emit({ type: 'turn-complete' });
+    await inbox.next((frame) => frame.type === 'devteam-state' && frame.state.phase === 'building');
+    await until(() => harness.drivers.length === 2 && harness.drivers[1].sent.length === 1);
+
+    // The window goes and looks at another conversation while the build runs.
+    inbox.socket.send(JSON.stringify({ type: 'chat-new' }));
+    const other = await inbox.next((frame) => frame.type === 'chat-opened' && frame.chat.id !== chatId);
+    expect(other.type === 'chat-opened' && other.chat.kind).toBe('chat');
+    // Past the linger window (50ms in this harness), which used to reap it.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(harness.drivers[0].stopped).toBe(false);
+
+    // The milestone finishes with nobody watching, and the handoff still lands.
+    harness.drivers[1].emit({ type: 'turn-complete' });
+    await until(() => harness.drivers[0].sent.length === 3);
+    expect(harness.drivers[0].sent[2].text).toContain('Review milestone');
+    expect((await readDevTeamState(harness.root, chatId)).phase).toBe('reviewing');
+    inbox.socket.close();
+  });
+
   it('acknowledges a steering note and stays silent for a send that reaches the driver', async () => {
     const harness = await makeHarness();
     const inbox = await harness.connect();
