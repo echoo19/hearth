@@ -204,6 +204,19 @@ describe('the in-chat variant', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
     expect(useApp.getState().chatBusy).toBe(false);
   });
+
+  it('offers no dead Send circle beside Stop during a dev team run', () => {
+    // A dev team run is never `chatBusy` — a note typed during one is steering,
+    // not a queued send — so keying the Send circle off the queue left a
+    // permanently disabled ring next to Stop for the whole of the lead's turn.
+    render(<Composer running onStop={() => {}} />);
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
+
+    // The moment there is something to send, both circles mean something.
+    type('keep the interface quiet');
+    expect(screen.getByRole('button', { name: 'Send' })).toBeTruthy();
+  });
 });
 
 /**

@@ -496,7 +496,11 @@ export function Composer({
               </button>
             </Tooltip>
           )}
-          {(!queueing || !empty) && (
+          {/* Empty box with Stop showing: the Send circle would be a dead
+              disabled ring beside it. `stoppable`, not `queueing` — a dev team
+              run is never `chatBusy`, so keying off the queue left exactly that
+              dead pair on screen for the whole of the lead's turn. */}
+          {(!stoppable || !empty) && (
             <Tooltip content={queueing ? 'Send when this turn finishes' : 'Send'} shortcut="↵">
               <button
                 type="button"
