@@ -11,7 +11,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-The current release is v1.8.0, for macOS, Windows, and Linux.
+The current release is v1.9.0, for macOS, Windows, and Linux.
 
 <img src="docs/media/hearth-window@2x.png" alt="The Hearth window: a sidebar of project folders on the left, a conversation with a coding agent in the middle, and the game running in a pane on the right" width="900">
 
