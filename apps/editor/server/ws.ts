@@ -1381,6 +1381,12 @@ export function attachWebSocket(
       }
     }
     if (chatSessions.get(session.key) === session) chatSessions.delete(session.key);
+    // The count belongs to the run, not to the session — a rebind replaces the
+    // session and it has to survive that — but with no runtime left there is
+    // nothing it could ever be compared against, and the delete gate was the
+    // only thing that ever removed an entry. Every conversation a window opened
+    // stayed in the map for the life of the process.
+    if (!devTeamRuntimes.has(session.key)) devTeamLeadSends.delete(session.key);
     session.driver?.stop();
     if (!endWith) return;
     // ON THE CONVERSATION'S LANE, not detached beside it. Ending a turn waits
@@ -2559,6 +2565,8 @@ export function attachWebSocket(
         }),
       );
       devTeamRuntimes.clear();
+      devTeamLeadSends.clear();
+      devTeamLeadAttachments.clear();
 
       const sessions = [...chatSessions.values()];
       for (const session of sessions) retireChatSession(session, null);
