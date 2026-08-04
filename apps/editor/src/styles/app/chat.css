@@ -723,8 +723,11 @@
 }
 
 /* The dot that used to share this breath is gone: every live mark in the app
-   is a flame now (styles/app/flame.css). The word keeps breathing where it is
-   the only thing beside a flame that can carry a rhythm of its own. */
+   is a flame now (styles/app/flame.css). The breath survives here as the
+   default for a live label that has NOTHING moving beside it; every place the
+   word is used today has a flame next to it, and each of those turns the
+   breath off further down. Keeping it here means a new live label without a
+   mark of its own still reads as live rather than as a static word. */
 .working-label {
   /* Symmetric sine-ish easing — see the note above. */
   animation-duration: 1200ms;
@@ -772,12 +775,19 @@
    language now rather than this row's ornament, and the dev team board, the
    step rail and the subagent card all burn the same one.
 
-   The word stops breathing here. It keeps breathing in the reasoning line and
-   the subagent card, where it is the sole live mark; under a flame it would be
-   a second rhythm beneath a first, which is the two-place fidget the note
-   further up this file rejects, and this word sits at the foot of prose
-   someone is still reading. One live thing, and it is the flame. */
-.msg-working .working-label {
+   The word stops breathing wherever a flame is beside it, which is now
+   everywhere the word appears: the turn's own working line, the reasoning line
+   and the subagent card all draw one. Under a flame the breath is a second
+   rhythm beneath a first — the two-place fidget the note further up this file
+   rejects — and these words sit at the foot of, or beside, prose someone is
+   still reading. One live thing, and it is the flame.
+
+   The reasoning line is stilled whether or not it is live, because a finished
+   "Thought for 4s" has nothing happening in it at all and a pulsing label
+   would say otherwise. */
+.msg-working .working-label,
+.reasoning-row .working-label,
+.subagent-working .working-label {
   animation: none;
   opacity: 1;
 }
