@@ -89,11 +89,18 @@ export function devTeamFlame(activity: string): 'burn' | 'smoulder' {
  * phase of a team run meant the panel said the same thing for three hours while
  * the lead planned, watched, reviewed and wrote up, which is four different
  * jobs and the only place any of them was legible.
+ *
+ * An unanswered question outranks all of it, exactly as it does for an
+ * engineer. The phase does not change while the lead sits on one, so a run
+ * stalled on an approval nobody had seen read "Planning" for as long as it was
+ * left there — the one card on the board that was waiting on the person looking
+ * at it was the one card claiming to be busy.
  */
 export function devTeamLeadActivity(
   messages: readonly ChatMessage[],
   phase?: DevTeamPhase,
 ): string {
+  if (pendingLaneAsk(messages).count > 0) return 'Needs you';
   if (messages.some((message) => message.streaming)) return 'Working';
   switch (phase) {
     case 'planning': return 'Planning';

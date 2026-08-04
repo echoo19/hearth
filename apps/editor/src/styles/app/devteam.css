@@ -157,6 +157,20 @@
   color: inherit;
 }
 
+/* "Dev team phase:" — read aloud, never drawn. The strip's state span is the
+   live region, and a live region with an aria-label can be announced as its
+   label instead of as its content, so the prefix is part of the text. */
+.devteam-strip-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
 .devteam-strip-clock {
   color: var(--ink-faint);
   font-family: var(--font-mono);
@@ -630,7 +644,10 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Governing the run, at the foot of the column that describes it. */
+/* Governing the run, at the foot of the column that describes it. Pushed to
+   the bottom by its own auto margin so the steps and the documents stay put as
+   the controls change: Stop becomes Resume when a run parks, and a control that
+   moved the two above it every time would make the rail flicker. */
 .devteam-controls {
   display: flex;
   flex-direction: column;
@@ -970,6 +987,36 @@
 
 .devteam-run-body > .md {
   max-width: 72ch;
+}
+
+/* The specification the finished run was built to satisfy. Quiet and folded:
+   the rail that used to hold it goes when the team does, and this is the only
+   way back to it, but the report is what the record is for. */
+.devteam-run-spec > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--ctl-h-sm);
+  color: var(--ink-faint);
+  font-size: var(--text-3xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--track-caps);
+  text-transform: uppercase;
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.devteam-run-spec > summary:hover {
+  color: var(--ink-mute);
+}
+
+.devteam-run-spec > .md {
+  max-width: 72ch;
+  padding-top: 10px;
+}
+
+.devteam-run-spec[open] .devteam-run-chevron {
+  transform: rotate(90deg);
 }
 
 .orchestration-record {

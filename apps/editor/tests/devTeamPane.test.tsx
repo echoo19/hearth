@@ -227,7 +227,7 @@ describe('dev team presentation helpers', () => {
 });
 
 describe('DevTeamPane', () => {
-  it('puts Stop in the box you type into, and nowhere else', () => {
+  it('puts Stop in the box you type into while the pane is a conversation', () => {
     // The run's controls used to be a pair of buttons on the strip over the
     // conversation, which put its one destructive control somewhere different
     // from the Stop every other conversation in this app has. Stop is where it
@@ -244,8 +244,8 @@ describe('DevTeamPane', () => {
       (useApp.getState().stopDevTeam as ReturnType<typeof vi.fn>).mockClear();
     }
 
-    // Once there is a team the box is the lead's own, one click in, and Stop
-    // is in it there too: the board itself carries no controls.
+    // Once there is a team the box is the lead's own, one click in, and the
+    // turn's Stop is in it there too.
     cleanup();
     act(() => useApp.setState({ devTeam: snapshot({ phase: 'planning' }) } as never));
     render(<DevTeamPane />);
@@ -261,6 +261,79 @@ describe('DevTeamPane', () => {
       render(<DevTeamPane />);
       expect(screen.queryByRole('button', { name: 'Stop' }), phase).toBeNull();
     }
+  });
+
+  it('can halt or pick up the run from every phase it is actually in', () => {
+    // The regression this exists to catch: `building` is the ONE phase with no
+    // lead turn in it, so the composer that carried Stop was never offered one,
+    // and the board that replaced the composer carried no controls at all. A
+    // sixteen-engineer build could not be stopped without closing the app.
+    // Every phase is checked because the previous test checked all of them but
+    // that one, which is precisely where the hole was.
+    const cases: [DevTeamSnapshot['phase'], Partial<DevTeamSnapshot>, 'stop' | 'resume' | 'none'][] = [
+      ['interviewing', { plan: null, tasks: [] }, 'stop'],
+      ['drafting-spec', { plan: null, tasks: [] }, 'stop'],
+      // The lead is waiting on a decision that is on screen; nothing is running.
+      ['spec-review', { plan: null, tasks: [] }, 'none'],
+      ['planning', {}, 'stop'],
+      ['building', {}, 'stop'],
+      ['reviewing', {}, 'stop'],
+      ['wrapping', {}, 'stop'],
+      ['paused', {}, 'resume'],
+      ['interrupted', {}, 'resume'],
+      ['done', {}, 'none'],
+    ];
+
+    for (const [phase, over, expected] of cases) {
+      cleanup();
+      act(() => useApp.setState({ devTeam: snapshot({ phase, ...over }) } as never));
+      render(<DevTeamPane />);
+      const stop = screen.queryByRole('button', { name: 'Stop dev team' })
+        ?? screen.queryByRole('button', { name: 'Stop' });
+      const resume = screen.queryByRole('button', { name: 'Resume dev team' });
+
+      if (expected === 'none') {
+        expect(stop, phase).toBeNull();
+        expect(resume, phase).toBeNull();
+        continue;
+      }
+      const control = expected === 'stop' ? stop : resume;
+      expect(control, phase).not.toBeNull();
+      fireEvent.click(control!);
+      const action = expected === 'stop' ? 'stopDevTeam' : 'resumeDevTeam';
+      expect(useApp.getState()[action], phase).toHaveBeenCalled();
+      (useApp.getState()[action] as ReturnType<typeof vi.fn>).mockClear();
+    }
+  });
+
+  it('offers Pause only where there is dispatch left to hold back', () => {
+    // Pause stops NEW dispatch and lets running engineers finish, so it applies
+    // to a build and to nothing else: during a lead turn there is nobody to
+    // hold back, and a control that did nothing would be worse than none.
+    cleanup();
+    act(() => useApp.setState({ devTeam: snapshot({ phase: 'building' }) } as never));
+    render(<DevTeamPane />);
+    fireEvent.click(screen.getByRole('button', { name: 'Pause dev team' }));
+    expect(useApp.getState().pauseDevTeam).toHaveBeenCalled();
+
+    for (const phase of ['planning', 'reviewing', 'wrapping', 'paused'] as const) {
+      cleanup();
+      act(() => useApp.setState({ devTeam: snapshot({ phase }) } as never));
+      render(<DevTeamPane />);
+      expect(screen.queryByRole('button', { name: 'Pause dev team' }), phase).toBeNull();
+    }
+  });
+
+  it('says a board full of frozen cards is parked, and how to pick it back up', () => {
+    // Only the EMPTY board explained itself. A run stopped mid-build showed its
+    // engineers frozen at whatever they were last doing, with nothing saying
+    // why nothing was moving or what to press.
+    cleanup();
+    act(() => useApp.setState({ devTeam: snapshot({ phase: 'interrupted' }) } as never));
+    render(<DevTeamPane />);
+
+    expect(screen.getByRole('button', { name: /Build controls/ })).toBeTruthy();
+    expect(screen.getByText(/parked.*press Resume/)).toBeTruthy();
   });
 
   it('never interrupts the conversation to ask what to do about a slow turn', () => {
@@ -279,7 +352,7 @@ describe('DevTeamPane', () => {
     expect(screen.queryByRole('button', { name: /Stop the run/ })).toBeNull();
     expect(screen.queryByText(/has not finished/)).toBeNull();
     // What is left is the truth and one control: the step, its clock, and Stop.
-    expect(screen.getByRole('status', { name: 'Dev team phase' }).textContent).toBe('Interview');
+    expect(screen.getByRole('status').textContent).toBe('Dev team phase: Interview');
     expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy();
   });
 
@@ -294,7 +367,7 @@ describe('DevTeamPane', () => {
     render(<DevTeamPane />);
 
     expect(screen.getAllByText('I am reviewing the first pass.').length).toBeGreaterThan(0);
-    expect(screen.getByRole('status', { name: 'Dev team phase' }).textContent).toBe('Interview');
+    expect(screen.getByRole('status').textContent).toBe('Dev team phase: Interview');
     expect(screen.queryByRole('navigation', { name: 'Dev team progress' })).toBeNull();
     expect(screen.getByRole('textbox', { name: 'Message the lead' })).toBeTruthy();
   });
@@ -623,18 +696,18 @@ describe('DevTeamPane', () => {
     );
   });
 
-  it('leaves a parked run with a status line and a box, and no controls at all', () => {
+  it('leaves a parked run that never had a team with a status line and a box', () => {
     cleanup();
-    // Pause and Resume are both gone: every phase Pause applied to has a team,
-    // and a parked run is picked back up by being spoken to (devTeamRuntime).
-    // What is left is the truth about where the run got to.
+    // A run parked before it had a plan is a conversation, so it has no rail to
+    // put the run's controls on, and it is picked back up by being spoken to
+    // (devTeamRuntime). What is left is the truth about where the run got to.
     act(() => useApp.setState({ devTeam: snapshot({ phase: 'paused', plan: null, tasks: [] }) } as never));
     render(<DevTeamPane />);
 
     for (const name of ['Pause dev team', 'Resume dev team', 'Stop dev team', 'Stop']) {
       expect(screen.queryByRole('button', { name }), name).toBeNull();
     }
-    expect(screen.getByRole('status', { name: 'Dev team phase' }).textContent).toBe('Paused');
+    expect(screen.getByRole('status').textContent).toBe('Dev team phase: Paused');
     expect(screen.getByRole('textbox', { name: 'Message the lead' })).toBeTruthy();
   });
 
@@ -724,6 +797,90 @@ describe('DevTeamPane', () => {
     expect(record?.querySelector('.devteam-run-chevron')?.textContent).toBe('›');
     expect(screen.queryByText('Steering is text-only while the team is running.')).toBeNull();
     expect(screen.getByRole('textbox', { name: 'Message the lead' })).toBeTruthy();
+  });
+
+  it('keeps the specification readable after the rail that held it is gone', () => {
+    // The spec is behind a rail button for as long as there is a team, and the
+    // rail goes when the team does — so the one document the run was built to
+    // satisfy became unreachable at the exact moment somebody would check the
+    // result against it.
+    const completed = {
+      version: 1 as const,
+      runId: 'run-0',
+      plan,
+      tasks: snapshot().tasks,
+      currentMilestone: 0,
+      spec: '# Earlier world\n\nThe spec the first run was built to.',
+      specVersion: 1,
+      summary: 'Reviewed.',
+      wrap: 'Use arrow keys.',
+      completedAt: '2026-07-31T00:01:00.000Z',
+    };
+    act(() => useApp.setState({
+      devTeam: {
+        ...snapshot({ phase: 'done', wrap: 'Open the game.' }),
+        history: [completed],
+      },
+      devTeamLanes: {},
+    }));
+    render(<DevTeamPane />);
+
+    // The run that just finished, and one from earlier in the conversation.
+    const folds = screen.getAllByText('Specification')
+      .map((node) => node.closest('details.devteam-run-spec'));
+    expect(folds.filter(Boolean)).toHaveLength(2);
+    expect(screen.getByText(/Build a small, tactile world./)).toBeTruthy();
+    expect(screen.getByText(/The spec the first run was built to./)).toBeTruthy();
+  });
+
+  it('says the lead needs you rather than naming the phase it is stuck in', () => {
+    // The phase does not change while the lead sits on an unanswered approval,
+    // so a stalled run read "Planning" for as long as it was left there: the one
+    // card waiting on the person looking at it claimed to be the busy one.
+    act(() => useApp.setState({
+      devTeam: snapshot({ phase: 'planning' }),
+      messages: [{
+        id: 'lead-ask',
+        role: 'agent',
+        streaming: false,
+        parts: [{
+          kind: 'approval',
+          id: 'lead-approval',
+          approvalKind: 'command',
+          title: 'Write the plan file',
+          detail: 'write plan.json',
+          decision: null,
+        }],
+      }],
+    }));
+    render(<DevTeamPane />);
+
+    const lead = screen.getByRole('button', { name: /^Lead, Plans the work/ });
+    expect(lead.getAttribute('aria-label')).toBe(
+      'Lead, Plans the work and reviews it, Needs you, 1 waiting question',
+    );
+    expect(devTeamFlame('Needs you')).toBe('smoulder');
+  });
+
+  it('runs the lead turn clock on the lead\'s own card', () => {
+    // The board is the only screen there is during planning, review and the
+    // report, and the lead's card was the one card on it with no clock — the
+    // longest single turns in the run, timed by nothing.
+    act(() => useApp.setState({
+      devTeam: snapshot({ phase: 'planning', phaseSince: Date.now() - 95 * 1000 }),
+      devTeamLanes: {},
+    }));
+    render(<DevTeamPane />);
+
+    const clock = document.querySelector('.devteam-lead-slot .devteam-card-clock');
+    expect(clock?.textContent).toBe('1m 35s');
+    // Not during a build: engineers are reporting the whole time, and a counter
+    // climbing past two hours would describe sixteen healthy turns as one stuck
+    // one. Their own cards carry the clocks that matter then.
+    act(() => useApp.setState({
+      devTeam: snapshot({ phase: 'building', phaseSince: Date.now() - 2 * 60 * 60 * 1000 }),
+    }));
+    expect(document.querySelector('.devteam-lead-slot .devteam-card-clock')).toBeNull();
   });
 
   it('gives two people in one role different names', () => {

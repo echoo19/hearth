@@ -28,6 +28,12 @@ import { useElapsed } from './WorkingRow';
  * `building` is deliberately absent. It can legitimately run for a very long
  * time, and while it does there are engineers on screen reporting what they are
  * doing, so the pane is not silent and the person is not stranded.
+ *
+ * This decides two things and neither of them is whether the run can be
+ * halted: the clock, and whether the box in front of you offers Stop for the
+ * turn. The RUN's own controls are on the rail and are keyed on the phase
+ * directly, because a build with no lead turn in it is exactly the run somebody
+ * needs to be able to stop.
  */
 const LEAD_TURN_PHASES = new Set<DevTeamSnapshot['phase']>([
   'interviewing',
@@ -95,9 +101,15 @@ function RunStrip({ phase, elapsed }: { phase: DevTeamSnapshot['phase']; elapsed
 
   return (
     <div className="devteam-strip">
-      <span className="devteam-strip-state" data-parked={parked || undefined}>
+      {/* The live region is not labelled. An `aria-label` on the element whose
+          CONTENT is the phase competes with the content for the announcement,
+          and a screen reader that reads the label instead of the change says
+          "dev team phase" every time the run moves and never says where to.
+          The prefix is part of the text instead, off-screen. */}
+      <span className="devteam-strip-state" data-parked={parked || undefined} role="status">
         <FlameMark state={parked ? 'ember' : 'burn'} size={11} />
-        <span role="status" aria-label="Dev team phase">{devTeamPhaseLabel(phase)}</span>
+        <span className="devteam-strip-label">Dev team phase: </span>
+        <span>{devTeamPhaseLabel(phase)}</span>
       </span>
       {counter && (
         <span className="devteam-strip-clock" aria-hidden="true">{counter}</span>
@@ -149,6 +161,7 @@ function AgentCard({
   activity,
   asks,
   startedAt,
+  clock,
   onOpen,
 }: {
   name: string;
@@ -159,6 +172,10 @@ function AgentCard({
   activity: string;
   asks: number;
   startedAt?: string;
+  /** An already-formatted counter, for a card whose clock is not its own: the
+   *  lead has no task record to start from, so its turn is timed by the run's
+   *  phase and handed in. */
+  clock?: string | null;
   onOpen: () => void;
 }) {
   // How long this one has been at it. Every orchestration board worth using
@@ -166,7 +183,7 @@ function AgentCard({
   // that has wedged look exactly alike.
   const since = startedAt === undefined ? undefined : Date.parse(startedAt);
   const elapsed = useElapsed(Number.isNaN(since) ? undefined : since, status === 'running');
-  const counter = status === 'running' && elapsed !== null ? formatElapsed(elapsed) : null;
+  const counter = clock ?? (status === 'running' && elapsed !== null ? formatElapsed(elapsed) : null);
   const waiting = asks > 0 ? `${asks} waiting ${asks === 1 ? 'question' : 'questions'}` : '';
   // The lead carries no role: "Lead" is the role, and "Lead / Tech lead" said
   // one thing twice in the two places on the card that are meant to say two.
@@ -194,14 +211,10 @@ function AgentCard({
         <span className="devteam-card-status">{activity}</span>
         {counter && <span className="devteam-card-clock">{counter}</span>}
       </span>
-      {asks > 0 && (
-        <span
-          className="devteam-ask-badge"
-          aria-label={`${asks} waiting ${asks === 1 ? 'question' : 'questions'}`}
-        >
-          {asks}
-        </span>
-      )}
+      {/* No label of its own: this is inside the card's own button, whose
+          accessible name already ends with the same count, and a labelled span
+          in there is either announced twice or not at all. */}
+      {asks > 0 && <span className="devteam-ask-badge" aria-hidden="true">{asks}</span>}
     </button>
   );
 }
@@ -267,6 +280,13 @@ function Milestones({ state }: { state: Pick<DevTeamSnapshot, 'plan' | 'tasks' |
  * A finished step trades its number for a tick and the one being worked trades
  * it for a spinner. A step still to come keeps its number, because the number
  * is the thing that says how much is left.
+ *
+ * The run's controls are the rail's foot, and they are the ONE place a team run
+ * can be halted or picked back up. The board has no composer, so while a build
+ * is on there is no box to carry a Stop — a run with sixteen engineers in it
+ * was unstoppable except by closing the app. Stop parks the run and keeps the
+ * plan and the transcripts; Pause stops new dispatch and lets what is already
+ * running finish; Resume carries on from wherever it was left.
  */
 function RunRail({
   state,
@@ -279,7 +299,11 @@ function RunRail({
   onPlan: () => void;
   onSpec: () => void;
 }) {
+  const pauseRun = useApp((s) => s.pauseDevTeam);
+  const resumeRun = useApp((s) => s.resumeDevTeam);
+  const stopRun = useApp((s) => s.stopDevTeam);
   const steps = devTeamStepStates(state);
+  const parked = state.phase === 'paused' || state.phase === 'interrupted';
 
   return (
     <aside className="devteam-rail" aria-label="Run status">
@@ -313,6 +337,32 @@ function RunRail({
           </p>
         )}
       </div>
+
+      {/* Each one says what it governs. The lead's own view carries the
+          conversation's Stop, which stops the TURN, and two buttons reading
+          "Stop" a few inches apart meaning two different things is the reason
+          these are named for the run. */}
+      <div className="devteam-controls">
+        {parked ? (
+          <Button size="sm" icon="play" aria-label="Resume dev team" onClick={resumeRun}>
+            Resume
+          </Button>
+        ) : (
+          <>
+            {/* Pause only applies where there is dispatch to hold back. During
+                a lead turn there is nothing running but the lead, and a Pause
+                that did nothing would be worse than no Pause. */}
+            {state.phase === 'building' && (
+              <Button size="sm" variant="quiet" icon="pause" aria-label="Pause dev team" onClick={pauseRun}>
+                Pause
+              </Button>
+            )}
+            <Button size="sm" variant="danger" icon="stop" aria-label="Stop dev team" onClick={stopRun}>
+              Stop
+            </Button>
+          </>
+        )}
+      </div>
     </aside>
   );
 }
@@ -326,7 +376,7 @@ function TeamEmpty({ state }: { state: DevTeamSnapshot }) {
   const text = !state.plan
     ? 'The lead is writing the plan. The team appears here as it is brought on.'
     : parked
-      ? 'The run is parked. Nobody is working until it is picked back up.'
+      ? 'The run is parked. Nobody is working until you press Resume in the run column.'
       : state.phase === 'reviewing'
         ? 'Everyone has handed their work back. The lead is reviewing it.'
         : 'Nobody has been brought on yet. Engineers appear here as the lead summons them.';
@@ -555,6 +605,11 @@ function TeamStage({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number
   const open = members.find((member) => member.id === opened) ?? null;
   const finished = state.tasks.filter((task) => task.status === 'done').length;
   const roll = crewRollCall(crew);
+  const parked = state.phase === 'paused' || state.phase === 'interrupted';
+  // The lead's turn clock. Every engineer card carries one and the lead's phases
+  // are the longest single turns in the run, so the one card with no way to tell
+  // thinking from wedged was the one watching the other six.
+  const leadClock = elapsed === null ? null : formatElapsed(elapsed);
   const closeDoc = (doc: 'plan' | 'spec') => () =>
     setShowing((current) => (current === doc ? null : current));
 
@@ -564,7 +619,7 @@ function TeamStage({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number
         {open ? (
           <MemberView
             member={open}
-            running={state.phase !== 'paused' && state.phase !== 'interrupted'}
+            running={!parked}
             leadTurn={LEAD_TURN_PHASES.has(state.phase)}
             // Only one ask in the whole run may own Enter and Escape, and it is
             // the one being looked at: a shortcut that answers a question
@@ -575,6 +630,15 @@ function TeamStage({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number
         ) : (
           <div className="devteam-board">
             {state.error && <p className="devteam-error" role="alert">{state.error}</p>}
+            {/* A parked board with people on it explains itself too. Only the
+                EMPTY board used to say anything, so a run stopped mid-build
+                showed six cards frozen at whatever they were last doing and
+                nothing at all saying why, or how to start them again. */}
+            {parked && crew.length > 0 && (
+              <p className="devteam-board-note">
+                The run is parked. Nobody is working until you press Resume in the run column.
+              </p>
+            )}
             <div className="devteam-lead-slot">
               <AgentCard
                 name={lead.name}
@@ -583,17 +647,22 @@ function TeamStage({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number
                 status="lead"
                 activity={lead.activity}
                 asks={lead.asks.count}
+                clock={leadClock}
                 onOpen={() => setOpened(LEAD_ID)}
               />
             </div>
-            <div className="devteam-crew">
-              <h2 className="devteam-section">
+            {/* A named section rather than a labelled div: the grid of cards
+                had `aria-label="Team activity"` on a plain div, which has no
+                role to hang a name on, so assistive technology dropped it.
+                The heading that is already there names the region instead. */}
+            <section className="devteam-crew" aria-labelledby="devteam-crew-heading">
+              <h2 className="devteam-section" id="devteam-crew-heading">
                 <Icon name="team" size={11} />
                 Team
                 {roll && <span className="devteam-section-count">{roll}</span>}
               </h2>
               {crew.length > 0 ? (
-                <div className="devteam-lanes" aria-label="Team activity">
+                <div className="devteam-lanes">
                   {crew.map((member) => (
                     <AgentCard
                       key={member.id}
@@ -611,7 +680,7 @@ function TeamStage({ state, elapsed }: { state: DevTeamSnapshot; elapsed: number
               ) : (
                 <TeamEmpty state={state} />
               )}
-            </div>
+            </section>
           </div>
         )}
       </div>
@@ -668,6 +737,20 @@ function RunRecord(props: RunRecordProps) {
         {/* The team has dissolved by the time this is read, so what is left to
             show is the plan with its outcomes on it, not a board of nobody. */}
         <Milestones state={state} />
+        {/* The approved specification, folded away. It is reachable from the
+            rail for as long as there is a team, and the rail goes when the team
+            does — so the one document the whole run was built to satisfy became
+            unreadable at the exact moment somebody would check the result
+            against it. Folded because the report is what you came to read. */}
+        {state.spec && (
+          <details className="devteam-run-spec">
+            <summary>
+              <span className="devteam-run-chevron" aria-hidden="true">›</span>
+              <span>Specification</span>
+            </summary>
+            <Markdown text={state.spec} live={false} />
+          </details>
+        )}
       </div>
     </details>
   );
@@ -715,10 +798,11 @@ export function DevTeamPane() {
       )}
       {/* The board and an engineer's log have no composer: neither is a thing
           you talk to. The lead's own view brings one with it. */}
-      {/* Stop lives here and nowhere else. The strip over the conversation used
-          to carry its own pair of buttons, which put the run's one destructive
-          control somewhere different from the Stop every other conversation in
-          the app has, and left the box below it showing Send while a turn ran.
+      {/* Stop is wherever the run can be spoken to. While the pane is a
+          conversation that is this box, which is where the Stop of every other
+          conversation in this app is; once there is a team the box is gone and
+          the rail's foot carries it instead. It used to sit on the strip over
+          the conversation, above a composer showing Send while a turn ran.
           The run's Stop is the RUN's, not the turn's: it parks the run, keeps
           the plan and the transcripts, and withdraws whatever the engineers
           were waiting on. */}
