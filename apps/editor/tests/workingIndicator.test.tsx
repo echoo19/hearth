@@ -201,16 +201,17 @@ describe('reasoningLabel — how long it thought', () => {
 
   it('counts in whole units all the way up, so a long turn stays readable', () => {
     // No tenths anywhere: a figure that changes ten times a second is movement
-    // carrying no information. Seconds pad only once a larger unit is present,
-    // so a ticking line cannot jitter.
+    // carrying no information. Every unit but the leading one pads, so a
+    // ticking line cannot jitter — not the seconds at 9s, and not the minutes
+    // at 1h 9m either.
     expect(formatDuration(840)).toBe('840ms');
     expect(formatDuration(5_000)).toBe('5s');
     expect(formatDuration(59_400)).toBe('59s');
     expect(formatDuration(124_000)).toBe('2m 04s');
-    expect(formatDuration(11_110_000)).toBe('3h 5m 10s');
+    expect(formatDuration(11_110_000)).toBe('3h 05m 10s');
     expect(formatElapsed(2_900)).toBeNull();
     expect(formatElapsed(9_900)).toBe('9s');
-    expect(formatElapsed(3_600_000)).toBe('1h 0m 00s');
+    expect(formatElapsed(3_600_000)).toBe('1h 00m 00s');
   });
 });
 

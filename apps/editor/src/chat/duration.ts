@@ -15,21 +15,23 @@
 export const DURATION_FLOOR_MS = 100;
 
 /**
- * `5s` / `2m 04s` / `3h 5m 10s`. Seconds are padded once a larger unit is
- * present so the line cannot jitter as it ticks; the leading unit never is,
- * because nothing sits to its left to line up with.
+ * `5s` / `2m 04s` / `3h 05m 10s`. Every unit but the leading one is padded, so
+ * the line cannot jitter as it ticks; the leading unit never is, because
+ * nothing sits to its left to line up with. Minutes count too — an unpadded
+ * `1h 9m 10s` moves the seconds a character to the right at `1h 10m 10s`,
+ * which is the twitch the padding exists to stop.
  */
 function spanOf(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   const padded = String(seconds).padStart(2, '0');
-  if (hours > 0) return `${hours}h ${minutes}m ${padded}s`;
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m ${padded}s`;
   if (minutes > 0) return `${minutes}m ${padded}s`;
   return `${seconds}s`;
 }
 
-/** `840ms` / `5s` / `2m 04s` / `3h 5m 10s` — sub-second spans keep their unit. */
+/** `840ms` / `5s` / `2m 04s` / `3h 05m 10s` — sub-second spans keep their unit. */
 export function formatDuration(ms: number | undefined): string | null {
   if (ms === undefined || ms < DURATION_FLOOR_MS) return null;
   // Under a second there is no whole second to report, and `0s` would read as

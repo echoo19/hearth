@@ -51,6 +51,16 @@ describe('the elapsed counter', () => {
     expect(numbers).toEqual(numbers.map((_, index) => numbers[0] + index));
   });
 
+  it('holds its width as the minutes roll over inside an hour', () => {
+    // The padding is there so a watched line cannot twitch. It stopped at the
+    // hour: `1h 9m 00s` became `1h 10m 00s` and every character to the right
+    // of the minutes moved one place along.
+    expect(formatElapsed(3_600_000 + 9 * 60_000)).toBe('1h 09m 00s');
+    expect(formatElapsed(3_600_000 + 10 * 60_000)).toBe('1h 10m 00s');
+    const widths = [9, 10, 59].map((m) => (formatElapsed(3_600_000 + m * 60_000) ?? '').length);
+    expect(new Set(widths).size).toBe(1);
+  });
+
   it('lets a frozen tab tell the truth when it comes back', () => {
     // The one jump that is honest: the time really did pass. A counter that
     // resumed from where it left off would be a stopwatch that lies.
