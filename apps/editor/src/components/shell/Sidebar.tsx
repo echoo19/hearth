@@ -312,7 +312,15 @@ function ChatRow({
   const kind = conversationKind(entry);
 
   useEffect(() => {
-    if (renaming) inputRef.current?.select();
+    if (!renaming) return;
+    const box = inputRef.current;
+    if (!box) return;
+    // Focused explicitly, not as a side effect of select(): the menu that
+    // starts the rename synchronously puts focus back on its trigger as it
+    // closes, and that happens before this input exists. Without the focus()
+    // the field is selected on screen while the keystrokes go to the button.
+    box.focus();
+    box.select();
   }, [renaming]);
 
   function commit(): void {

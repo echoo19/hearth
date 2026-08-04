@@ -293,6 +293,22 @@ describe('Recents, across folders', () => {
     expect(deleteChat).toHaveBeenCalledWith('theirs', ELSEWHERE);
   });
 
+  it('puts the caret in the rename field, not just the selection', async () => {
+    // The menu hands focus back to its trigger as it closes, and that happens
+    // before this input exists. select() alone paints a highlighted field that
+    // is not focused: it looks ready to type into and the keystrokes go to the
+    // button behind it.
+    reset({ projectPath: HERE, projectName: 'game', recentChats: [chat('mine', 'Mine', HERE)] });
+    render(<Sidebar />);
+
+    await screen.findByText('Mine');
+    fireEvent.click(screen.getByRole('button', { name: /Conversation options for Mine/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+
+    const box = await screen.findByRole('textbox', { name: 'Conversation name' });
+    expect(document.activeElement).toBe(box);
+  });
+
   /**
    * Titles here are sentences and the rail is 260px wide, so nearly all of
    * them ellipsize. Measured in a real browser, the longest row showed 147 of
