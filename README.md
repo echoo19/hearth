@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fechoo19%2Fhearth.svg)](https://mcptoplist.com/server/glama%2Fechoo19%2Fhearth)
+
 <div align="center">
 
 <picture>
