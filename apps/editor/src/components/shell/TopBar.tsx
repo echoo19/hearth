@@ -14,9 +14,11 @@
  * Deliberately thin — the conversation and the game are the app, and every
  * pixel this takes is one they don't get.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { anyChatProviderReady, globalPlace, useApp } from '../../store';
 import { hearthNative } from '../../native';
+import { apiCatalogProject } from '../../api';
+import { showToast } from '../../toast';
 import { IconButton } from '../ui/Button';
 import { Switch } from '../ui/Switch';
 import { Tooltip } from '../ui/Tooltip';
@@ -102,6 +104,88 @@ export function useSlowConnection(
   return slow;
 }
 
+/**
+ * Folders that have already been offered the catalog while this app has been
+ * running. Module-level rather than component state, because the strip
+ * remounts whenever the app changes place and a nudge that came back after
+ * every visit to Skills would be nagging rather than offering.
+ *
+ * Only a folder that actually got the toast goes in here. A project that had
+ * no runnable game at the end of the first turn is asked again at the end of
+ * the next one, which is the whole point: the game usually appears partway
+ * through the session, not before it.
+ */
+const nudgedProjects = new Set<string>();
+
+/** Test seam: forget who has been offered, between cases. */
+export function resetPublishNudge(): void {
+  nudgedProjects.clear();
+}
+
+/**
+ * The catalog, offered once, at the moment it is worth offering.
+ *
+ * A person who has just watched their game come to life is the only person who
+ * has any reason to think about publishing it, and the ten minutes after that
+ * are the only ten minutes they will. So this waits for the work to stop, asks
+ * the server the one question that decides whether the offer makes sense (is
+ * there a game in there, and has it been sent before), and then says one
+ * sentence with one button on it.
+ *
+ * Every part of it is allowed to come to nothing. A folder with no entry page
+ * is not asked, a folder already on the catalog is not asked (that is an
+ * update, and updates are something a person goes looking for), a failed
+ * request is swallowed whole — a nudge that surfaced an error would be the app
+ * interrupting someone to report a problem with a suggestion they never made.
+ */
+function usePublishNudge(
+  projectPath: string | null,
+  publishOpen: boolean,
+  openPublish: () => void,
+): void {
+  const chatBusy = useApp((s) => s.chatBusy);
+  // Dev team runs never touch chatBusy (see store.ts, where 'devteam' is
+  // excluded), so their end of turn is a phase, not a flag.
+  const devTeamPhase = useApp((s) => s.devTeam?.phase ?? null);
+
+  const previous = useRef({ chatBusy, devTeamPhase });
+  // One request in flight at a time. Two edges landing together would
+  // otherwise ask twice and, if both came back before either toast, offer
+  // twice.
+  const asking = useRef(false);
+
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = { chatBusy, devTeamPhase };
+
+    const finished =
+      (before.chatBusy && !chatBusy) || (before.devTeamPhase !== 'done' && devTeamPhase === 'done');
+    if (!finished) return;
+    if (projectPath === null || publishOpen || asking.current) return;
+    if (nudgedProjects.has(projectPath)) return;
+
+    const project = projectPath;
+    asking.current = true;
+    void apiCatalogProject(project)
+      .then((info) => {
+        // No game to send, or it is already up there. Neither is news.
+        if (info === null || info.entry === null || info.published !== null) return;
+        if (nudgedProjects.has(project)) return;
+        nudgedProjects.add(project);
+        showToast('Your game runs. Put it online?', 'info', {
+          label: 'Publish',
+          run: openPublish,
+        });
+      })
+      .catch(() => {
+        // Deliberately nothing. Nobody asked for this.
+      })
+      .finally(() => {
+        asking.current = false;
+      });
+  }, [chatBusy, devTeamPhase, projectPath, publishOpen, openPublish]);
+}
+
 export function TopBar({ narrow, paneOpen = false }: { narrow: boolean; paneOpen?: boolean }) {
   const projectPath = useApp((s) => s.projectPath);
   const hasFolder = projectPath !== null;
@@ -125,6 +209,11 @@ export function TopBar({ narrow, paneOpen = false }: { narrow: boolean; paneOpen
   // apart from. `.topbar > *` already opts every child out of the drag region,
   // so the dialog is clickable where it sits.
   const [publishOpen, setPublishOpen] = useState(false);
+  const openPublish = React.useCallback(() => setPublishOpen(true), []);
+  // Above the early returns, like every other hook here: the strip collapses
+  // on Skills and Tester, and a turn that ends while one of those is open is
+  // still a turn that ended.
+  usePublishNudge(projectPath, publishOpen, openPublish);
 
   const slow = useSlowConnection(wsStatus);
   const capability = capabilityLabel(wsStatus, driver, ready, slow);

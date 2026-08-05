@@ -129,6 +129,12 @@ export function hearthFactsPrompt(options: AgentFactsOptions): string {
     );
   }
   parts.push(
+    'Hearth can put this project on the Hearth Catalog (catalog.hearthengine.com): free hosting for the ' +
+      'folder as it stands, and an address the person can send to anyone. It is the Publish action in the ' +
+      'top bar, and it sends the same files the game pane serves. A session that ends with a game that ' +
+      'runs is a session where that step is worth mentioning.',
+  );
+  parts.push(
     '.hearth/context/ holds reference files the person added for you. Read them before making big ' +
       'decisions. The rest of .hearth/ (chats/, evidence/, tester/) is the app’s own record of this ' +
       'project; read it freely, but do not edit it.',

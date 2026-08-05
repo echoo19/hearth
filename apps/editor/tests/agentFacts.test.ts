@@ -34,6 +34,15 @@ describe('hearthFactsPrompt without the probe', () => {
     expect(text).toContain('.hearth/context/');
   });
 
+  // An agent that does not know the catalog exists cannot offer it, and the
+  // end of a session that produced a working game is the one moment the offer
+  // is worth anything.
+  it('says the catalog exists, where it is, and how a person reaches it', () => {
+    expect(text).toContain('catalog.hearthengine.com');
+    expect(text).toContain('Publish action');
+    expect(text).toContain('top bar');
+  });
+
   // Playtesting is passive now. An agent that tells the person to press a
   // button they cannot find is worse than one that never mentions playtesting.
   it('never sends the person to a playtest control', () => {
