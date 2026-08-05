@@ -64,8 +64,16 @@ import {
 import { ConfirmDialog } from '../ui';
 import { Button } from '../ui/Button';
 
-/** Where a person makes one of these. The only route to a token from in here. */
-export const CATALOG_TOKENS_URL = 'https://catalog.hearthengine.com/dashboard/tokens';
+/**
+ * Where a person makes one of these. The only route to a token from in here.
+ *
+ * The catalog moved this page from `/dashboard/tokens` to `/settings/tokens`
+ * and still answers the old address with a 308, so the stale link worked. It
+ * is written out in full anyway: a link the app sends someone to should be the
+ * address they end up at, or the day the redirect is retired this is the thing
+ * that breaks, quietly, in an installed build nobody can patch.
+ */
+export const CATALOG_TOKENS_URL = 'https://catalog.hearthengine.com/settings/tokens';
 
 /** What every catalog token starts with. */
 export const TOKEN_PREFIX = 'hpub_';

@@ -99,7 +99,7 @@ There are three ways in, and the last one is the one to hand your agent:
 - The uploader at
   [catalog.hearthengine.com/dashboard/new](https://catalog.hearthengine.com/dashboard/new)
   takes a folder or a zip.
-- The HTTP API under `/api/v1`, with a token from `/dashboard/tokens`.
+- The HTTP API under `/api/v1`, with a token from `/settings/tokens`.
 - A dependency-free script. From your project folder:
 
 ```bash

@@ -489,7 +489,7 @@ async function callCatalog(
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
       throw new CatalogError(
-        `The Hearth Catalog rejected this token. Create a new one at ${api}/dashboard/tokens and connect again.`,
+        `The Hearth Catalog rejected this token. Create a new one at ${api}/settings/tokens and connect again.`,
         401,
       );
     }
