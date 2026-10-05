@@ -105,6 +105,11 @@ export const DEFAULT_ACTION_KEYS: Readonly<Record<string, string>> = Object.free
 
 export const DEFAULT_VIEWPORT = Object.freeze({ width: 960, height: 540 });
 export const DEFAULT_STEP_MS = 100;
+/**
+ * The longest a step waits for the game to draw a frame. Past this the page is
+ * hidden, frozen or not animating at all, and the step returns anyway.
+ */
+export const FRAME_WAIT_LIMIT_MS = 500;
 
 /** How long shim detection waits for `window.__hearthProbe` to appear. */
 const SHIM_DETECT_TIMEOUT_MS = 1000;
@@ -614,6 +619,23 @@ export async function openWebGame(opts: OpenWebGameOptions = {}): Promise<WebGam
       const target = requirePage();
       frame += 1;
       await target.waitForTimeout(stepMs);
+      // Wall time is not game time. A browser that paints slower than one frame
+      // per stepMs (a CI VM with no display, a loaded laptop) let a key pressed
+      // for one step come and go between two game frames, so the game never
+      // saw it. Waiting for the next animation frame guarantees the game ran at
+      // least once inside every step. Bounded, because a page that has stopped
+      // scheduling frames is a state to observe, not one to hang on.
+      await target
+        .evaluate(
+          (limitMs) =>
+            new Promise<void>((resolve) => {
+              const done = (): void => resolve();
+              (globalThis as unknown as { requestAnimationFrame(cb: () => void): number }).requestAnimationFrame(done);
+              setTimeout(done, limitMs);
+            }),
+          FRAME_WAIT_LIMIT_MS,
+        )
+        .catch(() => {});
 
       let sceneId: string | null = null;
       let newEvents: string[] = [];
