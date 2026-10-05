@@ -106,7 +106,6 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: oklch(0.09 0.002 85);
-  box-shadow: var(--shadow-2);
   /* Only when the shape actually changes — a measured canvas replacing the
      16:9 assumption — and only the box, never its contents. */
   transition: width var(--t-slow) var(--ease-out), aspect-ratio var(--t-slow) var(--ease-out);
@@ -173,8 +172,8 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 9px 3px 7px;
-  border-radius: 999px;
+  padding: 4px 9px 4px 8px;
+  border-radius: var(--radius-sm);
   background: var(--overlay-bg);
   color: var(--ink-mute);
   font-size: var(--text-2xs);
@@ -221,17 +220,16 @@
   width: min(58%, 380px);
   aspect-ratio: 16 / 10;
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
   background: var(--bg-0);
-  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.03);
   margin-bottom: 14px;
 }
 
 .game-empty-lead {
   margin: 0;
   font-family: var(--font-display);
-  font-weight: var(--fw-strong);
-  letter-spacing: -0.01em;
+  font-weight: var(--fw-display);
+  letter-spacing: var(--track-tight);
   font-size: var(--text-xl);
   color: var(--ink-mute);
 }
@@ -355,92 +353,6 @@
   cursor: default;
 }
 
-/* --- Playtest ------------------------------------------------------------- */
-
-/* The pane's primary action, and one of only two ember-filled controls in the
-   app. It is filled and Play beside it is not, because handing the game to
-   something that is not you is the larger of the two decisions. */
-/* Sized a step above the controls around it, because it is not one of them:
-   everything else in this strip adjusts the view, and this hands the game to
-   something that plays it. It was reading as a chip in a row of chips.
-
-   The lift is a resting shadow and a hairline of its own colour, not a glow
-   and not motion: a button that animated at rest would be competing with the
-   game it sits under for as long as the folder is open. */
-.playtest-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-  height: 32px;
-  padding: 0 16px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-ink);
-  font-family: inherit;
-  font-size: var(--text-sm);
-  font-weight: var(--fw-strong);
-  letter-spacing: 0.01em;
-  box-shadow: var(--shadow-1), 0 0 0 1px var(--accent-soft);
-  cursor: pointer;
-  transition: background var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out),
-    opacity var(--t-fast) var(--ease-out);
-}
-
-.playtest-btn:hover {
-  background: var(--accent-hover);
-  box-shadow: var(--shadow-1), 0 0 0 3px var(--accent-soft);
-}
-
-.playtest-btn:active {
-  background: var(--accent-down);
-}
-
-/* Running is not "unavailable": it keeps its colour and reports progress,
-   because the thing it started is the thing you asked for. */
-.playtest-btn.is-running {
-  cursor: default;
-}
-
-.playtest-btn[aria-disabled='true']:not(.is-running) {
-  background: var(--bg-3);
-  color: var(--ink-faint);
-  /* Nothing to lift off the strip when there is nothing to press. */
-  box-shadow: none;
-  cursor: default;
-}
-
-.playtest-spinner {
-  width: 11px;
-  height: 11px;
-  flex: none;
-  border-radius: 50%;
-  border: 1.5px solid currentColor;
-  border-top-color: transparent;
-  /* The one looping animation in the app: a determinate-length wait with no
-     other way to say "still going". Linear, because a spinner that eases is
-     pretending to be somewhere it isn't. */
-  animation: playtest-spin 700ms linear infinite;
-}
-
-@keyframes playtest-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* Reduced motion: the spinner stops rather than spinning imperceptibly (the
-   global 0.01ms clamp would leave it frozen mid-frame anyway). The label
-   still counts runs, so progress is never conveyed by motion alone. */
-@media (prefers-reduced-motion: reduce) {
-  .playtest-spinner {
-    animation: none;
-    border-top-color: currentColor;
-    opacity: 0.55;
-  }
-}
-
 /* --- Tabs ----------------------------------------------------------------- */
 
 .pane-tabs {
@@ -449,8 +361,8 @@
   gap: 4px;
   height: 44px;
   padding: 0 12px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-1);
+  border-top: 1px solid var(--guide);
+  background: var(--bg-0);
   flex: none;
 }
 
@@ -492,14 +404,12 @@
   background: var(--accent);
 }
 
+/* An unread error count: a number in the error colour, not a chip. */
 .pane-tab-badge {
-  min-width: 18px;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: var(--err-soft);
   color: var(--err);
+  font-family: var(--font-mono);
   font-size: var(--text-2xs);
-  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 /* A session is still playing on a tab nobody is looking at. Quieter than the

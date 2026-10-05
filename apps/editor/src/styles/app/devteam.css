@@ -248,17 +248,17 @@
 }
 
 /* The name of a region. Quiet on purpose: it labels the thing under it and
-   must never compete with it, so it drops a weight from the status words. */
+   must never compete with it. The UI face in sentence case, not the caption
+   register, which belongs to the app rail's group headings alone. */
 .devteam-section {
-  font-family: var(--font-caption);
   font-size: var(--text-xs);
   font-weight: var(--fw-medium);
-  letter-spacing: 0.01em;
+  letter-spacing: var(--track-snug);
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
 }
 
 .devteam-section-count {
@@ -268,7 +268,6 @@
   font-size: var(--text-2xs);
   font-weight: var(--fw-regular);
   letter-spacing: var(--track-normal);
-  text-transform: none;
   font-variant-numeric: tabular-nums;
 }
 
@@ -339,34 +338,29 @@
   background: var(--bg-2);
 }
 
-/* The ring is the state. A failed engineer used to measure byte-identical to a
-   working one, so the board could not be read without reading every word. */
-.devteam-card[data-status='running'] { border-color: var(--accent-soft); }
-.devteam-card[data-status='waiting'] { border-color: var(--warn); }
+/* Every card wears the same hairline. State is carried by the glyph and the
+   status word in the card's foot, both in their token colour; a board of
+   coloured rings read as a dashboard of alerts rather than as a team. The one
+   exception is a card that needs a person: waiting and failed cards lift
+   their edge one step, so they are findable without reading. */
+.devteam-card[data-status='waiting'],
 .devteam-card[data-status='error'],
-.devteam-card[data-status='interrupted'] { border-color: var(--err); }
-/* Finished agents stay on the board, so their ring is the quiet one: on a
-   sixteen-task run most of the board ends up green, and green at full strength
-   would drown the two or three cards still doing something. */
-.devteam-card[data-status='done'] { border-color: var(--ok-soft); }
+.devteam-card[data-status='interrupted'] { border-color: var(--border-strong); }
 
 .devteam-card[data-status='pending']:hover,
 .devteam-card[data-status='lead']:hover {
   border-color: var(--border-strong);
 }
 
-/* A tile rather than a dot: it has to hold a glyph or a spinner, and a bounded
-   tile is what lines a grid of them up. */
+/* The glyph slot. Unboxed: a glyph in its token colour is enough to read the
+   state, and a tinted tile behind it made every card a badge. */
 .devteam-card-mark {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 20px;
+  height: 20px;
   flex: none;
-  margin-bottom: 7px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-2);
+  margin-bottom: 8px;
   color: var(--ink-faint);
 }
 
@@ -375,27 +369,19 @@
 }
 
 .devteam-card[data-status='running'] .devteam-card-mark {
-  border-color: var(--accent-soft);
-  background: var(--accent-soft);
   color: var(--accent);
 }
 
 .devteam-card[data-status='waiting'] .devteam-card-mark {
-  border-color: var(--warn);
-  background: var(--warn-soft);
   color: var(--warn);
 }
 
 .devteam-card[data-status='error'] .devteam-card-mark,
 .devteam-card[data-status='interrupted'] .devteam-card-mark {
-  border-color: var(--err);
-  background: var(--err-soft);
   color: var(--err);
 }
 
 .devteam-card[data-status='done'] .devteam-card-mark {
-  border-color: var(--ok-soft);
-  background: var(--ok-soft);
   color: var(--ok);
 }
 
@@ -416,7 +402,7 @@
 
 .devteam-card-name {
   color: var(--ink);
-  font-size: var(--text-md);
+  font-size: var(--text-sm);
   font-weight: var(--fw-strong);
   letter-spacing: var(--track-snug);
   text-overflow: ellipsis;
@@ -454,8 +440,8 @@
   padding-top: 8px;
 }
 
-/* How far along, as a status word rather than a caption. Tracked caps read as
-   a state at a glance, and the colour lets the grid be read without names. */
+/* How far along, as a status word in its token colour, so the grid can be
+   read without names. */
 .devteam-card-status {
   min-width: 0;
   overflow: hidden;
@@ -482,20 +468,27 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* How many questions this member is waiting on: a number in the warn colour
+   beside a solid dot, not a chip. */
 .devteam-ask-badge {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 14px;
+  right: 14px;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-width: var(--ctl-h-xs);
-  height: var(--ctl-h-xs);
-  border-radius: var(--radius-sm);
-  background: var(--warn-soft);
+  gap: 5px;
   color: var(--warn);
+  font-family: var(--font-mono);
   font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
+}
+
+.devteam-ask-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
 /* A wait of unknown length with no other way to say "still going" used to be a
@@ -513,9 +506,9 @@
 
 .devteam-board-note {
   margin: 0;
-  padding: 16px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius);
+  padding: 14px 0;
+  border-top: 1px solid var(--guide);
+  border-bottom: 1px solid var(--guide);
   color: var(--ink-mute);
   font-size: var(--text-sm);
 }
@@ -528,7 +521,7 @@
   gap: 22px;
   min-width: 0;
   padding: 20px 14px 18px;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--guide);
   /* A shade back from the work. The rail is chrome about the run; the board is
      the lit surface. */
   background: var(--bg-0);
@@ -606,7 +599,8 @@
 }
 
 .devteam-steps li[data-state='active'] {
-  background: var(--accent-faint);
+  background: var(--rail-current);
+  box-shadow: var(--rail-current-edge);
 }
 
 .devteam-steps li[data-state='active'] .devteam-step-mark {
@@ -678,7 +672,7 @@
   align-items: center;
   gap: 14px;
   padding: 12px max(var(--chat-gutter), (100% - var(--chat-measure)) / 2);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--guide);
 }
 
 .devteam-view-who {
@@ -885,10 +879,9 @@
 
 .devteam-spec {
   overflow: hidden;
-  border: 1px solid var(--border-strong);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--bg-2);
-  box-shadow: var(--shadow-1);
+  background: var(--bg-1);
 }
 
 .devteam-spec-head,
@@ -903,7 +896,7 @@
 }
 
 .devteam-spec-head {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--hairline);
 }
 
 .devteam-spec-body {
@@ -913,7 +906,7 @@
 
 .devteam-spec-actions {
   justify-content: flex-start;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--hairline);
 }
 
 /* --- Notices -------------------------------------------------------------- */
@@ -924,9 +917,9 @@
      screen as the one thing out of line with everything else. */
   margin-block: 0;
   padding: 9px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid oklch(0.7 0.17 25 / 0.3);
   border-radius: var(--radius);
-  background: var(--err-soft);
+  background: var(--err-faint);
   color: var(--ink);
   font-size: var(--text-xs);
 }
@@ -940,8 +933,8 @@
 }
 
 .devteam-run-record {
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--guide);
+  border-bottom: 1px solid var(--guide);
 }
 
 .devteam-run-record > summary {
@@ -953,7 +946,15 @@
   color: var(--ink);
   font-size: var(--text-sm);
   cursor: pointer;
-  list-style-position: inside;
+  list-style: none;
+}
+
+/* The chevron span is the disclosure mark; the browser's own triangle would
+   be a second one. */
+.devteam-run-record > summary::-webkit-details-marker,
+.devteam-run-spec > summary::-webkit-details-marker,
+.orchestration-record > summary::-webkit-details-marker {
+  display: none;
 }
 
 .devteam-run-record > summary span:last-child {
@@ -995,7 +996,7 @@
   font-size: var(--text-xs);
   font-weight: var(--fw-medium);
   cursor: pointer;
-  list-style-position: inside;
+  list-style: none;
 }
 
 .devteam-run-spec > summary:hover {
@@ -1018,8 +1019,33 @@
 }
 
 .orchestration-record > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   min-height: var(--ctl-h-xs);
+  list-style: none;
   cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.orchestration-record > summary:hover {
+  color: var(--ink-mute);
+}
+
+/* A drawn chevron in place of the browser's filled triangle, turning with the
+   fold like every other disclosure in the transcript. */
+.orchestration-record > summary::before {
+  content: '';
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.orchestration-record[open] > summary::before {
+  transform: rotate(45deg);
 }
 
 .orchestration-body {

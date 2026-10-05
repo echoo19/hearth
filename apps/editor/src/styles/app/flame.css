@@ -1,5 +1,11 @@
 /* The flame, as this app's loading mark.
  *
+ * The one thing in the app allowed to move on its own, and only because it is
+ * a progress indicator: it is rendered while a turn, a subagent or a dev team
+ * step is genuinely in flight and unmounted (or set to `ember`, which is
+ * still) the moment that work ends or waits on a person. Never use it as an
+ * idle mark, a finished state or decoration.
+ *
  * Every other app in this category signals "something is happening" with a
  * spinning ring or a blinking dot, and both of those are the same mark: a
  * shape with a period, telling you only that a clock somewhere is still

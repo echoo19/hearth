@@ -98,6 +98,9 @@ function usePhaseElapsed(state: DevTeamSnapshot | null): number | null {
 function RunStrip({ phase, elapsed }: { phase: DevTeamSnapshot['phase']; elapsed: number | null }) {
   const counter = elapsed === null ? null : formatElapsed(elapsed);
   const parked = phase === 'paused' || phase === 'interrupted';
+  // The flame moves only while the team is actually working. Parked, or
+  // waiting on the person to read the spec, it is still.
+  const still = parked || phase === 'spec-review';
 
   return (
     <div className="devteam-strip">
@@ -107,7 +110,7 @@ function RunStrip({ phase, elapsed }: { phase: DevTeamSnapshot['phase']; elapsed
           "dev team phase" every time the run moves and never says where to.
           The prefix is part of the text instead, off-screen. */}
       <span className="devteam-strip-state" data-parked={parked || undefined} role="status">
-        <FlameMark state={parked ? 'ember' : 'burn'} size={11} />
+        <FlameMark state={still ? 'ember' : 'burn'} size={11} />
         <span className="devteam-strip-label">Dev team phase: </span>
         <span>{devTeamPhaseLabel(phase)}</span>
       </span>
@@ -200,8 +203,9 @@ function AgentCard({
       <span className="devteam-card-mark" aria-hidden="true">
         {status === 'running'
           // The mark says what the word beside it says: burning while it
-          // produces, banked while it thinks or waits on you.
-          ? <FlameMark state={asks > 0 ? 'smoulder' : devTeamFlame(activity)} size={14} />
+          // produces, banked while it thinks, and still while it waits on
+          // you, because waiting is not work in progress.
+          ? <FlameMark state={asks > 0 || activity === 'Needs you' ? 'ember' : devTeamFlame(activity)} size={14} />
           : <Icon name={status === 'lead' ? 'review' : 'bot'} size={14} />}
       </span>
       <span className="devteam-card-name">{name}</span>
@@ -304,6 +308,7 @@ function RunRail({
   const stopRun = useApp((s) => s.stopDevTeam);
   const steps = devTeamStepStates(state);
   const parked = state.phase === 'paused' || state.phase === 'interrupted';
+  const still = parked || state.phase === 'spec-review';
 
   return (
     <aside className="devteam-rail" aria-label="Run status">
@@ -316,7 +321,7 @@ function RunRail({
           >
             <span className="devteam-step-mark" aria-hidden="true">
               {steps[index] === 'done' && <Icon name="check" size={11} />}
-              {steps[index] === 'active' && <FlameMark size={11} />}
+              {steps[index] === 'active' && <FlameMark state={still ? 'ember' : 'burn'} size={11} />}
               {steps[index] === 'waiting' && index + 1}
             </span>
             <span className="devteam-step-name">{step}</span>

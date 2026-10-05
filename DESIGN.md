@@ -5,53 +5,78 @@ describes it; the CSS defines it).
 
 ## Theme
 
-Dark by intent. Game editors are lived-in tools; the scene canvas is the
-brightest thing on screen, and colored game content must pop against calm,
-**neutral charcoal** surfaces. Ember is reserved for the accent — it carries
-commands and selection, not the panels themselves. (Earlier drafts of this
-doc described the surfaces as "ember-tinted"; the tokens below are what
-`styles.css` actually ships, current as of the 2026-07-10 palette pass.)
+Dark by intent, in Lectern's design language (the sibling product at
+`~/projects/lectern`; its canon lives in `lectern-archive/design/`). True
+dark: a near-black rail, warm surfaces raised a few steps off it, a cool grey
+text ramp, hairlines rather than boxes. The user's game is the brightest, most
+colourful thing on screen; the chrome recedes. Ember is Hearth's one
+per-brand variable, exactly as the accent is in Lectern's canon.
 
 ## Color (OKLCH throughout)
 
-- Surfaces: `--bg-0` L0.115 (window chrome, deepest) → `--bg-1` L0.15
-  (panels) → `--bg-2` L0.19 (inputs/cards/tabs) → `--bg-3` L0.245 (hover);
-  all **neutral hue 285, chroma 0.006–0.012** — not fire-tinted.
-- Borders: `--border` L0.32, `--border-strong` L0.42, `--guide` L0.27 (same
-  neutral hue 285 family).
-- Ink: `--ink` L0.95, `--ink-mute` L0.74, `--ink-faint` L0.58 (warm, hue 85).
-- Accent (ember, actions + selection ONLY — the one place ember hue
-  appears): `--accent` `oklch(0.684 0.192 42)`, with `--accent-hover`
-  (warms toward hue 55 on hover — deliberate), `--accent-down`, `--accent-ink`,
-  `--accent-soft` (0.14 alpha), `--accent-faint` (0.055 alpha).
-- Status: `--ok` (green 150), `--warn` (yellow 85), `--err` (red 25),
-  `--info` (blue 230), each with -soft/-faint alphas where defined.
-- Canvas: `--canvas-bg` L0.095, grid lines L0.22/L0.34 (neutral hue 285).
-- Overlays: `--overlay-bg` (translucent neutral scrim over the canvas — scene
-  HUD, tilemap palette, game-preview badges) and `--scrim` (heavier, for
-  modal backdrops) — both hue 285, never ember. `--flame-brand` (`#f76b15`)
-  is the one deliberate exception: the wordmark flame is a brand mark, not a
-  UI action color, and is allowed to run hotter than `--accent`.
+- Surfaces, warm hue 85, chroma under 0.006: `--bg-0` L0.13 (rail, window
+  chrome) → `--bg-05` L0.155 (main content) → `--bg-1` L0.183 (raised:
+  panels, popovers, dialogs) → `--bg-2` L0.212 (inputs, composer, user
+  bubbles) → `--bg-3` L0.251 (hover).
+- Lines sit lighter than the surfaces they divide: `--hairline` L0.21,
+  `--guide` L0.24, `--border` L0.29, `--border-strong` L0.40.
+- Ink, cool hue 286: `--ink` L0.97, `--ink-mute` L0.776, `--ink-faint`
+  L0.692, and `--ink-ghost` L0.519, which is for non-text only.
+- The current row in any list is `--rail-current` (a raised surface) plus
+  `--rail-current-edge` (an inset hairline). It is never an accent tint; the
+  accent is spent on the row's glyph alone.
+- Accent (ember: primary actions, current selection, live state ONLY):
+  `--accent` `oklch(0.684 0.192 42)`, with `--accent-hover`, `--accent-down`,
+  `--accent-ink`, `--accent-soft`, and `--accent-faint`.
+- Status: `--ok`, `--warn`, `--err`, `--info`, each with soft alphas.
+- Game pane: `--canvas-bg` L0.11. `--overlay-bg` is near-opaque, never
+  blurred. `--scrim` is black at 0.62. `--flame-brand` (`#f76b15`) is the
+  wordmark flame, a brand mark rather than a UI colour.
 
 ## Typography
 
-- UI chrome: Archivo Variable (`--font-ui`), body 13px / 1.45.
-- Values, scripts, console, ids: IBM Plex Mono (`--font-mono`), 12px.
-- Headings 600 weight, `text-wrap: balance`. No additional families.
+Lectern's three registers, one job each:
+
+- **Plus Jakarta Sans** (`--font-ui`) carries every voice that carries
+  meaning: chrome, the conversation, buttons, headings. The display voice
+  (`--font-display`) is the same face at 600 with `--track-tight`, used only
+  on the brand moments listed in `tests/styleGates.test.ts`.
+- **Space Grotesk** (`--font-caption`) is the caption register, in NORMAL
+  caps (`.eyebrow`): the rail's group headings, settings nav titles and menu
+  group headers. It is never a kicker above sections.
+- **JetBrains Mono** (`--font-mono`) is for values only: paths, ids, code,
+  console, and numerals that tick.
+
+No uppercase tracked micro-labels. Chrome is 13px; the conversation reads at
+15px.
+
+## The bar (from Lectern's canon)
+
+- No eyebrows above sections, no decorative pills or badges, no gradients,
+  no glows, no glass. State is plain text, a solid token dot, or nothing.
+- Nothing loops on its own. The one exception is the flame, while an agent
+  turn is actually in flight; it is a progress indicator and goes still the
+  moment work ends.
+- A provider's own mark (Claude, OpenAI) beats a text chip for "who
+  answers". See `components/settings/providerLogos.tsx`.
+- Uncluttered but functional: a control that is always there earns a border
+  only when it is the primary act. Pickers in the composer are borderless
+  until hovered.
 
 ## Metrics & Motion
 
-- Control heights: three tiers and no more. `--ctl-h` 36px is the default
-  control and the icon-button square; `--ctl-h-sm` 30px is the compact
+- Control heights: three tiers and no more. `--ctl-h` 34px is the default
+  control and the icon-button square; `--ctl-h-sm` 28px is the compact
   variant for dense secondary rows; `--ctl-h-xs` 24px is the quiet square
   that sits inside a list row, such as the overflow dots on a conversation.
   24px is a floor, not a suggestion: it is the smallest target WCAG 2.2
   accepts, and under it a control becomes something you aim at twice.
   Hardcoding a pixel height rather than naming a tier is drift, and it is how
   the same control ended up three different sizes on three surfaces.
-- Radii: `--radius-sm` 8px (compact controls, icon buttons), `--radius` 10px
-  (controls), `--radius-lg` 14px (larger surfaces: modals, cards),
-  `--radius-xl` 18px. Round buttons (Send) are `50%` by design and exempt.
+- Radii, Lectern's scale: `--radius-xs` 4px, `--radius-sm` 6px (compact
+  controls), `--radius` 8px (controls), `--radius-lg` 12px (menus, modals,
+  cards), and `--radius-xl` 16px (the composer alone). Round buttons (Send)
+  are `50%` by design and exempt.
 - Colour is checked, not eyeballed. `--ink-faint` is the quietest text the
   app has, and it has to clear 4.5:1 on every surface it lands on, including
   hover and a selected row, which is where it failed. `tests/inkContrast.ts`

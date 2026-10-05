@@ -45,12 +45,12 @@ always the brightest, most colorful thing on screen; the chrome recedes.
 1. **Uniform typed controls, never raw JSON** (Jake's bar). Every settings
    field renders as a purpose-built control. If a value can't be edited with a
    typed control, that's a missing control, not a JSON textarea.
-2. **Three control heights and no more** (`--ctl-h` 36, `--ctl-h-sm` 30,
+2. **Three control heights and no more** (`--ctl-h` 34, `--ctl-h-sm` 28,
    `--ctl-h-xs` 24), one radius scale, one accent (ember) reserved for actions
    and selection. Status colors are semantic only (ok/warn/err/info). A
    hardcoded pixel height is drift; see DESIGN.md.
-3. **The user's game is the hero.** App chrome uses calm ember-tinted
-   neutrals; the game gets the color.
+3. **The user's game is the hero.** App chrome uses calm warm-dark
+   neutrals (Lectern's true dark); the game gets the color.
 4. **Never claim more than is known.** The rule the tester is built on, and it
    binds the whole app: never render "there is nothing" when the truth is "we
    have not looked yet", never show a dead end with nothing to press, and never
@@ -66,5 +66,6 @@ always the brightest, most colorful thing on screen; the chrome recedes.
 ## Brand assets
 
 `assets/brand/` — "Kept Flame" mark (hearth-mark*.svg). Use it; never invent
-new flame art. Fonts: Archivo (UI) + IBM Plex Mono (values/code), shared
-with the website so engine and site read as one product.
+new flame art. Fonts follow Lectern's registers: Plus Jakarta Sans (every
+voice), Space Grotesk (captions, normal caps) and JetBrains Mono (values).
+They are shared with the website, so app and site read as one product.
