@@ -280,8 +280,11 @@ describe('the stored token', () => {
     expect(body(saved).username).toBe('jake');
     expect(calls[0]).toMatchObject({ method: 'GET', url: `${API}/api/v1/me`, auth: `Bearer ${TOKEN}` });
 
-    const stat = await fsp.stat(catalogAccountPath());
-    expect(stat.mode & 0o777).toBe(0o600);
+    // Windows has no POSIX permission bits: every file stats as 0666 there.
+    if (process.platform !== 'win32') {
+      const stat = await fsp.stat(catalogAccountPath());
+      expect(stat.mode & 0o777).toBe(0o600);
+    }
     expect(await fsp.readFile(catalogAccountPath(), 'utf8')).toContain(TOKEN);
 
     const account = await getAccount();
@@ -563,7 +566,9 @@ describe('publish', () => {
     expect(await exists(projectRefPath(folder))).toBe(false);
   });
 
-  it('refuses a file the catalog could not name', async () => {
+  // Windows cannot create a file with a double quote in its name, so there is
+  // nothing there for the publish to refuse.
+  it.skipIf(process.platform === 'win32')('refuses a file the catalog could not name', async () => {
     await connect();
     await makeGame();
     await write('a"quote".js', 'nope');
