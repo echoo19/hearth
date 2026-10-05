@@ -68,6 +68,9 @@ export interface MenuItemAction {
 export interface MenuItemHeader {
   header: string;
   note?: string;
+  /** A mark drawn before the name, such as a provider's logo. Decorative: the
+   *  name already says it, so it is hidden from assistive tech by the caller. */
+  icon?: React.ReactNode;
 }
 
 export type MenuItem = MenuItemAction | { separator: true } | MenuItemHeader;
@@ -226,6 +229,7 @@ export function MenuItems({
         if (isHeader(item)) {
           return (
             <div key={`head-${i}`} className="menu-header" role="presentation">
+              {item.icon && <span className="menu-header-icon">{item.icon}</span>}
               <span className="menu-header-name">{item.header}</span>
               {item.note && <span className="menu-header-note">{item.note}</span>}
             </div>

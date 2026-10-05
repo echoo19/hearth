@@ -27,10 +27,10 @@
   z-index: var(--z-dropdown);
   min-width: 200px;
   max-height: var(--menu-max-h, none);
-  padding: 4px;
+  padding: 5px;
   background: var(--bg-1);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-2);
   display: flex;
   flex-direction: column;
@@ -96,8 +96,8 @@
   margin-left: 6px;
   z-index: 1;
   padding: 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   background: var(--bg-1);
   box-shadow: var(--shadow-2);
   /* No `both`. A fill-mode reveal holds the `from` frame whenever animations
@@ -169,10 +169,16 @@
   font-weight: var(--fw-medium);
   letter-spacing: 0.01em;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   padding: 8px 10px 4px;
   color: var(--ink-mute);
+}
+
+.menu-header-icon {
+  display: inline-flex;
+  flex: none;
+  margin-right: -4px;
 }
 
 .menu-header-name {
@@ -185,9 +191,9 @@
 
 .menu-header-note {
   flex: none;
+  font-family: var(--font-ui);
   letter-spacing: 0;
-  text-transform: none;
-  color: var(--ink-mute);
+  color: var(--ink-faint);
 }
 
 .menu-separator {

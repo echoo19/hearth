@@ -149,6 +149,7 @@ const BRAND_MOMENT_SELECTORS = new Set<string>([
   '.modal-title', // modal / dialog titles
   '.empty-state > span:not(.empty-icon):not(.hint)', // panel empty-state headings
   '.chat-empty-lead', // conversation empty state — the app's first sentence
+  '.home-greeting', // the greeting over Home's composer, the app's front door
   '.game-empty-lead', // game pane empty state heading
   '.tester-empty-lead', // tester pane empty state heading, the same moment as above
 ]);

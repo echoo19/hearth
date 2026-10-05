@@ -25,12 +25,15 @@
 .home-greeting {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 0;
-  font-size: var(--text-2xl);
-  font-weight: var(--fw-label);
-  letter-spacing: -0.015em;
-  line-height: 1.25;
+  justify-content: center;
+  gap: 14px;
+  margin: 0 0 6px;
+  /* Lectern's display voice: the UI face at 600, pulled in as it grows. */
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: var(--fw-display);
+  letter-spacing: var(--track-tight);
+  line-height: 1.1;
   color: var(--ink);
   text-wrap: balance;
 }
@@ -48,15 +51,16 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  justify-content: center;
   margin: 0;
   padding: 0 4px;
-  font-size: var(--text-sm);
-  color: var(--ink-mute);
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
 }
 
 .home-note .mono {
-  font-size: var(--text-sm);
-  color: var(--ink);
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
 }
 
 .home-note-sep {

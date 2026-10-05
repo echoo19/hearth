@@ -71,6 +71,7 @@ import { useApp } from '../../store';
 import type { AgentChoice, ChatProvider, ChatProviderStatus, ProviderModelInfo } from '../../types';
 import { Icon } from '../ui';
 import { MenuButton, type MenuItem } from '../ui/Menu';
+import { ClaudeLogo, OpenAiLogo } from '../settings/providerLogos';
 
 /**
  * THERE IS NO AUTOMATIC ROW, and this constant is gone rather than hidden.
@@ -307,7 +308,11 @@ export function ModelSelector() {
 
   const items: MenuItem[] = [];
 
-  items.push({ header: group.title, note: `${backend.name} · ${group.availability.note}` });
+  items.push({
+    header: group.title,
+    note: `${backend.name} · ${group.availability.note}`,
+    icon: group.provider === 'anthropic' ? <ClaudeLogo size={13} /> : <OpenAiLogo size={13} />,
+  });
   // With no automatic row, a backend that has reported no catalogue leaves a
   // header with nothing under it. Say so: an empty group reads as a rendering
   // fault, and the reason is something the user can act on.
@@ -363,7 +368,6 @@ export function ModelSelector() {
       items={items}
       triggerClassName="model-pill"
       popoverClassName="model-menu"
-      heading={<p className="model-menu-blurb">{backend.blurb}</p>}
       trigger={
         <>
           <span className="model-pill-name">{modelChoiceLabel(choice, providers)}</span>
