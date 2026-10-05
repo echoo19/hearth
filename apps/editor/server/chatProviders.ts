@@ -26,7 +26,7 @@
 import { EventEmitter } from 'node:events';
 import { forgetClaudeAuth, readClaudeAuth, SIGNED_OUT, type ClaudeAuth } from './claudeAuth.js';
 import { forgetClaudeModels, readClaudeModels } from './claudeModels.js';
-import { readAppSettings, resolveApiKey, type ChatProvider } from './chat.js';
+import { readAppSettings, resolveApiKey, resolveClaudeExecutable, type ChatProvider } from './chat.js';
 import { CODEX_INSTALL_HINT, readCodexStatus, startCodexLogin, type CodexStatus } from './chatDrivers/codex.js';
 
 export { CODEX_INSTALL_HINT };
@@ -83,9 +83,12 @@ export interface ProviderModelInfo {
  * catalogue in claudeModels.ts is the only thing that knows.
  */
 export const ANTHROPIC_MODELS: ProviderModelInfo[] = [
-  { id: 'claude-opus-5', label: 'Opus 5', note: 'Most capable' },
-  { id: 'claude-sonnet-5', label: 'Sonnet 5', note: 'Balanced' },
-  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', note: 'Fastest' },
+  // Aliases, not snapshots. The CLI resolves each to the newest model in that
+  // family, so this list stays current when Anthropic ships one — the old
+  // pinned ids (`claude-opus-5`) kept offering Opus 5 after Opus 5.5 was out.
+  { id: 'opus', label: 'Opus', note: 'Most capable, latest' },
+  { id: 'sonnet', label: 'Sonnet', note: 'Balanced, latest' },
+  { id: 'haiku', label: 'Haiku', note: 'Fastest, latest' },
 ];
 
 /**
@@ -163,7 +166,7 @@ export type ClaudeCliProbe = () => Promise<ClaudeAuth>;
  * used it would answer differently on a machine that has claude than on one
  * that does not.
  */
-export type ClaudeModelProbe = () => Promise<ProviderModelInfo[]>;
+export type ClaudeModelProbe = (executable: string | null) => Promise<ProviderModelInfo[]>;
 
 const detectClaudeCli: ClaudeCliProbe = readClaudeAuth;
 const detectClaudeModels: ClaudeModelProbe = readClaudeModels;
@@ -183,7 +186,7 @@ async function anthropicStatus(
     // signed-in ACCOUNT, so a machine with no claude on it (or nobody signed
     // into the one it has) would pay for a spawn to be told nothing — the same
     // gate codex's `model/list` sits behind.
-    models: await claudeModels(auth, modelProbe),
+    models: await claudeModels(auth, modelProbe, projectRoot),
   };
   const stored = (await readAppSettings(projectRoot)).apiKey?.trim();
   if (stored) return { hasKey: true, source: 'project', ...account };
@@ -198,9 +201,17 @@ async function anthropicStatus(
  * only signal claudeModels.ts gives for "couldn't be had", and every way that
  * happens means the same thing here.
  */
-async function claudeModels(auth: ClaudeAuth, probe: ClaudeModelProbe): Promise<ProviderModelInfo[]> {
+async function claudeModels(
+  auth: ClaudeAuth,
+  probe: ClaudeModelProbe,
+  projectRoot: string,
+): Promise<ProviderModelInfo[]> {
   if (!auth.installed || !auth.loggedIn) return ANTHROPIC_MODELS;
-  const probed = await probe().catch(() => []);
+  // The same binary a turn would run on, so the menu offers exactly what it
+  // can send.
+  const settings = await readAppSettings(projectRoot);
+  const executable = await resolveClaudeExecutable(projectRoot, settings.claudePath).catch(() => null);
+  const probed = await probe(executable).catch(() => []);
   return probed.length > 0 ? probed : ANTHROPIC_MODELS;
 }
 

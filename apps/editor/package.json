@@ -32,12 +32,17 @@
     "afterPack": "scripts/afterPack.cjs",
     "afterAllArtifactBuild": "scripts/afterAllArtifactBuild.cjs",
     "asar": true,
+    "files": [
+      "**/*",
+      "!node_modules/@anthropic-ai/claude-agent-sdk-*/**"
+    ],
     "asarUnpack": [
       "dist-electron/hearth-cli.mjs",
       "dist-electron/hearth-mcp.mjs",
       "dist-electron/hearth-player.js",
       "node_modules/@lydell/node-pty/**",
-      "node_modules/@lydell/node-pty-*/**"
+      "node_modules/@lydell/node-pty-*/**",
+      "node_modules/@anthropic-ai/claude-agent-sdk/**"
     ],
     "npmRebuild": false,
     "artifactName": "Hearth-${os}-${arch}.${ext}",

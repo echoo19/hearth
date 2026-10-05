@@ -8,9 +8,9 @@
  *     field is additive, and an older client (or a renderer mid-update) sends
  *     nothing at all.
  *  2. **The turn's provider outranks the stored preference**, because the
- *     composer shows the user which model they picked — but only when that
- *     provider can actually answer, so a stale pick falls through instead of
- *     failing the conversation.
+ *     composer shows the user which model they picked. A provider the turn chose
+ *     never falls through to the other vendor: that is how a Claude chat once
+ *     answered with ChatGPT's usage-limit error. Only the stored default does.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { promises as fsp } from 'node:fs';
@@ -19,6 +19,7 @@ import path from 'node:path';
 import {
   AgentSdkDriver,
   EventQueue,
+  UnavailableDriver,
   createChatDriver,
   parseAgentOptions,
   writeAppSettings,
@@ -128,9 +129,32 @@ describe('createChatDriver with a turn choice', () => {
     expect(driver.kind).toBe('agent-sdk');
   });
 
-  it('falls through when the chosen provider cannot answer', async () => {
+  it('never answers a turn that chose codex with Claude', async () => {
     codexAvailable = false;
     const driver = await createChatDriver(root, { ...deps(), agent: { provider: 'openai', model: 'gpt-5.6-sol' } });
+    expect(driver).toBeInstanceOf(UnavailableDriver);
+  });
+
+  it('never answers a turn that chose Claude with codex, and says why when it sends', async () => {
+    const driver = await createChatDriver(root, {
+      ...deps(),
+      loadAgentSdk: async () => null,
+      agent: { provider: 'anthropic', model: 'opus' },
+    });
+    expect(driver).toBeInstanceOf(UnavailableDriver);
+    expect(driver.kind).toBe('stub');
+    driver.send('hello');
+    driver.stop();
+    const events: unknown[] = [];
+    for await (const event of driver.events) events.push(event);
+    expect(events[0]).toMatchObject({ type: 'error', message: expect.stringContaining('Claude could not be started') });
+    expect(events[1]).toEqual({ type: 'turn-complete' });
+  });
+
+  it('still falls through for a stored default nobody chose this turn', async () => {
+    await writeAppSettings(root, { provider: 'openai' });
+    codexAvailable = false;
+    const driver = await createChatDriver(root, deps());
     expect(driver.kind).toBe('agent-sdk');
   });
 
@@ -140,13 +164,9 @@ describe('createChatDriver with a turn choice', () => {
     expect(lastCodexOpts?.agent).toEqual(agent);
   });
 
-  it('gives the SDK driver the model, and never a model meant for the other vendor', async () => {
+  it('gives the SDK driver the model', async () => {
     const chosen = await createChatDriver(root, { ...deps(), agent: { provider: 'anthropic', model: 'claude-opus-5' } });
     expect((chosen as AgentSdkDriver as unknown as { model: string | null }).model).toBe('claude-opus-5');
-
-    codexAvailable = false;
-    const crossed = await createChatDriver(root, { ...deps(), agent: { provider: 'openai', model: 'gpt-5.6-sol' } });
-    expect((crossed as AgentSdkDriver as unknown as { model: string | null }).model).toBeNull();
   });
 });
 
@@ -298,13 +318,9 @@ function codexStatus(over: Partial<CodexStatus> = {}): CodexStatus {
 }
 
 describe('provider model lists', () => {
-  it('offers the three curated Anthropic models', () => {
-    expect(ANTHROPIC_MODELS.map((m) => m.id)).toEqual([
-      'claude-opus-5',
-      'claude-sonnet-5',
-      'claude-haiku-4-5-20251001',
-    ]);
-    expect(ANTHROPIC_MODELS.map((m) => m.label)).toEqual(['Opus 5', 'Sonnet 5', 'Haiku 4.5']);
+  it('falls back to family aliases, so the list never pins a model that has been superseded', () => {
+    expect(ANTHROPIC_MODELS.map((m) => m.id)).toEqual(['opus', 'sonnet', 'haiku']);
+    expect(ANTHROPIC_MODELS.map((m) => m.label)).toEqual(['Opus', 'Sonnet', 'Haiku']);
   });
 
   it('leads the OpenAI list with Default and then whatever the binary reported', () => {

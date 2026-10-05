@@ -95,10 +95,12 @@ import { MenuButton, type MenuItem } from '../ui/Menu';
  * server curates, so a choice made here survives the folder opening.
  */
 export const FALLBACK_MODELS: Record<ChatProvider, ProviderModelInfo[]> = {
+  // Family aliases, which the CLI resolves to the newest model in each, so this
+  // list cannot go stale the way pinned snapshot ids did.
   anthropic: [
-    { id: 'claude-opus-5', label: 'Opus 5' },
-    { id: 'claude-sonnet-5', label: 'Sonnet 5' },
-    { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5' },
+    { id: 'opus', label: 'Opus' },
+    { id: 'sonnet', label: 'Sonnet' },
+    { id: 'haiku', label: 'Haiku' },
   ],
   // Deliberately thin: which models a codex build supports is the binary's
   // answer, not ours, and inventing ids here would offer choices that fail.

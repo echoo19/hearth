@@ -30,6 +30,7 @@ import {
 import { attachProbeStream } from '../server/probeStream.js';
 import { startGameServer, type GameServerHandle } from '../server/gameServer.js';
 import { ensureHearthShim, hearthPtyEnv } from '../server/hearthShim.js';
+import { loadAgentSdk } from '../server/chat.js';
 import { applyAppMenu, buildAppMenuTemplate } from './appMenu.js';
 import { resolveUpdatePolicy } from './updaterPolicy.js';
 import { wireUpdater, type UpdatePrompt, type UpdaterHandle, type UpdaterLike } from './updater.js';
@@ -533,6 +534,7 @@ async function main(): Promise<void> {
     smokeTestMenu();
     await smokeTestPty();
     await smokeTestHearthShim();
+    await smokeTestAgentSdk();
     console.log('[smoke] all checks passed');
     app.quit();
   }
@@ -626,6 +628,18 @@ async function smokeTestPty(): Promise<void> {
  * found AND exited 0 — a missing shim or broken CLI fails this loudly, which is
  * the whole point of running it in the packaged smoke build.
  */
+/**
+ * The Claude Agent SDK loads the way chat.ts loads it. Every build up to 1.9.0
+ * shipped without it: Claude conversations quietly fell through to codex, and
+ * the model picker never left its hardcoded list. Nothing failed loudly then;
+ * this does now.
+ */
+async function smokeTestAgentSdk(): Promise<void> {
+  const sdk = await loadAgentSdk();
+  if (!sdk) throw new Error('[smoke] the Claude Agent SDK could not be loaded from the packaged app');
+  console.log('[smoke] Claude Agent SDK ok');
+}
+
 async function smokeTestHearthShim(): Promise<void> {
   const toolPaths = await resolveToolPaths(process.cwd());
   const shimDir = await ensureHearthShim(toolPaths.cli, toolPaths.probe);

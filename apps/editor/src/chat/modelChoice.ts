@@ -42,10 +42,30 @@ const STORAGE_KEY = 'hearth:modelChoice';
 
 /** Fallback labels for model ids the providers endpoint hasn't described. */
 const KNOWN_MODEL_LABELS: Record<string, string> = {
-  'claude-opus-5': 'Opus 5',
-  'claude-sonnet-5': 'Sonnet 5',
-  'claude-haiku-4-5-20251001': 'Haiku 4.5',
+  opus: 'Opus',
+  sonnet: 'Sonnet',
+  haiku: 'Haiku',
+  fable: 'Fable',
 };
+
+/**
+ * The pinned ids Hearth's own curated Claude list used to ship. A choice that
+ * says one of these was almost always "the Opus row", not "Opus 5 forever", so
+ * it is read back as the family alias, which the CLI resolves to the newest
+ * model. Without this, Opus 5.5 shipped and every existing picker stayed on
+ * Opus 5. A pinned id the person picked from the live catalogue is not in this
+ * table and is left alone.
+ */
+const LEGACY_CURATED_IDS: Record<string, string> = {
+  'claude-opus-5': 'opus',
+  'claude-sonnet-5': 'sonnet',
+  'claude-haiku-4-5-20251001': 'haiku',
+};
+
+/** `opus`, `sonnet`, `haiku` or `fable` for any Claude id or alias, else null. */
+function claudeFamily(model: string): string | null {
+  return /\b(?:claude-)?(opus|sonnet|haiku|fable)\b/.exec(model)?.[1] ?? null;
+}
 
 /**
  * What actually runs the agent loop.
@@ -163,9 +183,10 @@ export function parseStoredChoice(raw: string | null): AgentChoice | null {
     // model half of that choice is still exactly what the person picked, and
     // throwing the whole thing away would reset their model to punish them for
     // a feature that was removed underneath them.
+    const model = typeof record.model === 'string' && record.model !== '' ? record.model : null;
     return {
       provider: record.provider,
-      model: typeof record.model === 'string' && record.model !== '' ? record.model : null,
+      model: model && record.provider === 'anthropic' ? (LEGACY_CURATED_IDS[model] ?? model) : model,
       effort: /^[a-z][a-z0-9-]{0,23}$/.test(effort) ? effort : null,
     };
   } catch {
@@ -341,6 +362,25 @@ export function modelRowCovers(info: ProviderModelInfo, model: string): boolean 
   return info.id === model || info.resolvedModel === model;
 }
 
+/**
+ * The row a stored Claude model lands on when the catalogue no longer lists it:
+ * the same family's alias row, which the CLI keeps pointed at the newest model.
+ * A choice saved against an older CLI (`opus[1m]`, a retired snapshot) would
+ * otherwise tick nothing and keep sending a model the menu cannot show.
+ */
+function claudeSuccessorRow(models: ProviderModelInfo[], model: string): ProviderModelInfo | null {
+  const family = claudeFamily(model);
+  if (!family) return null;
+  return models.find((m) => m.id === family) ?? null;
+}
+
+function rowFor(choice: AgentChoice, models: ProviderModelInfo[]): ProviderModelInfo | null {
+  const model = choice.model as string;
+  const exact = models.find((m) => modelRowCovers(m, model));
+  if (exact) return exact;
+  return choice.provider === 'anthropic' ? claudeSuccessorRow(models, model) : null;
+}
+
 export function effectiveModel(
   choice: AgentChoice | null,
   providers: ChatProviderStatus | null,
@@ -348,7 +388,7 @@ export function effectiveModel(
   if (!choice) return null;
   const models = providerModels(choice.provider, providers);
   if (choice.model === null) return models.find((m) => m.isDefault === true) ?? null;
-  return models.find((m) => modelRowCovers(m, choice.model as string)) ?? null;
+  return rowFor(choice, models);
 }
 
 /**
@@ -390,7 +430,7 @@ export function modelChoiceLabel(
 ): string {
   if (!choice) return NO_MODEL_CHOSEN_LABEL;
   if (choice.model === null) return NO_MODEL_CHOSEN_LABEL;
-  const described = providerModels(choice.provider, providers).find((m) => modelRowCovers(m, choice.model as string));
+  const described = rowFor(choice, providerModels(choice.provider, providers));
   return described?.label ?? KNOWN_MODEL_LABELS[choice.model] ?? choice.model;
 }
 
@@ -439,10 +479,21 @@ export function agentForTurn(
   providers: ChatProviderStatus | null,
 ): AgentChoice | null {
   if (!choice) return choice;
-  if (choice.effort === null) return choice;
-  const efforts = effortOptions(choice, providers);
-  if (efforts.length === 0 || efforts.some((e) => e.id === choice.effort)) return choice;
-  return { ...choice, effort: null };
+  // A Claude model the catalogue no longer lists is sent as its family's
+  // current alias, so a stale pick runs the newest model rather than one the
+  // menu cannot even show. Only on evidence: no catalogue, no change.
+  let next = choice;
+  if (choice.provider === 'anthropic' && choice.model !== null) {
+    const models = providerModels('anthropic', providers);
+    if (!models.some((m) => modelRowCovers(m, choice.model as string))) {
+      const successor = claudeSuccessorRow(models, choice.model);
+      if (successor) next = { ...choice, model: successor.id };
+    }
+  }
+  if (next.effort === null) return next;
+  const efforts = effortOptions(next, providers);
+  if (efforts.length === 0 || efforts.some((e) => e.id === next.effort)) return next;
+  return { ...next, effort: null };
 }
 
 // ---------------------------------------------------------------------------

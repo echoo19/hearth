@@ -160,7 +160,7 @@ describe('modelGroups', () => {
   it('falls back to the curated Claude list before the server has described one', () => {
     const groups = modelGroups(null);
     expect(groups[0].models).toEqual(FALLBACK_MODELS.anthropic);
-    expect(groups[0].models.map((m) => m.label)).toContain('Opus 5');
+    expect(groups[0].models.map((m) => m.label)).toContain('Opus');
   });
 
   it('offers no invented ChatGPT model before the binary has been asked', () => {
@@ -400,9 +400,9 @@ describe('parseStoredChoice — a choice made before any of this still holds', (
       model: 'gpt-5.6-sol',
       effort: 'high',
     });
-    expect(parseStoredChoice(JSON.stringify({ provider: 'anthropic', model: 'claude-opus-5', effort: null }))).toEqual({
+    expect(parseStoredChoice(JSON.stringify({ provider: 'anthropic', model: 'claude-opus-4-8', effort: null }))).toEqual({
       provider: 'anthropic',
-      model: 'claude-opus-5',
+      model: 'claude-opus-4-8',
       effort: null,
     });
   });
@@ -466,5 +466,56 @@ describe('agentForTurn', () => {
       model: 'claude-opus-5',
       effort: null,
     });
+  });
+});
+
+describe('Claude models stay current', () => {
+  /** What a current Claude Code answers `supportedModels()` with: aliases first, pinned snapshots after. */
+  function liveClaude(): ChatProviderStatus {
+    return providers({
+      anthropic: {
+        hasKey: false,
+        source: null,
+        cli: true,
+        loggedIn: true,
+        email: null,
+        planType: 'max',
+        models: [
+          { id: 'opus', label: 'Opus 5.5', resolvedModel: 'claude-opus-5-5', efforts: [{ id: 'high' }] },
+          { id: 'sonnet', label: 'Sonnet 5.5', resolvedModel: 'claude-sonnet-5-5' },
+          { id: 'haiku', label: 'Haiku 4.5', resolvedModel: 'claude-haiku-4-5-20251001' },
+          { id: 'claude-opus-4-8', label: 'Opus 4.8', resolvedModel: 'claude-opus-4-8' },
+        ],
+      },
+    });
+  }
+
+  it('reads a choice saved from the old curated list as the family alias', () => {
+    const raw = JSON.stringify({ provider: 'anthropic', model: 'claude-opus-5', effort: null });
+    expect(parseStoredChoice(raw)?.model).toBe('opus');
+    const sonnet = JSON.stringify({ provider: 'anthropic', model: 'claude-sonnet-5', effort: null });
+    expect(parseStoredChoice(sonnet)?.model).toBe('sonnet');
+  });
+
+  it('leaves a pinned model the person picked from the live list alone', () => {
+    const raw = JSON.stringify({ provider: 'anthropic', model: 'claude-opus-4-8', effort: null });
+    expect(parseStoredChoice(raw)?.model).toBe('claude-opus-4-8');
+    const choice: AgentChoice = { provider: 'anthropic', model: 'claude-opus-4-8', effort: null };
+    expect(agentForTurn(choice, liveClaude())?.model).toBe('claude-opus-4-8');
+  });
+
+  it('sends a model the catalogue no longer lists as its family alias', () => {
+    const stale: AgentChoice = { provider: 'anthropic', model: 'opus[1m]', effort: 'high' };
+    expect(agentForTurn(stale, liveClaude())).toEqual({ provider: 'anthropic', model: 'opus', effort: 'high' });
+    expect(effectiveModel(stale, liveClaude())?.label).toBe('Opus 5.5');
+  });
+
+  it('changes nothing before the catalogue has landed', () => {
+    const stale: AgentChoice = { provider: 'anthropic', model: 'opus[1m]', effort: null };
+    expect(agentForTurn(stale, null)).toBe(stale);
+  });
+
+  it('falls back to aliases, never to pinned snapshots', () => {
+    expect(FALLBACK_MODELS.anthropic.map((m) => m.id)).toEqual(['opus', 'sonnet', 'haiku']);
   });
 });

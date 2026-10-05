@@ -230,7 +230,7 @@ describe('provider status', () => {
     // The curated model list rides along, so the selector has something to
     // show without a second request. Signed out, it is the ONLY list there is:
     // the live catalogue belongs to an account, so there is nothing to ask.
-    expect(status.anthropic.models?.map((m) => m.id)).toContain('claude-opus-5');
+    expect(status.anthropic.models?.map((m) => m.id)).toContain('opus');
     expect(JSON.stringify(status)).not.toContain('sk-secret-value');
     await writeAppSettings(root, { apiKey: '' });
   });
@@ -266,6 +266,24 @@ describe('provider status', () => {
     expect(status.anthropic.models).toEqual([{ id: 'sonnet', label: 'Sonnet', efforts: [{ id: 'high' }] }]);
   });
 
+  it('asks the Claude Code turns run on for the catalogue, not the copy bundled in the SDK', async () => {
+    // The bundled CLI is frozen at whatever SDK version shipped, so it kept
+    // offering Opus 5 after the installed `claude` already offered Opus 5.5.
+    const claude = path.join(tmp, 'my-claude');
+    await fsp.writeFile(claude, '#!/bin/sh\n', { mode: 0o755 });
+    await writeAppSettings(root, { claudePath: claude });
+    const asked: (string | null)[] = [];
+    await readChatProviders(root, {
+      claudeCli: async () => ({ installed: true, loggedIn: true, email: null, planType: null }),
+      claudeModels: async (executable) => {
+        asked.push(executable);
+        return [];
+      },
+    });
+    await writeAppSettings(root, { claudePath: '' });
+    expect(asked).toEqual([claude]);
+  });
+
   it('keeps the curated list when the catalogue cannot be had', async () => {
     // A picker with nothing in it while a spawn settles (or on a CLI too old to
     // answer) is worse than three good answers.
@@ -273,7 +291,7 @@ describe('provider status', () => {
       claudeCli: async () => ({ installed: true, loggedIn: true, email: null, planType: null }),
       claudeModels: async () => [],
     });
-    expect(status.anthropic.models?.map((m) => m.id)).toContain('claude-opus-5');
+    expect(status.anthropic.models?.map((m) => m.id)).toContain('opus');
 
     const threw = await readChatProviders(root, {
       claudeCli: async () => ({ installed: true, loggedIn: true, email: null, planType: null }),
@@ -281,7 +299,7 @@ describe('provider status', () => {
         throw new Error('the CLI would not handshake');
       },
     });
-    expect(threw.anthropic.models?.map((m) => m.id)).toContain('claude-opus-5');
+    expect(threw.anthropic.models?.map((m) => m.id)).toContain('opus');
   });
 
   it('is honest that nothing can answer when there is neither a key nor the CLI', async () => {

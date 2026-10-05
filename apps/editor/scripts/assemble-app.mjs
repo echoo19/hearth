@@ -8,7 +8,7 @@
  * everything is already inlined by esbuild/vite, so the packaged app never
  * touches the monorepo's workspace-symlinked node_modules.
  */
-import { rm, mkdir, cp, writeFile, readFile } from 'node:fs/promises';
+import { rm, mkdir, cp, writeFile, readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
@@ -162,4 +162,47 @@ if (!existsSync(ptyPrebuild)) {
   process.exit(1);
 }
 
-console.log(`release-app/ assembled (pty: ${targetPlatform}-${targetArch})`);
+/**
+ * The Claude Agent SDK, which is how Hearth talks to Claude at all.
+ *
+ * chat.ts loads it through a variable specifier, so esbuild cannot inline it,
+ * and it was never installed here either. Every packaged build up to 1.9.0
+ * therefore had no Claude backend: the bind fell through to codex, so a Claude
+ * conversation answered with ChatGPT's errors, and the model picker showed the
+ * hardcoded fallback list forever.
+ *
+ * Copied rather than installed, and without the per-platform native CLI it
+ * lists as optionalDependencies (~245 MB each). Hearth runs the Claude Code the
+ * person installed and signed into (resolveClaudeExecutable), which is also
+ * what keeps the model list current, so the bundled copy would only ever be a
+ * stale second CLI. `sdk.mjs` imports nothing but Node builtins, so the package
+ * directory alone is a working install.
+ */
+const sdkName = '@anthropic-ai/claude-agent-sdk';
+// Here or hoisted to the workspace root, depending on how npm laid it out.
+const sdkSource =
+  [appRoot, path.join(appRoot, '..', '..')]
+    .map((dir) => path.join(dir, 'node_modules', ...sdkName.split('/')))
+    .find((dir) => existsSync(path.join(dir, 'sdk.mjs'))) ?? path.join(appRoot, 'node_modules', ...sdkName.split('/'));
+const sdkTarget = path.join(out, 'node_modules', ...sdkName.split('/'));
+if (!existsSync(path.join(sdkSource, 'sdk.mjs'))) {
+  console.error(`\nrelease-app/: ${sdkName} is not installed at ${sdkSource}. Run npm install first.\n`);
+  process.exit(1);
+}
+await cp(sdkSource, sdkTarget, { recursive: true, dereference: true });
+const strayBinaries = (await readdir(path.join(out, 'node_modules', '@anthropic-ai'))).filter((name) =>
+  name.startsWith('claude-agent-sdk-'),
+);
+for (const name of strayBinaries) {
+  await rm(path.join(out, 'node_modules', '@anthropic-ai', name), { recursive: true, force: true });
+}
+const sdkVersion = JSON.parse(await readFile(path.join(sdkTarget, 'package.json'), 'utf8')).version;
+// Declared only now, after the install: electron-builder packs exactly the
+// dependency tree package.json names, so an undeclared copy is pruned from the
+// asar, while declaring it before `npm install` would pull the native CLI back.
+const releasePkgPath = path.join(out, 'package.json');
+const releasePkg = JSON.parse(await readFile(releasePkgPath, 'utf8'));
+releasePkg.dependencies[sdkName] = sdkVersion;
+await writeFile(releasePkgPath, JSON.stringify(releasePkg, null, 2) + '\n');
+
+console.log(`release-app/ assembled (pty: ${targetPlatform}-${targetArch}, ${sdkName}@${sdkVersion})`);

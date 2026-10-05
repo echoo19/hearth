@@ -708,6 +708,45 @@ export class StubDriver implements ChatDriver {
   }
 }
 
+/**
+ * The agent the person picked cannot be reached, and nothing else may answer
+ * in its place.
+ *
+ * Bound instead of falling through to the other backend when the turn named a
+ * provider. Falling through is what made a Claude conversation answer with
+ * ChatGPT's usage-limit error: the packaged app could not load the Agent SDK,
+ * the bind quietly took codex, and the header still said Claude. A turn that
+ * fails with the real reason is the honest version of that.
+ *
+ * Extends StubDriver so every "no agent is reachable" check (the tester's
+ * `instanceof StubDriver`, `providerForTurn` reading `kind`) treats it exactly
+ * like the absent backend it is.
+ */
+export class UnavailableDriver extends StubDriver {
+  private failed = new EventQueue<ChatEvent>();
+  private halted = false;
+
+  constructor(private readonly reason: string) {
+    super();
+  }
+
+  override get events(): AsyncIterable<ChatEvent> {
+    return this.failed;
+  }
+
+  override send(_text: string): void {
+    if (this.halted) return;
+    this.failed.push({ type: 'error', message: this.reason });
+    this.failed.push({ type: 'turn-complete' });
+  }
+
+  override stop(): void {
+    this.halted = true;
+    this.failed.close();
+    super.stop();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // AgentSdkDriver
 // ---------------------------------------------------------------------------
@@ -2456,7 +2495,21 @@ export async function createChatDriver(
     }
   };
 
-  const preferred = agent?.provider ?? settings.provider;
+  // A provider the TURN named is a choice, not a preference: answering it with
+  // the other vendor runs a model the person did not pick, on an account they
+  // did not pick, and reports that account's errors under the wrong name.
+  // Only the stored default (or no choice at all) may fall through.
+  const chosen = agent?.provider;
+  if (chosen) {
+    const driver = await (chosen === 'openai' ? openai : anthropic)();
+    if (driver) return driver;
+    return new UnavailableDriver(
+      chosen === 'openai'
+        ? 'Codex could not be started. Check that the codex CLI is installed and signed in, or pick Claude instead.'
+        : 'Claude could not be started: the Claude Agent SDK is not available in this build of Hearth. Update Hearth, or pick another agent.',
+    );
+  }
+  const preferred = settings.provider;
   const order: (() => Promise<ChatDriver | null>)[] =
     preferred === 'openai' ? [openai, anthropic] : [anthropic, openai];
   for (const attempt of order) {

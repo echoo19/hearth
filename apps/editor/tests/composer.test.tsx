@@ -343,7 +343,7 @@ describe('the model pill', () => {
     // so, while the account row still described a different sign-in.
     const headers = [...document.querySelectorAll('.menu-header-name')].map((el) => el.textContent);
     expect(headers).toEqual(['Claude']);
-    expect(screen.getByRole('menuitemcheckbox', { name: 'Opus 5' })).toBeTruthy();
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Opus' })).toBeTruthy();
     // Neither the other vendor's models NOR a way to switch to it. Which agent
     // answers is not a per-message choice and is not offered beside one; the
     // menu carries the door to where it is settled instead.
@@ -389,7 +389,7 @@ describe('the model pill', () => {
     expect(screen.getByRole('menuitemcheckbox', { name: /GPT-5.6-Sol/ })).toBeTruthy();
     expect(screen.getByRole('menuitemcheckbox', { name: /GPT-5.4-Mini/ })).toBeTruthy();
     // Claude is absent entirely — models and backend both.
-    expect(screen.queryByRole('menuitemcheckbox', { name: 'Opus 5' })).toBeNull();
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'Opus' })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: /Claude Code CLI/ })).toBeNull();
   });
 
@@ -456,7 +456,7 @@ describe('the model pill', () => {
     const opened = vi.fn();
     window.addEventListener('hearth:open-settings', opened);
     fireEvent.click(screen.getByRole('button', { name: 'Model' }));
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Opus 5' }));
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Opus' }));
     window.removeEventListener('hearth:open-settings', opened);
 
     expect(opened).toHaveBeenCalledTimes(1);
@@ -481,14 +481,14 @@ describe('the model pill', () => {
     });
     render(<Composer />);
     fireEvent.click(screen.getByRole('button', { name: 'Model' }));
-    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Sonnet 5' }));
+    fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Sonnet' }));
 
     expect(JSON.parse(localStorage.getItem('hearth:modelChoice') ?? 'null')).toEqual({
       provider: 'anthropic',
-      model: 'claude-sonnet-5',
+      model: 'sonnet',
       effort: null,
     });
-    expect(screen.getByRole('button', { name: 'Model' }).textContent).toContain('Sonnet 5');
+    expect(screen.getByRole('button', { name: 'Model' }).textContent).toContain('Sonnet');
   });
 });
 

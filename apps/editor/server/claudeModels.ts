@@ -159,7 +159,7 @@ interface SdkCatalogueHandle extends AsyncIterable<unknown> {
   return?(value?: unknown): Promise<unknown>;
 }
 
-let cached: { at: number; value: Promise<ProviderModelInfo[]> } | null = null;
+let cached: { at: number; executable: string | null; value: Promise<ProviderModelInfo[]> } | null = null;
 
 /**
  * Drop the cached catalogue. Call this after anything that could have changed
@@ -178,11 +178,11 @@ export function forgetClaudeModels(): void {
  * own — the same discipline as readClaudeAuth, and it matters more here
  * because the thing being shared is a CLI process rather than a short command.
  */
-export async function readClaudeModels(): Promise<ProviderModelInfo[]> {
+export async function readClaudeModels(executable: string | null = null): Promise<ProviderModelInfo[]> {
   const now = Date.now();
-  if (cached && now - cached.at < CACHE_MS) return cached.value;
-  const value = spawnClaudeModels();
-  cached = { at: now, value };
+  if (cached && cached.executable === executable && now - cached.at < CACHE_MS) return cached.value;
+  const value = spawnClaudeModels(executable);
+  cached = { at: now, executable, value };
   // A read that threw is not an answer worth keeping: clear the slot so the
   // next caller retries rather than inheriting a rejection for ten minutes.
   // (`spawnClaudeModels` resolves rather than rejects on every path it knows
@@ -193,7 +193,15 @@ export async function readClaudeModels(): Promise<ProviderModelInfo[]> {
   return value;
 }
 
-async function spawnClaudeModels(): Promise<ProviderModelInfo[]> {
+/**
+ * `executable` is the Claude Code the person installed, the same one turns run
+ * on (see resolveClaudeExecutable). Asking it rather than the CLI bundled inside
+ * the SDK package is the whole point: the bundled one is frozen at whatever SDK
+ * version Hearth shipped with, so a model Anthropic released after that build
+ * never appeared in the picker even though `claude` on the same machine already
+ * offered it. Null falls back to the SDK's own binary.
+ */
+async function spawnClaudeModels(executable: string | null): Promise<ProviderModelInfo[]> {
   const sdk = await loadAgentSdk().catch(() => null);
   if (!sdk) return [];
   // The prompt stream that never yields and is never closed. This is what makes
@@ -202,7 +210,10 @@ async function spawnClaudeModels(): Promise<ProviderModelInfo[]> {
   const turns = new EventQueue<unknown>();
   let handle: SdkCatalogueHandle | null = null;
   try {
-    handle = sdk.query({ prompt: turns }) as SdkCatalogueHandle;
+    handle = sdk.query({
+      prompt: turns,
+      ...(executable ? { options: { pathToClaudeCodeExecutable: executable } } : {}),
+    }) as SdkCatalogueHandle;
     if (typeof handle.supportedModels !== 'function') return [];
     // Raced rather than awaited: the control request has no timeout of its own,
     // and a CLI that handshakes and then goes quiet would otherwise hold the
