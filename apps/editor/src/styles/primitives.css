@@ -92,10 +92,10 @@
    separating that word shapes normally do. It is still a symbol, not a
    sentence, and a full sentence must never be set in it. */
 .t-caps {
-  font-size: var(--text-3xs);
-  font-weight: var(--fw-strong);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
+  font-family: var(--font-caption);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.01em;
   color: var(--ink-faint);
 }
 
@@ -133,18 +133,18 @@
      ghost     nothing at rest   icon controls; text inside a bounded container
    -------------------------------------------------------------------------- */
 
-/* The default button: comfortable, hairline-bordered, generously rounded.
-   Sized off --ctl-h so every control in the app agrees on one height. */
+/* The default button: Lectern's secondary. A raised surface with a hairline
+   edge, sized off --ctl-h so every control in the app agrees on one height. */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   height: var(--ctl-h);
-  padding: 0 18px;
+  padding: 0 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--bg-2);
+  background: var(--bg-1);
   color: var(--ink);
   font-size: var(--text-sm);
   font-weight: var(--fw-label);
@@ -160,7 +160,8 @@
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--bg-3);
+  background: var(--bg-2);
+  border-color: var(--border-strong);
 }
 
 .btn:active:not(:disabled) {
@@ -178,6 +179,7 @@
   border-color: var(--accent);
   color: var(--accent-ink);
   font-weight: var(--fw-strong);
+  box-shadow: var(--shadow-1);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -191,7 +193,7 @@
 
 /* Quiet-destructive: red reads as a whisper until hovered. */
 .btn-danger {
-  border-color: oklch(0.7 0.17 25 / 0.45);
+  border-color: oklch(0.7 0.17 25 / 0.4);
   color: var(--err);
   background: transparent;
 }
@@ -212,7 +214,7 @@
 }
 
 .btn-quiet:hover:not(:disabled) {
-  background: var(--bg-2);
+  background: var(--bg-1);
   border-color: var(--border-strong);
   color: var(--ink);
 }
@@ -232,7 +234,7 @@
 }
 
 .btn-ghost:hover:not(:disabled) {
-  background: var(--bg-3);
+  background: var(--bg-2);
   color: var(--ink);
 }
 
@@ -240,7 +242,7 @@
    — this is smaller, not small. */
 .btn-sm {
   height: var(--ctl-h-sm);
-  padding: 0 12px;
+  padding: 0 10px;
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
 }
@@ -271,17 +273,30 @@
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--bg-0);
+  background: var(--bg-05);
   color: var(--ink);
   font-size: var(--text-sm);
   min-width: 0;
-  transition: border-color var(--t) var(--ease-out);
+  transition:
+    border-color var(--t) var(--ease-out),
+    box-shadow var(--t) var(--ease-out);
 }
 
 .input:hover:not(:disabled),
 .select:hover:not(:disabled),
 .textarea:hover:not(:disabled) {
-  border-color: oklch(0.48 0.018 285);
+  border-color: var(--border-strong);
+}
+
+/* Focus on a field is a soft ember ring, Lectern's focus treatment, rather
+   than the hard outline buttons get: a field you are typing into is a place,
+   not a target. */
+.input:focus-visible,
+.select:focus-visible,
+.textarea:focus-visible {
+  outline: none;
+  border-color: oklch(0.684 0.192 42 / 0.6);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .input::placeholder,

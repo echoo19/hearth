@@ -154,12 +154,12 @@
    rounding error of the skill names underneath it, so the heading read as the
    first row of the list it was heading. */
 .skills-group-title {
+  font-family: var(--font-caption);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.01em;
   margin: 0 0 8px;
   padding: 0 10px;
-  font-size: var(--text-3xs);
-  font-weight: var(--fw-strong);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
   color: var(--ink-faint);
 }
 

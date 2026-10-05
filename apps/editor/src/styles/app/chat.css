@@ -130,40 +130,37 @@
   white-space: nowrap;
 }
 
-/* What kind of conversation this is, stated rather than offered. The choice
-   is made when a conversation starts and cannot be changed inside one, so the
-   head reads "Chat" or "Terminal" in the same quiet weight as the provider
-   beside it. Wears .conversation-provider; this hook exists so the two can be
-   told apart later without moving anything.
-
-   Doubled up on purpose. .conversation-provider now shrinks, because the name
-   it carries can be a user's, and this one cannot: "Chat" and "Terminal" are
-   the app's own two words, they are already the shortest thing in the strip,
-   and "Ter..." would be the head reporting a squeeze rather than a fact. Two
-   classes rather than source order, so the rule holds wherever it is moved
-   to. */
-/* The mode, as a symbol rather than a word. Tracked caps inside a bounded chip
-   is read before it is spelled out, which is what you want from a fact that
-   never changes for the life of a conversation and only has to be confirmed at
-   a glance.
-
-   Deliberately NOT ember. The accent is reserved for actions and selection
-   (DESIGN.md), and a mode is neither; it earns its distinctness from case and
-   shape, which cost the accent nothing. */
+/* What kind of conversation this is, stated rather than offered: quiet text
+   after the agent's name, set off by a middle dot rather than boxed in a chip.
+   It never shrinks or ellipsizes; "Chat", "Terminal" and "Dev team" are the
+   app's own words and already the shortest thing in the strip. */
 .conversation-kind {
   display: inline-flex;
   align-items: center;
   flex: none;
-  height: 21px;
-  max-width: none;
-  padding: 0 7px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  background: var(--bg-2);
-  font-size: var(--text-3xs);
-  font-weight: var(--fw-strong);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
+  gap: 8px;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-regular);
+  color: var(--ink-faint);
+}
+
+.conversation-kind.has-sep::before {
+  content: '';
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--ink-ghost);
+}
+
+/* The agent's mark. Claude's is drawn in its own orange (providerLogos.tsx);
+   OpenAI's is monochrome and takes the strip's ink. */
+.conversation-logo {
+  display: inline-flex;
+  flex: none;
+  margin-left: 6px;
+}
+
+.conversation-logo.is-mono {
   color: var(--ink-mute);
 }
 
@@ -267,15 +264,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* Mono, because this is a VALUE the machine reported rather than a word the
-     app chose: a provider name, or a model id read out of a binary's own
-     catalogue. Setting it in the chrome face was what made it look like a
-     third label; setting it in the value face makes it obvious at a glance
-     that it is a setting, without needing a label to say so. */
-  font-family: var(--font-mono);
+  /* The chrome face, not mono: with the agent's mark in front of it the name
+     no longer needs a typeface to say "this is a setting". */
   font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-faint);
+  font-weight: var(--fw-medium);
+  color: var(--ink-mute);
 }
 
 /* --- Mode layers ---------------------------------------------------------- */
@@ -579,9 +572,7 @@
   border-bottom: 1px solid var(--border);
   color: var(--ink-mute);
   font-size: var(--text-2xs);
-  font-weight: var(--fw-strong);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
+  font-weight: var(--fw-medium);
   white-space: nowrap;
 }
 

@@ -1,37 +1,42 @@
 /* Hearth — design tokens (OKLCH palette, metrics, type scale).
 
-   The palette is the constant: neutral charcoal surfaces (hue 285), one ember
-   accent reserved for primary actions and highlights. The metrics below are
-   sized for a calm, roomy desktop app — comfortable controls, large radii,
-   soft shadows — not for the dense chrome of an editor. */
+   The language is Lectern's true dark: a near-black ground, warm surfaces
+   raised a few steps off it, a cool grey text ramp, hairlines rather than
+   boxes. Ember is the one per-brand variable and is rationed to primary
+   actions, the current selection and live state. The user's game is the
+   brightest, most colourful thing on screen; the chrome recedes. */
 
 :root {
-  /* Surfaces: neutral charcoal, not fire-tinted. */
-  --bg-0: oklch(0.115 0.006 285); /* window chrome, deepest — the sidebar rail */
+  /* Surfaces: Lectern's warm dark ramp (hue 85, chroma under 0.006), ordered
+     ground -> raised so every hover still means "one step lighter". */
+  --bg-0: oklch(0.13 0.002 85); /* the rail and window chrome, deepest */
   /* The main content surface: one step off the rail, so the conversation and
-     the home screen read as lit and the rail recedes behind them. Between
-     bg-0 and bg-1 on purpose — a full step would make the column look like a
-     floating card rather than the page. */
-  --bg-05: oklch(0.135 0.007 285);
-  --bg-1: oklch(0.15 0.008 285);  /* panels */
-  --bg-2: oklch(0.19 0.01 285); /* inputs, cards, tab strip */
-  --bg-3: oklch(0.245 0.012 285); /* hover */
-  --border: oklch(0.32 0.014 285);
-  --border-strong: oklch(0.42 0.016 285);
-  --guide: oklch(0.27 0.012 285);
+     home read as the lit page and the rail recedes behind them. */
+  --bg-05: oklch(0.155 0.0024 85);
+  --bg-1: oklch(0.183 0.0026 85); /* raised: panels, popovers, dialogs */
+  --bg-2: oklch(0.212 0.0034 85); /* inputs, the composer, user bubbles */
+  --bg-3: oklch(0.251 0.0044 85); /* hover */
+  /* Lines sit LIGHTER than the surfaces they divide, as in Lectern's dark. */
+  --hairline: oklch(0.21 0.003 85); /* internal dividers inside a surface */
+  --guide: oklch(0.24 0.0033 85);
+  --border: oklch(0.29 0.0042 85); /* card and control edges */
+  --border-strong: oklch(0.4 0.007 85);
 
-  /* Ink */
-  --ink: oklch(0.95 0.006 85);
-  --ink-mute: oklch(0.74 0.012 85);
-  /* L 0.635, not 0.58. At 0.58 the faintest ink only cleared 4.5:1 on the two
-     darkest surfaces: it measured 4.33 on --bg-2 (cards, inputs, tabs), 3.79
-     on --bg-3 (hover) and 4.16 on a row tinted with --accent-soft, so a
-     timestamp that passed at rest failed the moment you pointed at it, and the
-     selected conversation — the one row you look at most — was the least
-     readable in the rail. 0.635 is the lowest value that clears 4.5:1 against
-     every surface in this file (worst case --bg-3, 4.71) while staying a clear
-     third rank below --ink-mute. */
-  --ink-faint: oklch(0.635 0.01 85);
+  /* The current row in any list (rail, settings nav, menus): a raised
+     surface plus an inset hairline, Lectern's nav idiom. Not an accent tint;
+     the accent is spent on the row's glyph alone. */
+  --rail-current: var(--bg-2);
+  --rail-current-edge: inset 0 0 0 1px oklch(1 0 0 / 0.06);
+
+  /* Ink: cool grey ramp (hue 286), Lectern's dark text values. */
+  --ink: oklch(0.97 0 0);
+  --ink-mute: oklch(0.776 0.006 286);
+  /* The quietest text the app has. It has to clear 4.5:1 on every surface it
+     lands on, hover and the selected row included; tests/inkContrast.test.ts
+     computes the real ratios from these tokens. */
+  --ink-faint: oklch(0.692 0.0084 286);
+  /* NOT for text: placeholders' glyph tint, disabled icons, rules. */
+  --ink-ghost: oklch(0.519 0.01 286);
 
   /* Ember command accent — the only place ember hue appears. Surfaces stay
      neutral (hue 285); accent carries all "ember" meaning. */
@@ -56,37 +61,40 @@
   --ok-soft: oklch(0.76 0.14 150 / 0.14);
   --warn-soft: oklch(0.8 0.13 85 / 0.14);
 
-  /* Canvas (scene view) */
-  --canvas-bg: oklch(0.095 0.006 285);
-  --grid-line: oklch(0.22 0.01 285);
-  --grid-axis: oklch(0.34 0.014 285);
+  /* The game pane's ground: darker than any chrome surface, so whatever the
+     game draws is the brightest thing on screen. Same warm neutral family. */
+  --canvas-bg: oklch(0.11 0.002 85);
+  --grid-line: oklch(0.22 0.003 85);
+  --grid-axis: oklch(0.34 0.005 85);
 
-  /* Floating overlays/scrims over the canvas (scene HUD, tilemap palette,
-     game-preview badges) — same neutral hue-285 surface family as --bg-*,
-     just translucent so the canvas shows through. Not ember-tinted. */
-  --overlay-bg: oklch(0.15 0.008 285 / 0.92);
+  /* Floating read-outs over the game. Near-opaque rather than blurred: a
+     frosted chip is decoration, and the game behind it should not smear. */
+  --overlay-bg: oklch(0.155 0.0024 85 / 0.94);
 
-  /* Modal backdrop scrim — darker/heavier than --overlay-bg, same neutral hue. */
-  --scrim: oklch(0.1 0.006 285 / 0.6);
+  /* Modal backdrop. Black and heavy: a light dim reads as nothing over a
+     near-black ground (Lectern's dark scrim, 0.62). */
+  --scrim: oklch(0 0 0 / 0.62);
 
-  /* Transparent-image checkerboard (asset thumbs, sliced-sheet crops) —
-     neutral hue-285, matching the rest of the surface family. */
-  --checker-a: oklch(0.28 0.008 285);
-  --checker-b: oklch(0.23 0.008 285);
+  /* Transparent-image checkerboard. */
+  --checker-a: oklch(0.28 0.003 85);
+  --checker-b: oklch(0.23 0.003 85);
 
-  /* Radii — modern-desktop-app scale, not IDE scale. Controls sit at
-     --radius; panels, cards and dialogs at --radius-lg; the composer (the
-     app's signature element) at --radius-xl. */
-  --radius-sm: 8px;
-  --radius: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 18px;
+  /* Radii — Lectern's scale (4 / 6 / 8 / 12). Controls sit at --radius;
+     panels, cards and dialogs at --radius-lg. --radius-xl is the composer's
+     alone: the app's signature surface, and the one Claude-desktop-like
+     softness the system allows. */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 
   /* Elevation: soft and layered, never bevelled. --shadow-1 lifts a resting
      surface off the one behind it; --shadow-2 is for things that float over
      the app (composer, drawer, dialog). */
-  --shadow-1: 0 1px 2px oklch(0 0 0 / 0.28);
-  --shadow-2: 0 8px 28px oklch(0 0 0 / 0.36);
+  --shadow-1: 0 1px 2px oklch(0 0 0 / 0.32);
+  --shadow-2: 0 12px 32px -12px oklch(0 0 0 / 0.6), 0 2px 8px -2px oklch(0 0 0 / 0.4),
+    0 0 0 1px oklch(1 0 0 / 0.04);
 
   /* Control metrics: comfortable hit targets. --ctl-h is the default control
      and the icon-button square; --ctl-h-sm is the compact variant for dense
@@ -96,16 +104,16 @@
      and going under it is how a control becomes a thing you aim at twice.
      There is no fourth tier, and anything hardcoding a pixel height rather
      than naming one of these is drift. */
-  --ctl-h: 36px;
-  --ctl-h-sm: 30px;
+  --ctl-h: 34px;
+  --ctl-h-sm: 28px;
   --ctl-h-xs: 24px;
 
   /* A navigation row in the rail: New chat, a project, a conversation. Shorter
      than a control because a list of them is scanned, not operated. */
-  --row-h: 32px;
+  --row-h: 30px;
   /* The two general acts at the top of the rail. Taller than a list row
      because they are acts rather than entries: see .nav-row in sidebar.css. */
-  --nav-h: 38px;
+  --nav-h: 32px;
 
   /* Motion: ease-out, state-conveying only. One easing curve for the whole
      app. Three durations cover everything — --t-fast for the snappy stuff
@@ -122,8 +130,11 @@
      is the app performing rather than responding. */
   --t-slow: 220ms;
 
-  --font-ui: 'Mona Sans Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'Commit Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-ui: 'Plus Jakarta Sans Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  /* The caption register. Normal caps, never uppercase; rail group headings
+     only (see .eyebrow in base.css). */
+  --font-caption: 'Space Grotesk', var(--font-ui);
 
   /* Brand display moments (dialog titles, empty-state headings) are the UI
      family at --fw-display with --track-tight, not a family of their own. The
@@ -140,23 +151,23 @@
      pixel, the same declaration. Weight and tracking are named here so a
      surface can say what a piece of text IS rather than only how big it is.
 
-     Mona Sans is a variable face, so the in-between weights are real: 550 is a
+     Plus Jakarta Sans is a variable face, so the in-between weights are real: 550 is a
      genuine step between medium and semibold, and it is the one UI labels and
      buttons want. Do not round these to 500/600 because the numbers look
      unusual. */
 
   --fw-regular: 400; /* body and long prose */
   --fw-medium: 500; /* secondary rows, quiet metadata that still needs presence */
-  --fw-label: 550; /* UI labels, buttons, nav targets: the app's working weight */
-  --fw-strong: 620; /* row titles, section headings, the lit step */
-  --fw-display: 760; /* brand moments only */
+  --fw-label: 500; /* UI labels, buttons, nav targets: the app's working weight */
+  --fw-strong: 600; /* row titles, section headings, the lit step */
+  --fw-display: 600; /* brand moments: Lectern's .display is Jakarta at 600 */
 
-  /* Tracking. Negative as text gets larger (Mona Sans sets loose by default at
-     display sizes), positive and generous for uppercase micro-labels, where
-     caps have no ascender rhythm to separate them and tracking is the only
-     thing keeping them legible at 10px. */
-  --track-tight: -0.014em; /* display headings */
-  --track-snug: -0.006em; /* UI labels, buttons, titles */
+  /* Tracking. Negative as text gets larger (Jakarta sets wide and round at display
+     sizes). Uppercase tracked micro-labels are retired with the Lectern pass:
+     --track-caps survives only for content that genuinely IS a code or an
+     acronym (a key name, a file extension). */
+  --track-tight: -0.022em; /* display headings */
+  --track-snug: -0.008em; /* UI labels, buttons, titles */
   --track-normal: 0;
   --track-caps: 0.075em; /* uppercase micro-labels and badges */
 

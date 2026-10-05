@@ -97,7 +97,7 @@ export function Terminal({ onData, onResize }: TerminalProps) {
       // takes a family string rather than a CSS value and cannot read a var.
       // It has to be kept in step with that token by hand: a shell in a
       // different mono from the console beside it is the tell that it drifted.
-      fontFamily: "'Commit Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
+      fontFamily: "'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
       // xterm requires a numeric pixel size (not a CSS var string) — stays a literal.
       fontSize: 12,
       lineHeight: 1.4,

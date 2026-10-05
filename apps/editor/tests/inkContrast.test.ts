@@ -102,9 +102,9 @@ describe('the oklch maths', () => {
   it('agrees with what a browser renders, so the ratios below mean something', () => {
     // Chrome resolved these two exactly, read back off the live editor.
     const ink = token('--ink').rgb;
-    expect([ink.r, ink.g, ink.b].map(Math.round)).toEqual([240, 238, 234]);
+    expect([ink.r, ink.g, ink.b].map(Math.round)).toEqual([245, 245, 245]);
     const bg0 = token('--bg-0').rgb;
-    expect([bg0.r, bg0.g, bg0.b].map(Math.round)).toEqual([5, 5, 7]);
+    expect([bg0.r, bg0.g, bg0.b].map(Math.round)).toEqual([8, 7, 7]);
   });
 });
 

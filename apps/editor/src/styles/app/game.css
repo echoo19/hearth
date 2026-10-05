@@ -105,7 +105,7 @@
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: oklch(0.08 0.004 285);
+  background: oklch(0.09 0.002 85);
   box-shadow: var(--shadow-2);
   /* Only when the shape actually changes — a measured canvas replacing the
      16:9 assumption — and only the box, never its contents. */
@@ -158,7 +158,7 @@
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: oklch(0.08 0.004 285);
+  background: oklch(0.09 0.002 85);
   animation: game-in var(--t-slow) var(--ease-out) both;
 }
 
@@ -176,7 +176,6 @@
   padding: 3px 9px 3px 7px;
   border-radius: 999px;
   background: var(--overlay-bg);
-  backdrop-filter: blur(6px);
   color: var(--ink-mute);
   font-size: var(--text-2xs);
   letter-spacing: 0.01em;
@@ -214,9 +213,7 @@
   gap: 8px;
   padding: 24px;
   text-align: center;
-  /* A single soft wash off-centre, so the pane reads as lit rather than dead.
-     Static: nothing here is asking for attention. */
-  background: radial-gradient(120% 90% at 50% 38%, oklch(0.19 0.012 285) 0%, var(--canvas-bg) 62%);
+  background: var(--canvas-bg);
 }
 
 /* The shape of what will appear: an empty preview frame, not an illustration. */
@@ -225,7 +222,7 @@
   aspect-ratio: 16 / 10;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  background: oklch(0.13 0.008 285);
+  background: var(--bg-0);
   box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.03);
   margin-bottom: 14px;
 }
@@ -265,7 +262,6 @@
   padding: 8px 12px 8px 10px;
   background: var(--overlay-bg);
   border-top: 1px solid var(--border);
-  backdrop-filter: blur(6px);
 }
 
 /* With a game on screen the strip sits in the column, directly under the
@@ -286,7 +282,6 @@
   padding: var(--strip-pad, 12px) 0 0;
   background: transparent;
   border-top: 0;
-  backdrop-filter: none;
 }
 
 /* --- Mute ----------------------------------------------------------------- */

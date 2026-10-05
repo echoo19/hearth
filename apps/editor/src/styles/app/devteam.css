@@ -139,10 +139,8 @@
   align-items: center;
   gap: 8px;
   color: var(--accent);
-  font-size: var(--text-3xs);
-  font-weight: var(--fw-strong);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
 }
 
 .devteam-strip-state[data-parked] {
@@ -252,15 +250,15 @@
 /* The name of a region. Quiet on purpose: it labels the thing under it and
    must never compete with it, so it drops a weight from the status words. */
 .devteam-section {
+  font-family: var(--font-caption);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.01em;
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 0;
   color: var(--ink-faint);
-  font-size: var(--text-3xs);
-  font-weight: var(--fw-medium);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
 }
 
 .devteam-section-count {
@@ -462,10 +460,8 @@
   min-width: 0;
   overflow: hidden;
   color: var(--ink-mute);
-  font-size: var(--text-3xs);
-  font-weight: var(--fw-strong);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -711,10 +707,8 @@
   margin-left: auto;
   flex: none;
   color: var(--ink-mute);
-  font-size: var(--text-3xs);
-  font-weight: var(--fw-strong);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
 }
 
 .devteam-view-state[data-status='running'] { color: var(--accent); }
@@ -998,10 +992,8 @@
   gap: 8px;
   min-height: var(--ctl-h-sm);
   color: var(--ink-faint);
-  font-size: var(--text-3xs);
+  font-size: var(--text-xs);
   font-weight: var(--fw-medium);
-  letter-spacing: var(--track-caps);
-  text-transform: uppercase;
   cursor: pointer;
   list-style-position: inside;
 }

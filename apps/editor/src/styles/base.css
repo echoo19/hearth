@@ -18,6 +18,7 @@ body {
   color: var(--ink);
   background: var(--bg-0);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   overflow: hidden;
 }
 
@@ -31,6 +32,31 @@ textarea {
 
 ::selection {
   background: var(--accent-soft);
+}
+
+/* The browser-drawn surfaces nobody owns: a system-blue caret in an ember
+   app is the cheapest tell that a UI was assembled rather than built. */
+input,
+textarea,
+[contenteditable] {
+  caret-color: var(--accent);
+}
+
+:root {
+  accent-color: var(--accent);
+  color-scheme: dark;
+}
+
+/* The caption register (Lectern's .eyebrow): Space Grotesk, NORMAL caps,
+   barely tracked. It has one home — the group headings in the rail — and is
+   not a kicker to put above sections. */
+.eyebrow {
+  font-family: var(--font-caption);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--ink-faint);
 }
 
 h1, h2, h3, h4 {

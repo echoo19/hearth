@@ -23,6 +23,7 @@ import { useAgentSocket } from '../agent/useAgentSocket';
 import { Icon } from '../ui';
 import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
+import { ClaudeLogo, OpenAiLogo } from '../settings/providerLogos';
 import { terminalStatusLabel } from './TerminalPane';
 
 /**
@@ -174,6 +175,18 @@ export function conversationKindLabel(mode: ConversationMode): string {
   return CONVERSATION_HEADER_LABEL[mode];
 }
 
+/**
+ * The agent's own mark, in front of its name. A logo answers "who is
+ * answering?" before the name is read, which is what the mono label and the
+ * mode chip were both straining to do. Only the two agents Hearth integrates
+ * have a mark; anything else (no agent, a retired custom one) is a name alone.
+ */
+function ProviderMark({ label }: { label: string }) {
+  if (label === 'Claude') return <span className="conversation-logo"><ClaudeLogo size={15} /></span>;
+  if (label === 'ChatGPT') return <span className="conversation-logo is-mono"><OpenAiLogo size={15} /></span>;
+  return null;
+}
+
 export function ConversationHead() {
   const mode = useApp((s) => s.conversationMode);
   const providers = useApp((s) => s.providers);
@@ -190,13 +203,13 @@ export function ConversationHead() {
     <div className="conversation-head">
       {/* Leaving first, on the left, the way it reads on every screen. */}
       <BackToProject />
-      {/* A chip in tracked caps: read as a symbol, not as a third word in a row
-          of words. It no longer borrows .conversation-provider, because the two
-          are opposite kinds of thing and sharing a class is what made them
-          identical in the first place. */}
-      <span className="conversation-kind">{conversationKindLabel(mode)}</span>
-      {/* Chat mode's other read-out: which agent would answer. */}
+      {/* Who answers, then what kind of conversation this is: the agent's
+          mark and name, and the mode as quiet text after a separator. No chips;
+          a fact that never changes for the life of a conversation does not
+          need a border to be noticed. */}
+      {mode !== 'terminal' && <ProviderMark label={providerLabel(providers, driver, choice)} />}
       {mode !== 'terminal' && <span className="conversation-provider">{providerLabel(providers, driver, choice)}</span>}
+      <span className={`conversation-kind${mode !== 'terminal' ? ' has-sep' : ''}`}>{conversationKindLabel(mode)}</span>
       {mode !== 'terminal' && canContinueInCli && (
         <Tooltip content="Resume this provider session in its full CLI">
           {/* `quiet`, not `ghost`: this is an act, and an act in this strip has
