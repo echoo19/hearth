@@ -19,7 +19,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        # macos-15, not -latest: the macos-26 image breaks electron-builder 25's
+        # temporary signing keychain (SecKeychainUnlock rejects its own password).
+        os: [macos-15, windows-latest, ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
