@@ -31,7 +31,7 @@
 }
 
 .console-line:hover {
-  background: var(--bg-2);
+  background: var(--bg-1);
 }
 
 .console-time {

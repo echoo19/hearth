@@ -65,16 +65,6 @@ import { BLANK_SKILL, SkillEditor } from './SkillEditor';
 export const skillsBackLabel = screenBackLabel;
 
 /**
- * The letter on a skill's tile. Real data rather than decoration: the list
- * has no icon to show and inventing one per skill would be a picture of
- * nothing, while the first letter is at least the skill's own.
- */
-export function skillInitial(name: string): string {
-  const first = [...name.trim()][0];
-  return first === undefined ? '?' : first.toUpperCase();
-}
-
-/**
  * What a read-only skill's page says about itself. Names the tool it belongs
  * to and the folder it is in, because "you can't edit this" without a reason
  * reads as the app being difficult.
@@ -125,9 +115,6 @@ function SkillRow({
   return (
     <li className={skill.enabled ? 'skills-item' : 'skills-item is-off'}>
       <button type="button" className="skills-item-open" onClick={onOpen}>
-        <span className="skills-item-tile" aria-hidden="true">
-          {skillInitial(skill.name)}
-        </span>
         <span className="skills-item-text">
           <span className="skills-item-name">
             <span className="skills-item-title">{skill.name}</span>

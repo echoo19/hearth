@@ -908,10 +908,10 @@ dialog.modal.is-publish {
   align-items: center;
   gap: 2px;
   height: var(--ctl-h-xs);
-  padding: 0 2px 0 9px;
+  padding: 0 2px 0 8px;
   border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
   color: var(--ink);
   font-size: var(--text-xs);
   max-width: 100%;
@@ -935,7 +935,7 @@ dialog.modal.is-publish {
   height: 20px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--ink-mute);
   cursor: pointer;
@@ -943,7 +943,7 @@ dialog.modal.is-publish {
 }
 
 .tag-chip-remove:hover:not(:disabled) {
-  background: var(--bg-3);
+  background: var(--bg-2);
   color: var(--ink);
 }
 
@@ -990,8 +990,10 @@ dialog.modal.is-publish {
 
 /* --- In flight ------------------------------------------------------------
 
-   Ember, because an upload in progress is the action this dialog exists for —
-   this is the accent carrying a command, not decorating a panel. */
+   Ember, because an upload in progress is the action this dialog exists for:
+   the accent carrying live state, not decorating a panel. The bar is the one
+   moving thing on this surface, and it exists only while a publish is
+   genuinely in flight; it is gone the moment the request settles. */
 
 .publish-progress {
   display: flex;
@@ -1001,19 +1003,18 @@ dialog.modal.is-publish {
 }
 
 .publish-bar {
-  height: 4px;
-  border-radius: 999px;
-  background: var(--bg-3);
+  height: 2px;
+  border-radius: 1px;
+  background: var(--guide);
   overflow: hidden;
 }
 
 .publish-bar > span {
   display: block;
-  width: 38%;
+  width: 32%;
   height: 100%;
-  border-radius: 999px;
   background: var(--accent);
-  animation: publish-slide 1.5s ease-in-out infinite;
+  animation: publish-slide 1.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 .publish-progress-lead {
@@ -1038,21 +1039,16 @@ dialog.modal.is-publish {
   padding: 6px 0 10px;
 }
 
+/* Held still. The bar above already says "working"; a pulsing placeholder
+   under it was a second, louder way of saying the same thing. */
 .publish-skeleton-line {
   height: 12px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-2);
-  animation: publish-pulse 1.5s ease-in-out infinite;
+  border-radius: var(--radius-xs);
+  background: var(--guide);
 }
 
 .publish-skeleton-line.is-short {
   width: 58%;
-}
-
-@keyframes publish-pulse {
-  50% {
-    opacity: 0.45;
-  }
 }
 
 /* Neither of these may keep moving for someone who asked things not to. The
@@ -1065,7 +1061,4 @@ dialog.modal.is-publish {
     opacity: 0.55;
   }
 
-  .publish-skeleton-line {
-    animation: none;
-  }
 }

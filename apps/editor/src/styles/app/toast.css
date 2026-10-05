@@ -24,8 +24,8 @@
   max-width: min(520px, 100%);
   padding: 9px 9px 9px 14px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-3);
+  border-radius: var(--radius-lg);
+  background: var(--bg-2);
   box-shadow: var(--shadow-2);
   pointer-events: auto;
   animation: toast-in 180ms var(--ease-out) both;
@@ -35,8 +35,8 @@
    card. A block of colour at the bottom of the screen reads as an alarm, and
    most of what arrives here is recoverable. */
 .toast.is-error {
-  border-color: var(--err-soft);
-  background: var(--bg-3);
+  border-color: oklch(0.7 0.17 25 / 0.4);
+  background: var(--bg-2);
 }
 
 .toast-mark {
@@ -71,7 +71,7 @@
 }
 
 .toast-action:hover {
-  background: var(--bg-2);
+  background: var(--bg-3);
 }
 
 .toast-close {

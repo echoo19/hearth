@@ -295,8 +295,8 @@
 .select:focus-visible,
 .textarea:focus-visible {
   outline: none;
-  border-color: oklch(0.684 0.192 42 / 0.6);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-color: oklch(0.684 0.192 42 / 0.5);
+  box-shadow: 0 0 0 3px var(--accent-faint);
 }
 
 .input::placeholder,

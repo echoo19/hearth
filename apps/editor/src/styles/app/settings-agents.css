@@ -74,7 +74,7 @@
 .set-agent-start-note {
   margin: 12px 0 0;
   padding-top: 11px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--guide);
   max-width: 62ch;
   font-size: var(--text-xs);
   line-height: 1.6;
@@ -98,10 +98,11 @@
 }
 
 /* The one that answers. A full ring rather than a stripe down one edge: the
-   row is the choice, so the whole row is what gets marked. */
+   row is the choice, so the whole row is what gets marked. The ring alone,
+   at reduced strength, and no ember wash: selection is the accent's job, but
+   a tinted panel is the accent decorating a surface. */
 .set-agent[data-active='true'] {
-  border-color: var(--accent);
-  background: var(--accent-faint);
+  border-color: oklch(0.684 0.192 42 / 0.55);
 }
 
 /* An open row sits forward of its neighbours, because it is now the subject
@@ -243,7 +244,7 @@
 
 /* --- State, or the way in ------------------------------------------------- */
 
-/* One slot, two mutually exclusive contents: a badge when the harness works,
+/* One slot, two mutually exclusive contents: a status when the harness works,
    the button that makes it work when it does not. Never both, and never a
    label describing what the machine is short of. */
 .set-agent-meta {
@@ -253,14 +254,14 @@
   gap: 8px;
 }
 
+/* A status word with a solid token dot in front of it. Not a chip: the dot
+   carries the state's colour, and the word stays in quiet ink so a column of
+   these reads as text rather than a row of stickers. */
 .set-agent-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: var(--bg-2);
-  font-size: var(--text-2xs);
+  gap: 7px;
+  font-size: var(--text-xs);
   color: var(--ink-mute);
   white-space: nowrap;
 }
@@ -269,57 +270,33 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: currentColor;
-  opacity: 0.7;
+  background: var(--ink-ghost);
 }
 
-.set-agent-badge[data-state='connected'] {
-  background: var(--ok-soft);
-  color: var(--ok);
+.set-agent-badge[data-state='connected'] .set-agent-dot {
+  background: var(--ok);
 }
 
-.set-agent-badge[data-state='connecting'] {
-  background: var(--warn-soft);
-  color: var(--warn);
+.set-agent-badge[data-state='connecting'] .set-agent-dot {
+  background: var(--warn);
 }
 
 .set-agent-badge.is-active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--ink);
 }
 
-/* A sign-in that is waiting on a browser window somewhere else must not look
-   like a row sitting still. The duration is outside the --t-* set on purpose
-   and by the same licence as the field-reject shake in primitives.css: those
-   tokens size responses to a press, and a two-beat wait is neither. */
-.set-agent-badge[data-state='connecting'] .set-agent-dot {
-  animation: set-agent-breathe 1.6s var(--ease-out) infinite;
+.set-agent-badge.is-active .set-agent-dot {
+  background: var(--accent);
 }
 
-@keyframes set-agent-breathe {
-  0%,
-  100% {
-    opacity: 0.28;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-/* The global reduce rule flattens the duration; this settles what it flattens
-   to, so the dot holds at full strength instead of freezing mid-fade. */
-@media (prefers-reduced-motion: reduce) {
-  .set-agent-badge[data-state='connecting'] .set-agent-dot {
-    animation: none;
-    opacity: 1;
-  }
-}
+/* Connecting holds still: a dot in --warn says "waiting" on its own, and
+   nothing in this app loops. */
 
 /* --- The body ------------------------------------------------------------- */
 
 .set-agent-body {
   padding: 2px 16px 15px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--guide);
   margin: 0 1px;
   animation: set-agent-open var(--t) var(--ease-out);
 }
@@ -356,17 +333,14 @@
   gap: 12px;
 }
 
-/* The .t-caps role (primitives.css). It was already reaching for this — 11px,
-   semibold, a touch of tracking — but at a size and tracking of its own, which
-   is how the app ended up with four nearly-identical section labels that no two
-   surfaces agreed on. */
+/* A real small heading, the same one .set-group-title is, rather than an
+   eyebrow over the list. */
 .set-agent-section-title {
-  font-family: var(--font-caption);
-  font-size: var(--text-xs);
-  font-weight: var(--fw-medium);
-  letter-spacing: 0.01em;
   margin: 0;
-  color: var(--ink-faint);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-strong);
+  letter-spacing: var(--track-snug);
+  color: var(--ink);
 }
 
 /* "3 of 4 offered". The one number on this pane, and it answers the question
@@ -720,7 +694,7 @@
 .set-agent-recheck {
   margin-top: 13px;
   padding-top: 12px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--guide);
 }
 
 .set-agent-recheck .set-agent-hint {

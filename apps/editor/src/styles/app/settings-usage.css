@@ -100,7 +100,7 @@
   gap: 2px 20px;
   align-items: baseline;
   padding: 11px 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--guide);
 }
 
 .set-usage-list > .set-usage-item:last-child {
@@ -165,7 +165,7 @@
   margin: 26px 0 0;
   max-width: 62ch;
   padding-top: 16px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--guide);
   font-size: var(--text-xs);
   line-height: 1.6;
   color: var(--ink-faint);

@@ -21,7 +21,7 @@
   flex: none;
   height: 52px;
   padding: 0 16px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--guide);
   /* macOS draws no title bar of its own, and the strip that used to be the
      drag handle above this one is collapsed on these screens. Its controls opt
      back out below, exactly as .topbar's do. */
@@ -91,7 +91,7 @@
      (.conversation-back, chat.css): the app has one back affordance and it
      reads the same wherever it appears. */
   font-size: var(--text-sm);
-  font-weight: var(--fw-label);
+  font-weight: var(--fw-medium);
   letter-spacing: var(--track-snug);
   color: var(--ink);
   cursor: pointer;
@@ -102,7 +102,7 @@
 }
 
 .screen-back:hover {
-  background: var(--bg-2);
+  background: var(--bg-1);
   color: var(--ink);
 }
 

@@ -29,8 +29,8 @@ dialog.modal.is-settings {
   gap: 2px;
   min-height: 0;
   padding: 12px 10px;
-  border-right: 1px solid var(--border);
-  background: var(--bg-05, var(--bg-0));
+  border-right: 1px solid var(--guide);
+  background: var(--bg-0);
   overflow-y: auto;
 }
 
@@ -39,12 +39,9 @@ dialog.modal.is-settings {
   margin-bottom: 10px;
 }
 
-/* The rail's own group headings — "Settings", "Customize". Quieter and
-   smaller than the pane headings on the right, because they label a list of
-   destinations rather than the thing you came to read. */
-/* The same caps register every other section label in the app uses. This one
-   had drifted to 11px / 550 / 0.04em against the rail's 10px / 620 / 0.075em,
-   and the two rails are on screen together. */
+/* The rail's own group headings, "Settings" and "Customize": the caption
+   register, exactly as the main rail sets "Projects", because the two rails
+   are on screen together and are the same kind of list. */
 .set-rail-title {
   font-family: var(--font-caption);
   font-size: var(--text-xs);
@@ -59,12 +56,15 @@ dialog.modal.is-settings {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 7px 9px;
+  height: var(--nav-h);
+  padding: 0 10px;
   border: 0;
   border-radius: var(--radius);
   background: transparent;
   font: inherit;
   font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--track-snug);
   color: var(--ink-mute);
   text-align: left;
   cursor: pointer;
@@ -72,19 +72,17 @@ dialog.modal.is-settings {
 }
 
 .set-rail-item:hover {
-  background: var(--bg-2);
+  background: var(--bg-1);
   color: var(--ink);
 }
 
-/* Current is the accent tint everywhere in this app; this rail was answering
-   in neutral grey, which is the hover step of its own family. */
+/* The main rail's idiom (sidebar.css .nav-row.is-active): a raised surface
+   with an inset hairline, full ink, and the accent spent on the glyph alone.
+   Hover is the flatter fill above, so the two never paint the same picture. */
 .set-rail-item[aria-current='true'] {
-  background: var(--accent-soft);
+  background: var(--rail-current);
+  box-shadow: var(--rail-current-edge);
   color: var(--ink);
-}
-
-.set-rail-item[aria-current='true'] svg {
-  color: var(--accent);
 }
 
 .set-rail-item svg {
@@ -93,7 +91,7 @@ dialog.modal.is-settings {
 }
 
 .set-rail-item[aria-current='true'] svg {
-  color: var(--ink);
+  color: var(--accent);
 }
 
 /* --- The pane ------------------------------------------------------------- */
@@ -108,8 +106,8 @@ dialog.modal.is-settings {
 .set-pane-title {
   margin: 0 0 4px;
   font-size: var(--text-xl);
-  font-weight: var(--fw-strong);
-  letter-spacing: -0.01em;
+  font-weight: var(--fw-display);
+  letter-spacing: var(--track-tight);
   color: var(--ink);
 }
 
@@ -141,7 +139,7 @@ dialog.modal.is-settings {
   gap: 24px;
   min-height: 52px;
   padding: 12px 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--guide);
 }
 
 /* Controls that carry their own internals — a text area, a picker — get the
