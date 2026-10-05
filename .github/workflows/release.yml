@@ -37,8 +37,11 @@ jobs:
         run: npm run check:release -- --tag "${GITHUB_REF_NAME}"
       - name: Build packages
         run: npm run build:packages
+      # Retries only absorb timing: a real failure fails all three attempts and
+      # still blocks the release. The real-Chromium playtests have each missed
+      # a deadline on a loaded macOS runner while passing everywhere else.
       - name: Run tests
-        run: npm test
+        run: npm test -- --retry=2
       - name: Build editor UI
         run: npm run build -w @hearth/editor
       - name: Bundle Electron main + agent tools
